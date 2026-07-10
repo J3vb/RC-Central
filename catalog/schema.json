@@ -28,6 +28,8 @@
             "additionalProperties": false,
             "properties": {
                 "exe_relative_path": {"type": ["string", "null"]},
+                "setup_args": {"type": "array", "items": {"type": "string"}},
+                "setup_relative_path": {"type": ["string", "null"]},
                 "portable": {"type": "boolean"},
                 "needs_admin": {"type": "boolean"}
             }

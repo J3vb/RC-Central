@@ -1,0 +1,24 @@
+{
+    "id": "hobbywing-usb-link",
+    "name": "USB Link Software",
+    "vendor": "Hobbywing",
+    "category": "esc",
+    "homepage": "https://www.hobbywing.com/en/service/application?id=1",
+    "description": "Configure and update XeRun/EZRUN/Platinum ESCs via the Hobbywing LCD Program Box / USB Link adapter.",
+    "os": ["windows"],
+    "version": "5.1.1",
+    "download": {
+        "url": "https://www.hobbywing.com/Upload/software/Hobbywing_USB_Link_V5.1.1.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "setup_args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", "/DIR={dest}"],
+        "exe_relative_path": "Hobbywing USB Link.exe",
+        "portable": false,
+        "needs_admin": true
+    },
+    "drivers": [],
+    "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release.",
+    "source_verified": "2026-07-10"
+}

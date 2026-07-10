@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -41,7 +42,14 @@ def install(tool: dict, progress=None) -> Path:
         if dest.exists():
             shutil.rmtree(dest)
         _extract(archive, dest)
-    exe = _find_exe(dest, tool.get("install", {}).get("exe_relative_path"))
+    inst = tool.get("install", {})
+    if inst.get("setup_args"):
+        # archive ships a silent-capable installer (e.g. Inno Setup) instead of a
+        # portable exe: run it into the tool dir, then resolve the installed app
+        setup = _find_exe(dest, inst.get("setup_relative_path"))
+        args = [a.replace("{dest}", str(dest)) for a in inst["setup_args"]]
+        subprocess.run([str(setup), *args], check=True, timeout=900)
+    exe = _find_exe(dest, inst.get("exe_relative_path"))
     _state_file(tool["id"]).write_text(
         json.dumps(
             {

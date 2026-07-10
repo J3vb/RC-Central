@@ -1,5 +1,6 @@
 """Spawn and track vendor tool processes."""
 
+import os
 from pathlib import Path
 
 from PySide6.QtCore import QProcess
@@ -7,17 +8,26 @@ from PySide6.QtCore import QProcess
 _procs: dict[str, QProcess] = {}
 
 
-def launch(tool_id: str, exe_path: str) -> QProcess:
-    """Start a tool (or return its already-running process)."""
+def launch(tool_id: str, exe_path: str, needs_admin: bool = False) -> None:
+    """Start a tool (no-op if already running). Raises OSError if the user declines UAC."""
     if is_running(tool_id):
-        return _procs[tool_id]
+        return
     exe = Path(exe_path)
+    if needs_admin:
+        # ponytail: ShellExecute handles the UAC elevation QProcess can't; costs us
+        # process tracking, so is_running() stays False for these tools
+        os.startfile(str(exe), cwd=str(exe.parent))
+        return
     proc = QProcess()
     proc.setProgram(str(exe))
     proc.setWorkingDirectory(str(exe.parent))
     proc.start()
+    if not proc.waitForStarted(3000):
+        # exes whose manifest demands elevation fail CreateProcess even when the
+        # catalog says needs_admin=false - retry through ShellExecute/UAC
+        os.startfile(str(exe), cwd=str(exe.parent))
+        return
     _procs[tool_id] = proc
-    return proc
 
 
 def is_running(tool_id: str) -> bool:

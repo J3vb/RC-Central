@@ -71,6 +71,48 @@ def test_hash_mismatch_raises(sandbox):
     assert installer.get_state("fake-tool") is None
 
 
+def test_install_runs_setup_when_configured(sandbox, monkeypatch):
+    dest = installer.TOOLS_DIR / "fake-tool"
+    ran = {}
+
+    def fake_run(cmd, check, timeout):
+        ran["cmd"] = cmd
+        (dest / "Installed.exe").write_bytes(b"MZ")
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    tool = _tool()
+    tool["install"] = {
+        "setup_args": ["/VERYSILENT", "/DIR={dest}"],
+        "exe_relative_path": "Installed.exe",
+    }
+    exe = installer.install(tool)
+    assert exe.name == "Installed.exe"
+    assert ran["cmd"][0].endswith("FakeTool.exe")  # the extracted setup was run
+    assert ran["cmd"][-1] == f"/DIR={dest}"  # {dest} placeholder substituted
+
+
+def test_launch_needs_admin_uses_shellexecute(monkeypatch):
+    from app import launcher
+
+    called = {}
+    monkeypatch.setattr(
+        launcher.os, "startfile", lambda p, cwd=None: called.update(p=p, cwd=cwd)
+    )
+    launcher.launch("fake-tool", "C:/fake/Tool.exe", needs_admin=True)
+    assert called["p"].endswith("Tool.exe")
+    assert called["cwd"].endswith("fake")
+
+
+def test_updater_version_compare():
+    from app import updater
+
+    assert updater._newer("v0.2.0", "0.1.0")
+    assert updater._newer("0.1.10", "0.1.9")
+    assert not updater._newer("v0.1.0", "0.1.0")
+    assert not updater._newer("garbage", "0.1.0")
+    assert not updater.fetch_update()  # not frozen -> no-op
+
+
 def test_download_rejects_html_page(tmp_path, monkeypatch):
     class FakeResp:
         headers = {"content-type": "text/html; charset=UTF-8"}

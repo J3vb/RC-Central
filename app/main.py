@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem,
 )
 
-from app import catalog, installer, launcher
+from app import __version__, catalog, installer, launcher, updater
 
 
 class _InstallSignals(QObject):
@@ -30,7 +30,7 @@ class MainWindow(QMainWindow):
 
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("RC Central")
+        self.setWindowTitle(f"RC Central v{__version__}")
         self.resize(760, 400)
         self.tools = catalog.load_catalog()
 
@@ -74,7 +74,15 @@ class MainWindow(QMainWindow):
         tool = self.tools[row]
         state = installer.get_state(tool["id"])
         if state and state["version"] == tool["version"]:
-            launcher.launch(tool["id"], state["exe_path"])
+            try:
+                launcher.launch(
+                    tool["id"],
+                    state["exe_path"],
+                    tool.get("install", {}).get("needs_admin", False),
+                )
+            except OSError as e:  # e.g. UAC prompt declined
+                QMessageBox.warning(self, "Launch failed", str(e))
+                return
             self.statusBar().showMessage(f"Launched {tool['name']}", 5000)
         else:
             self._install(row, tool)
@@ -116,9 +124,13 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)
+    updater.cleanup()
     win = MainWindow()
     win.show()
-    sys.exit(app.exec())
+    threading.Thread(target=updater.fetch_update, daemon=True).start()
+    code = app.exec()
+    updater.apply_pending()  # swap in a downloaded hub update on the way out
+    sys.exit(code)
 
 
 if __name__ == "__main__":

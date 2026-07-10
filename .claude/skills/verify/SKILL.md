@@ -9,7 +9,7 @@ description: Build/launch/drive recipe for verifying RC Central (PySide6 GUI) ch
 
 ```
 uv sync
-uv run python -m app.main   # run in background; window title "RC Central"
+uv run python -m app.main   # run in background; window title "RC Central v<version>" (see app/__init__.py)
 ```
 
 Exit code 0 on clean close. Installed tools + state land in `%LOCALAPPDATA%\RCCentral\tools\`.
@@ -42,3 +42,9 @@ Delete that dir to reset to a fresh-install state.
 - The catalog remote fetch 404s (placeholder URL) and silently falls back to the bundled
   `catalog/tools/*.json` — edits to those files take effect on next app start, unless a
   cached `%LOCALAPPDATA%\RCCentral\catalog.json` exists and wins.
+- Tools with `needs_admin: true` (Hobbywing USB Link) launch via ShellExecute → **UAC
+  prompt** the human must approve; the resulting process is elevated, so a non-admin shell
+  cannot Stop-Process/CloseMainWindow it (UIPI) — the human has to close it.
+- An elevated foreground window can silently defeat `SetForegroundWindow`, making
+  coordinate clicks land on the wrong app. Before clicking, `SetWindowPos` RC Central to
+  HWND_TOPMOST at a known position (non-elevated windows accept this).
