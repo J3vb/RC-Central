@@ -1,7 +1,10 @@
 """Validate catalog entries against the schema; optionally health-check download URLs.
 
 Used by CI (validate-catalog.yml) and runnable locally:
-    uv run python scripts/validate_catalog.py [--check-urls]
+    uv run python scripts/validate_catalog.py [--check-urls] [--write]
+
+--write regenerates catalog/catalog.json (the aggregated file the app fetches
+remotely); run it after adding or editing a tool. CI fails if it is stale.
 """
 
 import json
@@ -12,17 +15,20 @@ import jsonschema
 import requests
 
 CATALOG = Path(__file__).resolve().parents[1] / "catalog"
+BUNDLE = CATALOG / "catalog.json"
 
 
 def main() -> int:
     check_urls = "--check-urls" in sys.argv[1:]
     schema = json.loads((CATALOG / "schema.json").read_text(encoding="utf-8"))
     failures = []
+    tools = []
     entries = sorted((CATALOG / "tools").glob("*.json"))
     if not entries:
         failures.append("no catalog entries found")
     for f in entries:
         tool = json.loads(f.read_text(encoding="utf-8"))
+        tools.append(tool)
         try:
             jsonschema.validate(tool, schema)
         except jsonschema.ValidationError as e:
@@ -45,6 +51,14 @@ def main() -> int:
             except requests.RequestException as e:
                 failures.append(f"{f.name}: {url} -> {e}")
         print(f"ok: {f.name}")
+    bundle = json.dumps(tools, ensure_ascii=False, indent=2) + "\n"
+    if "--write" in sys.argv[1:]:
+        BUNDLE.write_text(bundle, encoding="utf-8")
+        print(f"wrote {BUNDLE.name}")
+    elif not BUNDLE.exists() or BUNDLE.read_text(encoding="utf-8") != bundle:
+        failures.append(
+            "catalog.json is stale - run: uv run python scripts/validate_catalog.py --write"
+        )
     for msg in failures:
         print(f"FAIL: {msg}", file=sys.stderr)
     return 1 if failures else 0

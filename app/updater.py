@@ -12,8 +12,7 @@ import requests
 from app import __version__
 from app.installer import DATA_DIR
 
-# ponytail: placeholder until the repo is public; the check 404s and quietly does nothing
-REPO = "rc-central/rc-central"
+REPO = "J3vb/RC-Central"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
 PENDING = DATA_DIR / "update-pending.exe"
 

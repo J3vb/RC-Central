@@ -5,6 +5,9 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
+permissions:
+  contents: write # create releases
+
 jobs:
   build:
     runs-on: windows-latest

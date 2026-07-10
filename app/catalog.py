@@ -7,8 +7,7 @@ from pathlib import Path
 
 import requests
 
-# ponytail: placeholder until the repo is public; fetch 404s and the bundled copy is used
-CATALOG_URL = "https://raw.githubusercontent.com/rc-central/rc-central/main/catalog/catalog.json"
+CATALOG_URL = "https://raw.githubusercontent.com/J3vb/RC-Central/main/catalog/catalog.json"
 
 DATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "RCCentral"
 CACHE_FILE = DATA_DIR / "catalog.json"
