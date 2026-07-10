@@ -1,0 +1,24 @@
+name: Build
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync
+      - run: uv run pytest
+      - run: uv run pyinstaller --onefile --windowed --name RCCentral --paths . --add-data "catalog;catalog" app/main.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: RCCentral
+          path: dist/RCCentral.exe
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/RCCentral.exe

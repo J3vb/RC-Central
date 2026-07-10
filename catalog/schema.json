@@ -1,0 +1,49 @@
+{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "title": "RC Central tool manifest",
+    "type": "object",
+    "required": ["id", "name", "vendor", "version", "download", "install"],
+    "additionalProperties": false,
+    "properties": {
+        "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
+        "name": {"type": "string", "minLength": 1},
+        "vendor": {"type": "string", "minLength": 1},
+        "category": {"type": "string"},
+        "homepage": {"type": "string", "format": "uri"},
+        "description": {"type": "string"},
+        "os": {"type": "array", "items": {"enum": ["windows"]}},
+        "version": {"type": "string", "minLength": 1},
+        "download": {
+            "type": "object",
+            "required": ["url", "archive"],
+            "additionalProperties": false,
+            "properties": {
+                "url": {"type": "string", "pattern": "^https://"},
+                "archive": {"enum": ["zip", "7z"]},
+                "sha256": {"type": ["string", "null"], "pattern": "^[a-fA-F0-9]{64}$"}
+            }
+        },
+        "install": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "exe_relative_path": {"type": ["string", "null"]},
+                "portable": {"type": "boolean"},
+                "needs_admin": {"type": "boolean"}
+            }
+        },
+        "drivers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "url"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "url": {"type": "string", "pattern": "^https://"}
+                }
+            }
+        },
+        "notes": {"type": "string"},
+        "source_verified": {"type": "string", "format": "date"}
+    }
+}

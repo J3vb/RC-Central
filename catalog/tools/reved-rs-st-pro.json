@@ -1,0 +1,23 @@
+{
+    "id": "reved-rs-st-pro",
+    "name": "RS-ST PRO Servo Program",
+    "vendor": "Rêve D",
+    "category": "servo",
+    "homepage": "https://teamreved.com/product/rs-pgca",
+    "description": "Setup software for the RS-ST / RS-ST PRO drift steering servo (needs the RS-PGCB/RS-PGCA USB programmer).",
+    "os": ["windows"],
+    "version": "2.0.2",
+    "download": {
+        "url": "https://teamreved.com/download/rs-st-servo-program-v2-0-2?wpdmdl=5274",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "RS-ST servo program V2.0.2.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "drivers": [],
+    "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so expect this URL to rot on the next release.",
+    "source_verified": "2026-07-10"
+}
