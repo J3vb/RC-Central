@@ -191,11 +191,12 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     _ = QApplication.instance() or QApplication([])
     win = app_main.MainWindow()
 
-    assert win.tabs.count() == 3
-    assert [win.tabs.tabText(i) for i in range(3)] == [
+    assert win.tabs.count() == 4
+    assert [win.tabs.tabText(i) for i in range(4)] == [
         "Tools",
         "Gear Calculator",
         "Garage",
+        "Log",
     ]
     assert win.tools_tab.table.rowCount() == 1  # existing table still wired
     assert win.table is win.tools_tab.table  # back-compat alias holds
@@ -210,6 +211,43 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     win._open_in_calc(car)
     assert win.tabs.currentWidget() is win.gear_tab
     assert win.gear_tab.pinion.value() == 30
+
+
+def test_log_tab_preload_stream_and_filter(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import logging
+
+    from PySide6.QtWidgets import QApplication
+
+    from app import logsetup
+    from app import main as app_main
+
+    _ = QApplication.instance() or QApplication([])
+
+    # a record buffered before the tab exists must preload into the view
+    logsetup._buffer.clear()
+    logsetup._buffer.append("2026-01-01 00:00:00 · INFO · app.pre · preloaded line")
+
+    tab = app_main.LogTab()
+    try:
+        assert "preloaded line" in tab.view.toPlainText()
+
+        # a live record routed through the root logger must stream in
+        logging.getLogger("app.live").warning("live warning line")
+        assert "live warning line" in tab.view.toPlainText()
+
+        # Warnings+ hides the INFO preload but keeps the WARNING
+        tab.level_filter.setCurrentIndex(2)
+        assert "preloaded line" not in tab.view.toPlainText()
+        assert "live warning line" in tab.view.toPlainText()
+
+        # back to All shows both again
+        tab.level_filter.setCurrentIndex(0)
+        assert "preloaded line" in tab.view.toPlainText()
+        assert "live warning line" in tab.view.toPlainText()
+    finally:
+        logging.getLogger().removeHandler(tab._handler)
+        logsetup._buffer.clear()
 
 
 def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
