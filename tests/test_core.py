@@ -177,3 +177,59 @@ def test_ui_smoke(monkeypatch):
     assert isinstance(button, QToolButton)
     assert button.text() == "Install"
     assert [a.text() for a in button.menu().actions()] == ["Locate existing install…"]
+
+
+def test_tabs_smoke(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    win = app_main.MainWindow()
+
+    assert win.tabs.count() == 3
+    assert [win.tabs.tabText(i) for i in range(3)] == [
+        "Tools",
+        "Gear Calculator",
+        "Garage",
+    ]
+    assert win.tools_tab.table.rowCount() == 1  # existing table still wired
+    assert win.table is win.tools_tab.table  # back-compat alias holds
+
+    win.gear_tab._recompute()
+    assert win.gear_tab.fdr_out.text() not in ("", "—")
+    assert win.garage_tab.list.count() == 0  # empty garage dir
+
+    # the garage -> calculator link switches tabs without error
+    car = garage.new_car("Linked")
+    car["gearing"]["pinion"] = 30
+    win._open_in_calc(car)
+    assert win.tabs.currentWidget() is win.gear_tab
+    assert win.gear_tab.pinion.value() == 30
+
+
+def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    win = app_main.MainWindow()
+
+    tab = win.garage_tab
+    tab.name.setText("Test Rig")
+    tab.pinion.setValue(25)
+    tab._on_save()
+
+    assert tab.list.count() == 1
+    cars = garage.list_cars()
+    assert len(cars) == 1 and cars[0]["name"] == "Test Rig"
+    assert cars[0]["gearing"]["pinion"] == 25
