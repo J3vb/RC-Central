@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     tags: ["v*"]
+  pull_request: # build + test the matrix on PRs; the release step stays tag-gated
   workflow_dispatch:
 
 permissions:
