@@ -2,9 +2,11 @@
 
 import sys
 import threading
+from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QObject, Qt, Signal
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -33,6 +35,16 @@ from PySide6.QtWidgets import (
 )
 
 from app import __version__, catalog, garage, gearing, installer, launcher, updater
+
+
+def _asset_path(name: str) -> Path:
+    # _MEIPASS is where PyInstaller unpacks --add-data at runtime; fall back to source tree.
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    return base / "app" / "assets" / name
+
+
+def app_icon() -> QIcon:
+    return QIcon(str(_asset_path("icon.png")))
 
 
 class _InstallSignals(QObject):
@@ -548,6 +560,7 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"RC Central v{__version__}")
+        self.setWindowIcon(app_icon())
         self.resize(760, 500)
 
         self.tabs = QTabWidget()
@@ -572,6 +585,7 @@ class MainWindow(QMainWindow):
 
 def main() -> None:
     app = QApplication(sys.argv)
+    app.setWindowIcon(app_icon())
     updater.cleanup()
     win = MainWindow()
     win.show()

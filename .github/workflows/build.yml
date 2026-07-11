@@ -16,7 +16,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
       - run: uv run pytest
-      - run: uv run pyinstaller --onefile --windowed --name RCCentral --paths . --add-data "catalog;catalog" app/main.py
+      - run: uv run pyinstaller --onefile --windowed --name RCCentral --paths . --icon app/assets/icon.ico --add-data "catalog;catalog" --add-data "app/assets;app/assets" app/main.py
       - uses: actions/upload-artifact@v4
         with:
           name: RCCentral
