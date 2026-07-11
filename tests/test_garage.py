@@ -58,3 +58,43 @@ def test_delete_removes_car_and_is_idempotent(garage_sandbox):
 
 def test_load_missing_returns_none(garage_sandbox):
     assert garage.load_car("does-not-exist") is None
+
+
+def test_new_car_has_empty_log():
+    assert garage.new_car()["log"] == []
+
+
+def test_new_log_entry_fields():
+    entry = garage.new_log_entry("Run", "practice session")
+    assert entry["kind"] == "Run"
+    assert entry["note"] == "practice session"
+    assert entry["id"]
+    assert entry["date"].endswith("+00:00") or entry["date"].endswith("Z")
+
+
+def test_log_survives_save_roundtrip(garage_sandbox):
+    car = garage.new_car("Logged")
+    car["log"].append(garage.new_log_entry("Maintenance", "new tires"))
+    garage.save_car(car)
+    loaded = garage.load_car(car["id"])
+    assert len(loaded["log"]) == 1
+    assert loaded["log"][0]["note"] == "new tires"
+
+
+def test_format_spec_sheet_includes_filled_fields_and_skips_empty():
+    car = garage.new_car("RWD Street")
+    car["chassis"] = "MST RMX"
+    car["motor"] = ""  # empty -> omitted
+    car["gearing"]["fdr"] = 7.5
+    car["notes"] = "grippy asphalt"
+    sheet = garage.format_spec_sheet(car)
+    assert "RWD Street" in sheet
+    assert "Chassis: MST RMX" in sheet
+    assert "Motor:" not in sheet  # empty field skipped
+    assert "Final drive ratio: 7.5" in sheet
+    assert "grippy asphalt" in sheet
+
+
+def test_format_spec_sheet_handles_unnamed_car():
+    car = garage.new_car("")
+    assert garage.format_spec_sheet(car).startswith("Unnamed car")

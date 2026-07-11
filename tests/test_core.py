@@ -279,3 +279,90 @@ def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
     cars = garage.list_cars()
     assert len(cars) == 1 and cars[0]["name"] == "Test Rig"
     assert cars[0]["gearing"]["pinion"] == 25
+
+
+def test_tools_tab_search_and_category_filter(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    tools = [
+        _tool(id="a", name="Servo Prog", vendor="Reve D", category="servo"),
+        _tool(id="b", name="ESC Link", vendor="Hobbywing", category="esc"),
+    ]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+
+    # text search matches name/vendor/category and hides the rest
+    tab.search.setText("hobbywing")
+    assert tab.table.isRowHidden(0)
+    assert not tab.table.isRowHidden(1)
+
+    # clearing restores every row
+    tab.search.setText("")
+    assert not tab.table.isRowHidden(0)
+    assert not tab.table.isRowHidden(1)
+
+    # category dropdown filters independently (index 0 is "All categories")
+    servo_index = tab.category_filter.findData("servo")
+    tab.category_filter.setCurrentIndex(servo_index)
+    assert not tab.table.isRowHidden(0)
+    assert tab.table.isRowHidden(1)
+
+    # category + search combine with AND: servo category but a non-matching query
+    tab.search.setText("esc")
+    assert tab.table.isRowHidden(0)
+    assert tab.table.isRowHidden(1)
+
+
+def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    win = app_main.MainWindow()
+    tab = win.garage_tab
+
+    # two cars, distinguished by chassis
+    tab._on_new()
+    tab.name.setText("Blue")
+    tab.chassis.setText("Yokomo")
+    tab._on_save()
+    tab._on_new()
+    tab.name.setText("Red")
+    tab.chassis.setText("MST")
+    tab._on_save()
+    assert tab.list.count() == 2
+
+    # search matches the chassis field, hiding the non-match
+    tab.search.setText("yokomo")
+    hidden = [tab.list.item(i).isHidden() for i in range(tab.list.count())]
+    assert hidden.count(False) == 1  # exactly one visible
+    tab.search.setText("")
+    assert not any(tab.list.item(i).isHidden() for i in range(tab.list.count()))
+
+    # select Red and add a maintenance log entry; it persists on the car
+    for i in range(tab.list.count()):
+        if tab.list.item(i).text() == "Red":
+            tab.list.setCurrentRow(i)
+            break
+    tab.log_note.setText("replaced bearings")
+    tab._on_add_log()
+    assert tab.log_table.rowCount() == 1
+    red = next(c for c in garage.list_cars() if c["name"] == "Red")
+    assert red["log"][0]["note"] == "replaced bearings"
+
+    # removing the entry persists too
+    tab.log_table.setCurrentCell(0, 0)
+    tab._on_remove_log()
+    assert tab.log_table.rowCount() == 0
+    red = next(c for c in garage.list_cars() if c["name"] == "Red")
+    assert red["log"] == []
