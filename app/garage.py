@@ -36,8 +36,67 @@ def new_car(name: str = "New Car") -> dict:
             "rollout_mm": None,
             "top_speed_kmh": None,
         },
+        "log": [],  # run/maintenance history; see new_log_entry()
         "notes": "",
     }
+
+
+def new_log_entry(kind: str, note: str) -> dict:
+    """A single run/maintenance entry, timestamped now. Not persisted on its own."""
+    return {
+        "id": uuid.uuid4().hex,
+        "date": datetime.now(timezone.utc).isoformat(),
+        "kind": kind,
+        "note": note,
+    }
+
+
+# Labels for the gearing fields, in display order, for the exported spec sheet.
+_GEARING_LABELS = (
+    ("pinion", "Pinion"),
+    ("spur", "Spur"),
+    ("internal_ratio", "Internal ratio"),
+    ("tire_diameter_mm", "Tire diameter (mm)"),
+    ("fdr", "Final drive ratio"),
+    ("rollout_mm", "Rollout (mm)"),
+    ("top_speed_kmh", "Top speed (km/h)"),
+)
+
+_SPEC_LABELS = (
+    ("chassis", "Chassis"),
+    ("motor", "Motor"),
+    ("esc", "ESC"),
+    ("servo", "Servo"),
+    ("tires", "Tires"),
+)
+
+
+def format_spec_sheet(car: dict) -> str:
+    """Render a car as a shareable plain-text spec sheet. Skips empty fields."""
+    lines = [car.get("name", "").strip() or "Unnamed car", "=" * 32]
+    for key, label in _SPEC_LABELS:
+        value = str(car.get(key, "")).strip()
+        if value:
+            lines.append(f"{label}: {value}")
+
+    gearing = car.get("gearing", {})
+    geared = [
+        f"  {label}: {gearing[key]}"
+        for key, label in _GEARING_LABELS
+        if gearing.get(key) is not None
+    ]
+    if geared:
+        lines.append("")
+        lines.append("Gearing:")
+        lines.extend(geared)
+
+    notes = str(car.get("notes", "")).strip()
+    if notes:
+        lines.append("")
+        lines.append("Notes:")
+        lines.append(notes)
+
+    return "\n".join(lines) + "\n"
 
 
 def save_car(car: dict) -> dict:

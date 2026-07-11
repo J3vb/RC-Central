@@ -54,6 +54,15 @@ def _platform_asset() -> tuple[str, bytes]:
 # shape (a suffixless ELF on Linux, an .exe on Windows) purely for clarity.
 PENDING = DATA_DIR / ("update-pending.exe" if sys.platform == "win32" else "update-pending")
 
+# Version tag staged in PENDING this session, so the UI can name it in the
+# "update ready" banner. Set by fetch_update() on a successful stage.
+_staged_version: str | None = None
+
+
+def staged_version() -> str | None:
+    """The version tag of the update staged in PENDING this session, if any."""
+    return _staged_version
+
 
 def _sidelined(exe: Path) -> Path:
     """Where the running binary is moved so the update can take its place.
@@ -167,6 +176,8 @@ def fetch_update(force: bool = False) -> bool:
             return False
 
         tmp.replace(PENDING)
+        global _staged_version
+        _staged_version = tag
         log.info("update downloaded and verified (%d bytes) to %s", written, PENDING)
         return True
     except requests.RequestException as e:

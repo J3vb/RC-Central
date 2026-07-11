@@ -55,6 +55,7 @@ def sandbox(monkeypatch, tmp_path):
     """Redirect the pending-update paths into tmp so nothing touches real dirs."""
     monkeypatch.setattr(updater, "DATA_DIR", tmp_path)
     monkeypatch.setattr(updater, "PENDING", tmp_path / updater.PENDING.name)
+    monkeypatch.setattr(updater, "_staged_version", None)  # avoid cross-test leakage
     return tmp_path
 
 
@@ -100,6 +101,7 @@ def test_newer_with_matching_asset(sandbox, monkeypatch, caplog):
 
     assert result is True
     assert updater.PENDING.exists() and updater.PENDING.read_bytes() == payload
+    assert updater.staged_version() == "v99.0.0"  # exposed for the UI banner
     assert "newer version available" in caplog.text
     assert "downloaded and verified" in caplog.text
 

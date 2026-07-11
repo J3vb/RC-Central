@@ -1,6 +1,7 @@
 """RC Central - install and launch RC drift setup tools, plus gearing + garage."""
 
 import logging
+import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -26,10 +27,12 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QSizePolicy,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
+    QToolBar,
     QToolButton,
     QVBoxLayout,
     QWidget,
@@ -57,6 +60,10 @@ def app_icon() -> QIcon:
     return QIcon(str(_asset_path("icon.png")))
 
 
+# Pretty display names for catalog category codes; unknowns fall back to .title().
+_CATEGORY_LABELS = {"esc": "ESC", "servo": "Servo"}
+
+
 class _InstallSignals(QObject):
     """Bridge from the download thread back to the Qt main thread."""
 
@@ -79,11 +86,26 @@ class ToolsTab(QWidget):
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
 
+        # Live filter: a search box and a category dropdown, both feeding one pass.
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search tools…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_filter)
+        self.category_filter = QComboBox()
+        self.category_filter.addItem("All categories", None)
+        for cat in sorted({t.get("category", "") for t in self.tools if t.get("category")}):
+            self.category_filter.addItem(_CATEGORY_LABELS.get(cat, cat.title()), cat)
+        self.category_filter.currentIndexChanged.connect(self._apply_filter)
+        controls = QHBoxLayout()
+        controls.addWidget(self.search, 1)
+        controls.addWidget(self.category_filter)
+
         # ponytail: one shared progress bar; per-row bars if parallel installs matter
         self.progress = QProgressBar()
         self.progress.hide()
 
         layout = QVBoxLayout(self)
+        layout.addLayout(controls)
         layout.addWidget(self.table)
         layout.addWidget(self.progress)
 
@@ -107,6 +129,18 @@ class ToolsTab(QWidget):
             self._refresh_row(row)
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)
+
+    def _apply_filter(self) -> None:
+        """Show only rows matching both the search text and the chosen category."""
+        query = self.search.text().strip().lower()
+        category = self.category_filter.currentData()
+        for row, tool in enumerate(self.tools):
+            matches_text = not query or any(
+                query in str(tool.get(field, "")).lower()
+                for field in ("name", "vendor", "category", "description")
+            )
+            matches_category = category is None or tool.get("category") == category
+            self.table.setRowHidden(row, not (matches_text and matches_category))
 
     def _status(self, msg: str, timeout: int = 0) -> None:
         """Show a message on the window's status bar, if we're inside one."""
@@ -391,6 +425,11 @@ class GarageTab(QWidget):
         self._on_open_in_calc = on_open_in_calc
         self.current_id: str | None = None
 
+        self._cars: list[dict] = []  # cache behind the list, for live filtering
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search cars…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_filter)
         self.list = QListWidget()
         self.list.currentItemChanged.connect(self._on_select)
         new_btn = QPushButton("New")
@@ -401,6 +440,7 @@ class GarageTab(QWidget):
         left_buttons.addWidget(new_btn)
         left_buttons.addWidget(del_btn)
         left = QVBoxLayout()
+        left.addWidget(self.search)
         left.addWidget(self.list)
         left.addLayout(left_buttons)
 
@@ -451,12 +491,45 @@ class GarageTab(QWidget):
         save_btn.clicked.connect(self._on_save)
         self.open_calc_btn = QPushButton("Open in Gear Calculator")
         self.open_calc_btn.clicked.connect(self._on_open_calc)
+        export_btn = QPushButton("Export…")
+        export_btn.clicked.connect(self._on_export)
+        copy_btn = QPushButton("Copy")
+        copy_btn.clicked.connect(self._on_copy)
         form_buttons = QHBoxLayout()
         form_buttons.addWidget(save_btn)
         form_buttons.addWidget(self.open_calc_btn)
+        form_buttons.addWidget(export_btn)
+        form_buttons.addWidget(copy_btn)
+
+        # Run / maintenance log for the selected car.
+        self._current_log: list[dict] = []
+        self.log_table = QTableWidget(0, 3)
+        self.log_table.setHorizontalHeaderLabels(("Date", "Type", "Note"))
+        self.log_table.verticalHeader().hide()
+        self.log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.log_table.horizontalHeader().setStretchLastSection(True)
+        self.log_kind = QComboBox()
+        self.log_kind.addItems(("Run", "Maintenance"))
+        self.log_note = QLineEdit()
+        self.log_note.setPlaceholderText("What happened?")
+        self.log_note.returnPressed.connect(self._on_add_log)
+        add_log_btn = QPushButton("Add")
+        add_log_btn.clicked.connect(self._on_add_log)
+        remove_log_btn = QPushButton("Remove selected")
+        remove_log_btn.clicked.connect(self._on_remove_log)
+        log_add_row = QHBoxLayout()
+        log_add_row.addWidget(self.log_kind)
+        log_add_row.addWidget(self.log_note, 1)
+        log_add_row.addWidget(add_log_btn)
+        log_add_row.addWidget(remove_log_btn)
+
         right = QVBoxLayout()
         right.addLayout(form)
         right.addLayout(form_buttons)
+        right.addWidget(QLabel("<b>Run / maintenance log</b>"))
+        right.addWidget(self.log_table)
+        right.addLayout(log_add_row)
 
         layout = QHBoxLayout(self)
         layout.addLayout(left, 1)
@@ -468,11 +541,24 @@ class GarageTab(QWidget):
     def _reload_list(self) -> None:
         self.list.blockSignals(True)
         self.list.clear()
-        for car in garage.list_cars():
+        self._cars = garage.list_cars()
+        for car in self._cars:
             item = QListWidgetItem(car.get("name", "Unnamed"))
             item.setData(Qt.ItemDataRole.UserRole, car["id"])
             self.list.addItem(item)
         self.list.blockSignals(False)
+        self._apply_filter()
+
+    _SEARCH_FIELDS = ("name", "chassis", "motor", "esc", "servo", "tires")
+
+    def _apply_filter(self) -> None:
+        """Hide list rows that don't match the search box, matching cached cars by index."""
+        query = self.search.text().strip().lower()
+        for i, car in enumerate(self._cars):
+            match = not query or any(
+                query in str(car.get(field, "")).lower() for field in self._SEARCH_FIELDS
+            )
+            self.list.item(i).setHidden(not match)
 
     def _blank_form(self) -> None:
         car = garage.new_car()
@@ -495,6 +581,18 @@ class GarageTab(QWidget):
         self.kv.setValue(g.get("kv", 3000))
         self.cells.setValue(g.get("cells", 2))
         self.notes.setPlainText(car.get("notes", ""))
+        self._current_log = list(car.get("log", []))
+        self._fill_log_table()
+
+    def _fill_log_table(self) -> None:
+        self.log_table.setRowCount(len(self._current_log))
+        for row, entry in enumerate(self._current_log):
+            date = str(entry.get("date", ""))[:10]  # YYYY-MM-DD from the ISO stamp
+            self.log_table.setItem(row, 0, QTableWidgetItem(date))
+            self.log_table.setItem(row, 1, QTableWidgetItem(entry.get("kind", "")))
+            self.log_table.setItem(row, 2, QTableWidgetItem(entry.get("note", "")))
+        self.log_table.resizeColumnsToContents()
+        self.log_table.horizontalHeader().setStretchLastSection(True)
 
     def _form_to_car(self) -> dict:
         car = garage.new_car()
@@ -509,6 +607,7 @@ class GarageTab(QWidget):
                 "servo": self.servo.text().strip(),
                 "tires": self.tires.text().strip(),
                 "notes": self.notes.toPlainText(),
+                "log": self._current_log,
             }
         )
         car["gearing"].update(
@@ -564,6 +663,49 @@ class GarageTab(QWidget):
     def _on_open_calc(self) -> None:
         if self._on_open_in_calc:
             self._on_open_in_calc(self._form_to_car())
+
+    def _on_export(self) -> None:
+        car = self._form_to_car()
+        text = garage.format_spec_sheet(car)
+        suggested = f"{car['name'] or 'car'}.txt"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export spec sheet", suggested, "Text files (*.txt);;All files (*)"
+        )
+        if not path:
+            return
+        try:
+            Path(path).write_text(text, encoding="utf-8")
+        except OSError as e:  # unwritable path etc. must reach the user, not a traceback
+            QMessageBox.warning(self, "Export failed", str(e))
+            return
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage(f"Exported {car['name']}", 5000)
+
+    def _on_copy(self) -> None:
+        QApplication.clipboard().setText(garage.format_spec_sheet(self._form_to_car()))
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage("Copied spec sheet to clipboard", 5000)
+
+    def _on_add_log(self) -> None:
+        note = self.log_note.text().strip()
+        if not note:
+            return
+        self._current_log.append(
+            garage.new_log_entry(self.log_kind.currentText(), note)
+        )
+        self.log_note.clear()
+        self._on_save()  # persist the entry (and the rest of the form) right away
+        self._fill_log_table()  # _on_save reselects with signals blocked, so refresh here
+
+    def _on_remove_log(self) -> None:
+        row = self.log_table.currentRow()
+        if not 0 <= row < len(self._current_log):
+            return
+        del self._current_log[row]
+        self._on_save()
+        self._fill_log_table()
 
 
 _LEVEL_NAMES = {
@@ -715,10 +857,12 @@ class LogTab(QWidget):
     def _check_updates(self) -> None:
         self.check_btn.setEnabled(False)
         updater.log.info("manual update check requested from the Log tab")
+        win = self.window()  # grab on the GUI thread; the worker only emits its signal
 
         def work():
             try:
-                updater.fetch_update(force=True)
+                if updater.fetch_update(force=True) and hasattr(win, "update_ready"):
+                    win.update_ready.emit(updater.staged_version() or "")
             finally:
                 self._check_done.emit()  # re-enable the button on the GUI thread
 
@@ -739,11 +883,20 @@ class LogTab(QWidget):
 
 
 class MainWindow(QMainWindow):
+    # Emitted (with the ready version tag) when a background check has staged an
+    # update. Carried across threads by Qt's queued connection, so the check can
+    # run off the GUI thread and still light up the banner safely.
+    update_ready = Signal(str)
+
     def __init__(self):
         super().__init__()
         self.setWindowTitle(f"RC Central v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(760, 500)
+
+        # An update is only swapped in on quit once the user has explicitly asked
+        # for it via the banner; dismissing leaves the download unused.
+        self.update_consented = False
 
         self.tabs = QTabWidget()
         self.gear_tab = GearTab()
@@ -765,12 +918,62 @@ class MainWindow(QMainWindow):
         ]
         for widget, label in tabs:
             self.tabs.addTab(widget, label)
+
         self.setCentralWidget(self.tabs)
+
+        # A dismissable "update ready" bar above the tabs, hidden until a check
+        # reports one is staged. A native top QToolBar keeps QMainWindow ownership
+        # of the banner (a hand-rolled central-widget wrapper trips PySide6's
+        # teardown), and its widgets are added directly — no nested container.
+        self._build_update_banner()
+
+        self.update_ready.connect(self._show_update_banner)
 
         # back-compat: existing tests (and any external callers) reach the table
         # here — present only when the Tools tab is.
         if self.tools_tab is not None:
             self.table = self.tools_tab.table
+
+    def _build_update_banner(self) -> None:
+        banner = QToolBar("Update")
+        banner.setMovable(False)
+        banner.setFloatable(False)
+        banner.setStyleSheet(
+            "QToolBar { background: #1f6feb; border: none; padding: 4px 8px; spacing: 8px; }"
+            "QToolBar QLabel { color: white; }"
+        )
+        self.update_label = QLabel()
+        spacer = QWidget()
+        spacer.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred
+        )
+        restart_btn = QPushButton("Restart && update")
+        restart_btn.clicked.connect(self._restart_to_update)
+        dismiss_btn = QPushButton("Dismiss")
+        dismiss_btn.clicked.connect(self._dismiss_update)
+        banner.addWidget(self.update_label)
+        banner.addWidget(spacer)
+        banner.addWidget(restart_btn)
+        banner.addWidget(dismiss_btn)
+        self.addToolBar(Qt.ToolBarArea.TopToolBarArea, banner)
+        banner.hide()
+        self.update_banner = banner
+
+    def _show_update_banner(self, version: str) -> None:
+        pretty = version or "A new version"
+        self.update_label.setText(f"{pretty} is ready to install.")
+        self.update_banner.show()
+
+    def _dismiss_update(self) -> None:
+        # Consent stays False, so nothing is swapped in on quit; the next launch
+        # re-checks and can offer it again.
+        self.update_banner.hide()
+
+    def _restart_to_update(self) -> None:
+        self.update_consented = True
+        # End the event loop; main() then applies the update and relaunches. quit()
+        # (rather than close()) leaves the window object intact for main() to read.
+        QApplication.quit()
 
     def _open_in_calc(self, car: dict) -> None:
         self.gear_tab.load_from_car(car)
@@ -784,9 +987,22 @@ def main() -> None:
     updater.cleanup()
     win = MainWindow()
     win.show()
-    threading.Thread(target=updater.fetch_update, daemon=True).start()
+
+    def check_for_update():
+        if updater.fetch_update():
+            win.update_ready.emit(updater.staged_version() or "")
+
+    threading.Thread(target=check_for_update, daemon=True).start()
     code = app.exec()
-    updater.apply_pending()  # swap in a downloaded hub update on the way out
+    # Only swap the binary in when the user asked for it from the banner, then
+    # relaunch into the new version so "Restart & update" actually restarts.
+    if win.update_consented:
+        updater.apply_pending()
+        if getattr(sys, "frozen", False):
+            try:
+                subprocess.Popen([sys.executable])
+            except OSError:
+                updater.log.exception("could not relaunch after applying the update")
     sys.exit(code)
 
 
