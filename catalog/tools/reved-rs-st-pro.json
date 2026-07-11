@@ -17,6 +17,10 @@
         "portable": true,
         "needs_admin": false
     },
+    "version_check": {
+        "url": "https://teamreved.com/product/rs-pgca",
+        "pattern": "RS-ST servo program [Vv](\\d+\\.\\d+\\.\\d+)"
+    },
     "drivers": [],
     "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so expect this URL to rot on the next release.",
     "source_verified": "2026-07-10"

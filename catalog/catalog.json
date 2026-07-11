@@ -27,6 +27,10 @@
       "portable": false,
       "needs_admin": true
     },
+    "version_check": {
+      "url": "https://www.hobbywing.com/en/service/application?id=1",
+      "pattern": "USB[ _]Link[ _]V(\\d+\\.\\d+\\.\\d+)"
+    },
     "drivers": [],
     "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release.",
     "source_verified": "2026-07-10"
@@ -51,6 +55,10 @@
       "exe_relative_path": "RS-ST servo program V2.0.2.exe",
       "portable": true,
       "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://teamreved.com/product/rs-pgca",
+      "pattern": "RS-ST servo program [Vv](\\d+\\.\\d+\\.\\d+)"
     },
     "drivers": [],
     "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so expect this URL to rot on the next release.",
