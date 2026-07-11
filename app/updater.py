@@ -74,16 +74,48 @@ def fetch_update(force: bool = False) -> bool:
             return False
 
         url = exe_asset["browser_download_url"]
-        log.info("downloading update asset %r from %s", exe_asset["name"], url)
+        expected_size = exe_asset.get("size")
+        log.info(
+            "downloading update asset %r (%s bytes) from %s",
+            exe_asset["name"],
+            expected_size,
+            url,
+        )
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         tmp = PENDING.with_suffix(".part")
+        written = 0
         with requests.get(url, stream=True, timeout=30) as dl:
             dl.raise_for_status()
             with open(tmp, "wb") as f:
                 for chunk in dl.iter_content(chunk_size=65536):
                     f.write(chunk)
+                    written += len(chunk)
+
+        # Never stage a truncated or non-exe payload. The background download can
+        # be cut short when the window closes, and a bad swap on exit bricks the
+        # app — which then can't self-update again. Verify before promoting to
+        # PENDING: the release API gives the exact size, and every Windows exe
+        # starts with the "MZ" magic.
+        if expected_size and written != expected_size:
+            log.warning(
+                "update download is incomplete (%d of %d bytes); discarding",
+                written,
+                expected_size,
+            )
+            tmp.unlink(missing_ok=True)
+            return False
+        with open(tmp, "rb") as f:
+            magic = f.read(2)
+        if magic != b"MZ":
+            log.warning(
+                "update download is not a Windows executable (magic=%r); discarding",
+                magic,
+            )
+            tmp.unlink(missing_ok=True)
+            return False
+
         tmp.replace(PENDING)
-        log.info("update downloaded to %s (pending swap on exit)", PENDING)
+        log.info("update downloaded and verified (%d bytes) to %s", written, PENDING)
         return True
     except requests.RequestException as e:
         # network down, HTTP error, or non-JSON body: expected, log without a trace
@@ -95,18 +127,43 @@ def fetch_update(force: bool = False) -> bool:
 
 
 def apply_pending() -> None:
-    """Swap the downloaded update into place. Call after the event loop exits."""
+    """Swap the downloaded update into place. Call after the event loop exits.
+
+    Crash-safe: the running exe is moved aside first (Windows allows renaming a
+    running exe, not deleting it), and if putting the new one in place fails the
+    original is restored — the app must never be left without a launchable exe.
+    """
     if not (getattr(sys, "frozen", False) and PENDING.exists()):
         return
     exe = Path(sys.executable)
     old = exe.with_suffix(".old.exe")
     try:
         old.unlink(missing_ok=True)
-        exe.rename(old)  # Windows allows renaming a running exe, not deleting it
+    except OSError:
+        log.warning("could not clear stale %s before swap", old.name, exc_info=True)
+
+    try:
+        exe.rename(old)
+    except OSError:
+        log.exception("could not move the running exe aside; update not applied")
+        return
+
+    try:
         shutil.move(str(PENDING), str(exe))
         log.info("applied pending update: swapped in %s", PENDING.name)
     except OSError:
-        log.exception("failed to apply pending update from %s", PENDING)
+        log.exception("could not move the update into place; rolling back")
+        try:
+            if exe.exists():
+                exe.unlink()  # drop any partial copy a cross-volume move left
+            old.rename(exe)  # restore the previous exe so the app still launches
+            log.info("rolled back to the previous exe after a failed update")
+        except OSError:
+            log.exception(
+                "rollback failed; the previous exe is at %s and the update at %s",
+                old,
+                PENDING,
+            )
 
 
 def cleanup() -> None:
