@@ -14,6 +14,10 @@ manifests pointing at each vendor's **official** download URL. The app downloads
 straight from the vendor, unzips to `%LOCALAPPDATA%\RCCentral\tools\`, and
 launches the tool — the same model as Ninite and Scoop.
 
+Already have a tool downloaded? Use the action button's dropdown →
+**Locate existing install…**, point it at the exe, and enter the version — RC
+Central tracks and launches your copy without re-downloading it.
+
 ## Run from source
 
 ```

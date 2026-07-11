@@ -3,15 +3,18 @@
 import sys
 import threading
 
-from PySide6.QtCore import QObject, Signal
+from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
+    QFileDialog,
+    QInputDialog,
     QMainWindow,
+    QMenu,
     QMessageBox,
     QProgressBar,
-    QPushButton,
     QTableWidget,
     QTableWidgetItem,
+    QToolButton,
 )
 
 from app import __version__, catalog, installer, launcher, updater
@@ -51,8 +54,16 @@ class MainWindow(QMainWindow):
             self.table.setItem(row, 0, name)
             self.table.setItem(row, 1, QTableWidgetItem(tool["vendor"]))
             self.table.setItem(row, 2, QTableWidgetItem(tool["version"]))
-            button = QPushButton()
+            button = QToolButton()
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             button.clicked.connect(lambda _=False, r=row: self._on_action(r))
+            menu = QMenu(button)
+            menu.addAction(
+                "Locate existing install…",
+                lambda _=False, r=row: self._locate_existing(r),
+            )
+            button.setMenu(menu)
             self.table.setCellWidget(row, 4, button)
             self._refresh_row(row)
         self.table.resizeColumnsToContents()
@@ -86,6 +97,32 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Launched {tool['name']}", 5000)
         else:
             self._install(row, tool)
+
+    def _locate_existing(self, row: int) -> None:
+        tool = self.tools[row]
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            f"Locate {tool['name']} executable",
+            "",
+            "Programs (*.exe);;All files (*)",
+        )
+        if not path:
+            return
+        version, ok = QInputDialog.getText(
+            self,
+            "Installed version",
+            f"Which version of {tool['name']} is this?",
+            text=tool["version"],
+        )
+        if not ok:
+            return
+        try:
+            installer.register_existing(tool, path, version.strip() or tool["version"])
+        except Exception as e:  # bad path etc. must reach the user, not a traceback
+            QMessageBox.warning(self, "Couldn't add existing install", str(e))
+            return
+        self._refresh_row(row)
+        self.statusBar().showMessage(f"Linked existing {tool['name']}", 5000)
 
     def _install(self, row: int, tool: dict) -> None:
         self.table.cellWidget(row, 4).setEnabled(False)

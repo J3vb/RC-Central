@@ -57,6 +57,22 @@ def test_install_and_state(sandbox):
     assert state["exe_path"] == str(exe)
 
 
+def test_register_existing(sandbox, tmp_path):
+    exe = tmp_path / "AlreadyHere.exe"
+    exe.write_bytes(b"MZ")
+    returned = installer.register_existing(_tool(), str(exe), "9.9")
+    assert returned == exe
+    state = installer.get_state("fake-tool")
+    assert state["version"] == "9.9"
+    assert state["exe_path"] == str(exe)
+    assert state["source"] == "existing"
+
+
+def test_register_existing_missing_file(sandbox, tmp_path):
+    with pytest.raises(installer.ExeNotFound):
+        installer.register_existing(_tool(), str(tmp_path / "nope.exe"), "1.0")
+
+
 def test_install_scans_when_relative_path_missing(sandbox):
     tool = _tool()
     tool["install"]["exe_relative_path"] = "RenamedInNewVersion.exe"
@@ -151,8 +167,13 @@ def test_ui_smoke(monkeypatch):
     from app import catalog
     from app import main as app_main
 
+    from PySide6.QtWidgets import QToolButton
+
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     _ = QApplication.instance() or QApplication([])
     win = app_main.MainWindow()
     assert win.table.rowCount() == 1
-    assert win.table.cellWidget(0, 4).text() == "Install"
+    button = win.table.cellWidget(0, 4)
+    assert isinstance(button, QToolButton)
+    assert button.text() == "Install"
+    assert [a.text() for a in button.menu().actions()] == ["Locate existing install…"]
