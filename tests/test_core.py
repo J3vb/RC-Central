@@ -221,6 +221,39 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     assert win.gear_tab.pinion.value() == 30
 
 
+def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    win = app_main.MainWindow()
+
+    # hidden until a check reports a staged update (isHidden reflects the local
+    # flag; isVisible would need the top-level window shown, which offscreen isn't)
+    assert win.update_banner.isHidden()
+    assert win.update_consented is False
+
+    # the signal (as a background check would emit it) reveals a named banner
+    win.update_ready.emit("v9.9.9")
+    assert not win.update_banner.isHidden()
+    assert "v9.9.9" in win.update_label.text()
+
+    # dismissing hides it and does NOT consent to swapping the binary on quit
+    win._dismiss_update()
+    assert win.update_banner.isHidden()
+    assert win.update_consented is False
+
+    # "Restart & update" is the only path that consents to applying the update
+    win.update_ready.emit("v9.9.9")
+    win._restart_to_update()
+    assert win.update_consented is True
+
+
 def test_log_tab_preload_stream_and_filter(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     import logging
