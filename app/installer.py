@@ -63,6 +63,30 @@ def install(tool: dict, progress=None) -> Path:
     return exe
 
 
+def register_existing(tool: dict, exe_path: str, version: str) -> Path:
+    """Record a user-provided existing install, skipping the download.
+
+    The exe stays wherever the user has it; we only write the state file so
+    get_state()/launcher treat it like any other install.
+    """
+    exe = Path(exe_path)
+    if not exe.is_file():
+        raise ExeNotFound(f"{exe_path} is not a file")
+    TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    _state_file(tool["id"]).write_text(
+        json.dumps(
+            {
+                "version": version,
+                "exe_path": str(exe),
+                "installed_at": datetime.now(timezone.utc).isoformat(),
+                "source": "existing",  # distinguishes a located install from a download
+            }
+        ),
+        encoding="utf-8",
+    )
+    return exe
+
+
 def get_state(tool_id: str) -> dict | None:
     """Installed state for a tool, or None if not installed (or its exe vanished)."""
     f = _state_file(tool_id)
