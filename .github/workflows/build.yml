@@ -10,18 +10,41 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            artifact: RCCentral-windows-x64.exe
+            out: dist/RCCentral.exe
+          - runner: windows-11-arm
+            artifact: RCCentral-windows-arm64.exe
+            out: dist/RCCentral.exe
+          - runner: ubuntu-latest
+            artifact: RCCentral-linux-x64
+            out: dist/RCCentral
+    defaults:
+      run:
+        shell: bash # Git Bash on Windows, so mv/pytest run the same everywhere
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - run: uv sync
-      - run: uv run pytest
-      - run: uv run pyinstaller --onefile --windowed --name RCCentral --paths . --icon app/assets/icon.ico --add-data "catalog;catalog" --add-data "app/assets;app/assets" app/main.py
+      # PySide6 links libEGL even under the offscreen QPA plugin the tests use,
+      # and headless Ubuntu runners don't ship it.
+      - if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
+      - env:
+          QT_QPA_PLATFORM: offscreen
+        run: uv run pytest
+      - run: uv run pyinstaller RCCentral.spec
+      - run: mv "${{ matrix.out }}" "${{ matrix.artifact }}"
       - uses: actions/upload-artifact@v4
         with:
-          name: RCCentral
-          path: dist/RCCentral.exe
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/')
         with:
-          files: dist/RCCentral.exe
+          files: ${{ matrix.artifact }}

@@ -7,17 +7,13 @@ buffer the tab preloads from.
 """
 
 import logging
-import os
-import tempfile
 from collections import deque
 from logging.handlers import RotatingFileHandler
-from pathlib import Path
 
 from app import __version__
+from app.paths import data_dir
 
-LOG_DIR = (
-    Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "RCCentral" / "logs"
-)
+LOG_DIR = data_dir() / "logs"
 LOG_FILE = LOG_DIR / "rc-central.log"
 
 # time · level · logger · message — the Log tab parses the level field back out

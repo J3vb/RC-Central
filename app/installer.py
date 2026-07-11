@@ -2,7 +2,6 @@
 
 import hashlib
 import json
-import os
 import shutil
 import subprocess
 import tempfile
@@ -11,7 +10,9 @@ from pathlib import Path
 
 import requests
 
-DATA_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "RCCentral"
+from app.paths import data_dir
+
+DATA_DIR = data_dir()
 TOOLS_DIR = DATA_DIR / "tools"
 
 # exe names that are never the tool itself

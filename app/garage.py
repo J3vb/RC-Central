@@ -1,17 +1,17 @@
 """Create/read/update/delete RC car spec sheets as per-car JSON files. No Qt.
 
-Mirrors app/installer.py: a per-user DATA_DIR under %LOCALAPPDATA%, one JSON
-file per record, module-level path constants that tests monkeypatch.
+Mirrors app/installer.py: a per-user DATA_DIR (see app/paths.py), one JSON file
+per record, module-level path constants that tests monkeypatch.
 """
 
 import json
-import os
-import tempfile
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-DATA_DIR = Path(os.environ.get("LOCALAPPDATA", tempfile.gettempdir())) / "RCCentral"
+from app.paths import data_dir
+
+DATA_DIR = data_dir()
 GARAGE_DIR = DATA_DIR / "garage"
 
 
