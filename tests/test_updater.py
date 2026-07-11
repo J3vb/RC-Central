@@ -1,9 +1,15 @@
 import logging
+import sys
 
 import pytest
 import requests
 
 from app import updater
+
+# The release asset name and executable magic the updater expects on THIS
+# platform (PE "MZ" on Windows, ELF "\x7fELF" on Linux). Deriving the fixtures
+# from these keeps the tests meaningful on whichever OS CI runs them.
+ASSET_NAME, MAGIC = updater._platform_asset()
 
 
 class FakeResp:
@@ -48,7 +54,7 @@ def _patch_requests(monkeypatch, api_resp, download_resp=None):
 def sandbox(monkeypatch, tmp_path):
     """Redirect the pending-update paths into tmp so nothing touches real dirs."""
     monkeypatch.setattr(updater, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(updater, "PENDING", tmp_path / "update-pending.exe")
+    monkeypatch.setattr(updater, "PENDING", tmp_path / updater.PENDING.name)
     return tmp_path
 
 
@@ -68,19 +74,19 @@ def test_no_newer_version(sandbox, monkeypatch, caplog):
 
     assert result is False
     assert "no newer version available" in caplog.text
-    assert not (sandbox / "update-pending.exe").exists()
+    assert not updater.PENDING.exists()
 
 
-def test_newer_with_exe_asset(sandbox, monkeypatch, caplog):
-    payload = b"MZ" + b"fake exe body"
+def test_newer_with_matching_asset(sandbox, monkeypatch, caplog):
+    payload = MAGIC + b"fake exe body"
     api = FakeResp(
         json_data={
             "tag_name": "v99.0.0",
             "assets": [
                 {"name": "notes.txt", "browser_download_url": "https://x/notes.txt"},
                 {
-                    "name": "RCCentral.exe",
-                    "browser_download_url": "https://x/RCCentral.exe",
+                    "name": ASSET_NAME,
+                    "browser_download_url": f"https://x/{ASSET_NAME}",
                     "size": len(payload),
                 },
             ],
@@ -93,20 +99,19 @@ def test_newer_with_exe_asset(sandbox, monkeypatch, caplog):
         result = updater.fetch_update(force=True)
 
     assert result is True
-    pending = sandbox / "update-pending.exe"
-    assert pending.exists() and pending.read_bytes() == payload
+    assert updater.PENDING.exists() and updater.PENDING.read_bytes() == payload
     assert "newer version available" in caplog.text
     assert "downloaded and verified" in caplog.text
 
 
-def _exe_asset_release(payload, *, size):
+def _matching_asset_release(*, size):
     return FakeResp(
         json_data={
             "tag_name": "v99.0.0",
             "assets": [
                 {
-                    "name": "RCCentral.exe",
-                    "browser_download_url": "https://x/RCCentral.exe",
+                    "name": ASSET_NAME,
+                    "browser_download_url": f"https://x/{ASSET_NAME}",
                     "size": size,
                 }
             ],
@@ -116,8 +121,8 @@ def _exe_asset_release(payload, *, size):
 
 def test_download_incomplete_is_discarded(sandbox, monkeypatch, caplog):
     # A truncated download (fewer bytes than the API's declared size) must not stage.
-    payload = b"MZ" + b"short"
-    api = _exe_asset_release(payload, size=len(payload) + 1000)
+    payload = MAGIC + b"short"
+    api = _matching_asset_release(size=len(payload) + 1000)
     _patch_requests(monkeypatch, api, FakeResp(content=payload))
 
     with caplog.at_level(logging.INFO, logger="app.updater"):
@@ -125,27 +130,27 @@ def test_download_incomplete_is_discarded(sandbox, monkeypatch, caplog):
 
     assert result is False
     assert "incomplete" in caplog.text
-    assert not (sandbox / "update-pending.exe").exists()
+    assert not updater.PENDING.exists()
 
 
-def test_download_not_an_exe_is_discarded(sandbox, monkeypatch, caplog):
-    # A 200 that is actually an HTML/error body (no "MZ" magic) must not stage.
+def test_download_wrong_magic_is_discarded(sandbox, monkeypatch, caplog):
+    # A 200 that is actually an HTML/error body (wrong magic) must not stage.
     payload = b"<html>not found</html>"
-    api = _exe_asset_release(payload, size=len(payload))
+    api = _matching_asset_release(size=len(payload))
     _patch_requests(monkeypatch, api, FakeResp(content=payload))
 
     with caplog.at_level(logging.INFO, logger="app.updater"):
         result = updater.fetch_update(force=True)
 
     assert result is False
-    assert "not a Windows executable" in caplog.text
-    assert not (sandbox / "update-pending.exe").exists()
+    assert "not a valid executable" in caplog.text
+    assert not updater.PENDING.exists()
 
 
 def _frozen_exe(monkeypatch, tmp_path, pending_bytes):
-    exe = tmp_path / "RCCentral.exe"
-    exe.write_bytes(b"MZ-old-running-exe")
-    pending = tmp_path / "update-pending.exe"
+    exe = tmp_path / ("RCCentral.exe" if sys.platform == "win32" else "RCCentral")
+    exe.write_bytes(b"old-running-binary")
+    pending = tmp_path / updater.PENDING.name
     pending.write_bytes(pending_bytes)
     monkeypatch.setattr(updater.sys, "frozen", True, raising=False)
     monkeypatch.setattr(updater.sys, "executable", str(exe))
@@ -154,17 +159,17 @@ def _frozen_exe(monkeypatch, tmp_path, pending_bytes):
 
 
 def test_apply_pending_swaps_in_update(monkeypatch, tmp_path):
-    exe, pending = _frozen_exe(monkeypatch, tmp_path, b"MZ-new-version")
+    exe, pending = _frozen_exe(monkeypatch, tmp_path, b"new-version")
 
     updater.apply_pending()
 
-    assert exe.read_bytes() == b"MZ-new-version"
-    assert (tmp_path / "RCCentral.old.exe").read_bytes() == b"MZ-old-running-exe"
+    assert exe.read_bytes() == b"new-version"
+    assert updater._sidelined(exe).read_bytes() == b"old-running-binary"
     assert not pending.exists()
 
 
 def test_apply_pending_rolls_back_on_failed_swap(monkeypatch, tmp_path, caplog):
-    exe, _pending = _frozen_exe(monkeypatch, tmp_path, b"MZ-new-version")
+    exe, _pending = _frozen_exe(monkeypatch, tmp_path, b"new-version")
 
     def boom(src, dst):
         raise OSError("locked by antivirus")
@@ -174,12 +179,12 @@ def test_apply_pending_rolls_back_on_failed_swap(monkeypatch, tmp_path, caplog):
     with caplog.at_level(logging.INFO, logger="app.updater"):
         updater.apply_pending()
 
-    # the original exe must be restored so the app still launches
-    assert exe.exists() and exe.read_bytes() == b"MZ-old-running-exe"
+    # the original binary must be restored so the app still launches
+    assert exe.exists() and exe.read_bytes() == b"old-running-binary"
     assert "rolled back" in caplog.text
 
 
-def test_newer_without_exe_asset(sandbox, monkeypatch, caplog):
+def test_newer_without_matching_asset(sandbox, monkeypatch, caplog):
     api = FakeResp(
         json_data={
             "tag_name": "v99.0.0",
@@ -192,8 +197,8 @@ def test_newer_without_exe_asset(sandbox, monkeypatch, caplog):
         result = updater.fetch_update(force=True)
 
     assert result is False
-    assert "no .exe asset" in caplog.text
-    assert not (sandbox / "update-pending.exe").exists()
+    assert "no asset named" in caplog.text
+    assert not updater.PENDING.exists()
 
 
 def test_network_error(sandbox, monkeypatch, caplog):

@@ -11,12 +11,22 @@ servo software (needs the RS-PGCB/RS-PGCA USB programmer).
 
 RC Central never re-hosts vendor software. The catalog is a set of JSON
 manifests pointing at each vendor's **official** download URL. The app downloads
-straight from the vendor, unzips to `%LOCALAPPDATA%\RCCentral\tools\`, and
-launches the tool — the same model as Ninite and Scoop.
+straight from the vendor, unzips to the per-user data directory
+(`%LOCALAPPDATA%\RCCentral\tools\` on Windows, `~/.local/share/RCCentral/tools/`
+on Linux), and launches the tool — the same model as Ninite and Scoop.
 
 Already have a tool downloaded? Use the action button's dropdown →
 **Locate existing install…**, point it at the exe, and enter the version — RC
 Central tracks and launches your copy without re-downloading it.
+
+## Supported platforms
+
+Prebuilt binaries are released for **Windows x64**, **Windows ARM64**, and
+**Linux x64**. The Gear Calculator and Garage are fully cross-platform; the
+**Tools** tab (which installs and launches vendor programmer software) is
+Windows-only, since that software ships as Windows executables — on Windows on
+ARM they run under the OS's x86/x64 emulation. On Linux the Tools tab is hidden
+and RC Central is the gearing calculator and garage.
 
 ## Run from source
 

@@ -746,21 +746,31 @@ class MainWindow(QMainWindow):
         self.resize(760, 500)
 
         self.tabs = QTabWidget()
-        self.tools_tab = ToolsTab()
         self.gear_tab = GearTab()
         self.garage_tab = GarageTab(on_open_in_calc=self._open_in_calc)
         self.log_tab = LogTab()
-        for widget, label in (
-            (self.tools_tab, "Tools"),
+
+        tabs: list[tuple[QWidget, str]] = []
+        # The Tools tab installs and launches Windows-only vendor programmers, so
+        # it exists only on Windows (x64 and ARM, where the x86/x64 exes run under
+        # OS emulation). Elsewhere the app is the cross-platform gearing + garage.
+        self.tools_tab: ToolsTab | None = None
+        if sys.platform == "win32":
+            self.tools_tab = ToolsTab()
+            tabs.append((self.tools_tab, "Tools"))
+        tabs += [
             (self.gear_tab, "Gear Calculator"),
             (self.garage_tab, "Garage"),
             (self.log_tab, "Log"),
-        ):
+        ]
+        for widget, label in tabs:
             self.tabs.addTab(widget, label)
         self.setCentralWidget(self.tabs)
 
-        # back-compat: existing tests (and any external callers) reach the table here
-        self.table = self.tools_tab.table
+        # back-compat: existing tests (and any external callers) reach the table
+        # here — present only when the Tools tab is.
+        if self.tools_tab is not None:
+            self.table = self.tools_tab.table
 
     def _open_in_calc(self, car: dict) -> None:
         self.gear_tab.load_from_car(car)

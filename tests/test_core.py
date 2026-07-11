@@ -1,4 +1,5 @@
 import json
+import sys
 import zipfile
 from pathlib import Path
 
@@ -8,6 +9,10 @@ import pytest
 from app import installer
 
 ROOT = Path(__file__).resolve().parents[1]
+
+WINDOWS_ONLY = pytest.mark.skipif(
+    sys.platform != "win32", reason="Tools tab and its launcher are Windows-only"
+)
 
 
 def _tool(**overrides):
@@ -107,6 +112,7 @@ def test_install_runs_setup_when_configured(sandbox, monkeypatch):
     assert ran["cmd"][-1] == f"/DIR={dest}"  # {dest} placeholder substituted
 
 
+@WINDOWS_ONLY
 def test_launch_needs_admin_uses_shellexecute(monkeypatch):
     from app import launcher
 
@@ -160,6 +166,7 @@ def test_find_exe_ambiguous_raises(tmp_path):
         installer._find_exe(tmp_path, None)
 
 
+@WINDOWS_ONLY
 def test_ui_smoke(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -191,15 +198,16 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     _ = QApplication.instance() or QApplication([])
     win = app_main.MainWindow()
 
-    assert win.tabs.count() == 4
-    assert [win.tabs.tabText(i) for i in range(4)] == [
-        "Tools",
-        "Gear Calculator",
-        "Garage",
-        "Log",
-    ]
-    assert win.tools_tab.table.rowCount() == 1  # existing table still wired
-    assert win.table is win.tools_tab.table  # back-compat alias holds
+    # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
+    tools = ["Tools"] if sys.platform == "win32" else []
+    expected = tools + ["Gear Calculator", "Garage", "Log"]
+    assert win.tabs.count() == len(expected)
+    assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == expected
+    if sys.platform == "win32":
+        assert win.tools_tab.table.rowCount() == 1  # existing table still wired
+        assert win.table is win.tools_tab.table  # back-compat alias holds
+    else:
+        assert win.tools_tab is None
 
     win.gear_tab._recompute()
     assert win.gear_tab.fdr_out.text() not in ("", "—")

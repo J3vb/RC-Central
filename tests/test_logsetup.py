@@ -69,7 +69,7 @@ def test_init_survives_unwritable_dir(fresh, monkeypatch):
     def boom(*args, **kwargs):
         raise OSError("read-only file system")
 
-    monkeypatch.setattr(logsetup.Path, "mkdir", boom)
+    monkeypatch.setattr(type(logsetup.LOG_DIR), "mkdir", boom)
 
     logsetup.init()  # must not raise
     logging.getLogger("app.test").info("still logging without a file")

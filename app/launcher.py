@@ -1,6 +1,12 @@
-"""Spawn and track vendor tool processes."""
+"""Spawn and track vendor tool processes.
+
+The catalog tools are Windows-only vendor executables, so the Tools tab that
+calls this only exists on Windows (see app/main.py). ``launch`` guards on that
+so the Windows-only ``os.startfile`` path is never reached elsewhere.
+"""
 
 import os
+import sys
 from pathlib import Path
 
 from PySide6.QtCore import QProcess
@@ -10,6 +16,8 @@ _procs: dict[str, QProcess] = {}
 
 def launch(tool_id: str, exe_path: str, needs_admin: bool = False) -> None:
     """Start a tool (no-op if already running). Raises OSError if the user declines UAC."""
+    if sys.platform != "win32":
+        raise OSError("Launching catalog tools is only supported on Windows.")
     if is_running(tool_id):
         return
     exe = Path(exe_path)

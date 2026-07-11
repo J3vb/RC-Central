@@ -2,5 +2,7 @@
 __pycache__/
 dist/
 build/
+# PyInstaller-generated specs are throwaway; RCCentral.spec is hand-written and tracked.
 *.spec
+!RCCentral.spec
 .pytest_cache/

@@ -1,15 +1,16 @@
 """Load the tool catalog: remote JSON with a local cache, bundled fallback."""
 
 import json
-import os
 import sys
 from pathlib import Path
 
 import requests
 
+from app.paths import data_dir
+
 CATALOG_URL = "https://raw.githubusercontent.com/J3vb/RC-Central/main/catalog/catalog.json"
 
-DATA_DIR = Path(os.environ.get("LOCALAPPDATA", ".")) / "RCCentral"
+DATA_DIR = data_dir()
 CACHE_FILE = DATA_DIR / "catalog.json"
 
 
