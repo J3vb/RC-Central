@@ -34,6 +34,15 @@
                 "needs_admin": {"type": "boolean"}
             }
         },
+        "version_check": {
+            "type": "object",
+            "required": ["url", "pattern"],
+            "additionalProperties": false,
+            "properties": {
+                "url": {"type": "string", "pattern": "^https://"},
+                "pattern": {"type": "string", "minLength": 1}
+            }
+        },
         "drivers": {
             "type": "array",
             "items": {

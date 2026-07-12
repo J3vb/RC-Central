@@ -20,6 +20,7 @@ import requests
 
 from app import __version__
 from app.installer import DATA_DIR
+from app.versions import is_newer
 
 log = logging.getLogger(__name__)
 
@@ -77,13 +78,7 @@ def _sidelined(exe: Path) -> Path:
 
 
 def _newer(tag: str, current: str) -> bool:
-    try:
-        def parse(v):
-            return tuple(int(x) for x in v.lstrip("vV").split("."))
-
-        return parse(tag) > parse(current)
-    except ValueError:
-        return False
+    return is_newer(tag, current)
 
 
 def fetch_update(force: bool = False) -> bool:

@@ -18,6 +18,31 @@ CATALOG = Path(__file__).resolve().parents[1] / "catalog"
 BUNDLE = CATALOG / "catalog.json"
 
 
+def _check_url(url: str, attempts: int = 3) -> str | None:
+    """Health-check a download URL. Returns a failure message, or None if reachable.
+
+    A definitive answer fails at once: HTTP >=400, or an HTML page where a file is
+    expected (dead vendor links serve a "file not found" page with HTTP 200). A
+    network error is retried instead - vendor sites intermittently time out or
+    throttle CI datacenter IPs, and one transient blip must not be mistaken for
+    link rot. Only a network error that persists across every attempt is reported.
+    """
+    last_exc = None
+    for _ in range(attempts):
+        try:
+            # stream + close: headers only, no multi-MB body. HEAD is useless here:
+            # vendors serve "file not found" HTML pages with HTTP 200.
+            with requests.get(url, stream=True, timeout=60) as resp:
+                if resp.status_code >= 400:
+                    return f"HTTP {resp.status_code}"
+                if "text/html" in resp.headers.get("content-type", ""):
+                    return "served a web page, not a file (link moved?)"
+                return None
+        except requests.RequestException as e:
+            last_exc = e  # transient -> retry; persistent -> reported after the loop
+    return f"{last_exc} (after {attempts} attempts)"
+
+
 def main() -> int:
     check_urls = "--check-urls" in sys.argv[1:]
     schema = json.loads((CATALOG / "schema.json").read_text(encoding="utf-8"))
@@ -38,18 +63,9 @@ def main() -> int:
             failures.append(f"{f.name}: id {tool['id']!r} must match filename")
         if check_urls:
             url = tool["download"]["url"]
-            try:
-                # stream + close: headers only, no multi-MB body. HEAD is useless here:
-                # vendors serve "file not found" HTML pages with HTTP 200.
-                with requests.get(url, stream=True, timeout=60) as resp:
-                    if resp.status_code >= 400:
-                        failures.append(f"{f.name}: {url} -> HTTP {resp.status_code}")
-                    elif "text/html" in resp.headers.get("content-type", ""):
-                        failures.append(
-                            f"{f.name}: {url} -> served a web page, not a file (link moved?)"
-                        )
-            except requests.RequestException as e:
-                failures.append(f"{f.name}: {url} -> {e}")
+            problem = _check_url(url)
+            if problem:
+                failures.append(f"{f.name}: {url} -> {problem}")
         print(f"ok: {f.name}")
     bundle = json.dumps(tools, ensure_ascii=False, indent=2) + "\n"
     if "--write" in sys.argv[1:]:

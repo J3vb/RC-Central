@@ -18,6 +18,10 @@
         "portable": false,
         "needs_admin": true
     },
+    "version_check": {
+        "url": "https://www.hobbywing.com/en/service/application?id=1",
+        "pattern": "USB[ _]Link[ _]V(\\d+\\.\\d+\\.\\d+)"
+    },
     "drivers": [],
     "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release.",
     "source_verified": "2026-07-10"
