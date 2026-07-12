@@ -56,3 +56,33 @@ def test_compute_propagates_value_error():
         gearing.compute(
             pinion=0, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
         )
+
+
+def test_pinion_sweep_span():
+    rows = gearing.pinion_sweep(
+        base_pinion=22, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
+    )
+    assert [r["pinion"] for r in rows] == [19, 20, 21, 22, 23, 24, 25]
+    base = [r for r in rows if r["is_base"]]
+    assert len(base) == 1 and base[0]["pinion"] == 22
+
+
+def test_pinion_sweep_clamps_low_end():
+    rows = gearing.pinion_sweep(
+        base_pinion=2, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
+    )
+    assert [r["pinion"] for r in rows] == [1, 2, 3, 4, 5]
+    assert all(r["pinion"] >= 1 for r in rows)
+
+
+def test_pinion_sweep_base_row_matches_compute():
+    rows = gearing.pinion_sweep(
+        base_pinion=22, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
+    )
+    base = next(r for r in rows if r["is_base"])
+    expected = gearing.compute(
+        pinion=22, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
+    )
+    assert base["fdr"] == expected["fdr"]
+    assert base["rollout_mm"] == expected["rollout_mm"]
+    assert base["top_speed_kmh"] == expected["top_speed_kmh"]

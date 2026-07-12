@@ -101,6 +101,20 @@ def register_existing(tool: dict, exe_path: str, version: str) -> Path:
     return exe
 
 
+def uninstall(tool_id: str) -> None:
+    """Remove a tool's install: deletes downloaded files unless the install was a
+    located existing one (source=="existing"), whose files belong to the user."""
+    state_file = _state_file(tool_id)
+    if not state_file.exists():
+        return
+    state = json.loads(state_file.read_text(encoding="utf-8"))
+    if state.get("source") != "existing":
+        tool_dir = TOOLS_DIR / tool_id
+        if tool_dir.exists():
+            shutil.rmtree(tool_dir)
+    state_file.unlink(missing_ok=True)
+
+
 def get_state(tool_id: str) -> dict | None:
     """Installed state for a tool, or None if not installed (or its exe vanished)."""
     f = _state_file(tool_id)

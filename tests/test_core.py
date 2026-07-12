@@ -44,6 +44,20 @@ def sandbox(tmp_path, monkeypatch):
     return tmp_path
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_qsettings(tmp_path, monkeypatch):
+    """Keep every test's QSettings in its own temp INI, never the machine's real store,
+    so MainWindow's geometry/last-tab restore can't read stale developer/CI state."""
+    import app.main
+    from PySide6.QtCore import QSettings
+
+    monkeypatch.setattr(
+        app.main,
+        "QSettings",
+        lambda *a, **k: QSettings(str(tmp_path / "qsettings.ini"), QSettings.Format.IniFormat),
+    )
+
+
 def test_catalog_entries_match_schema():
     schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
     entries = sorted((ROOT / "catalog" / "tools").glob("*.json"))
@@ -101,6 +115,36 @@ def test_register_existing(sandbox, tmp_path):
 def test_register_existing_missing_file(sandbox, tmp_path):
     with pytest.raises(installer.ExeNotFound):
         installer.register_existing(_tool(), str(tmp_path / "nope.exe"), "1.0")
+
+
+def test_uninstall_removes_downloaded_install(sandbox):
+    installer.install(_tool())
+    assert installer.get_state("fake-tool") is not None
+    assert (installer.TOOLS_DIR / "fake-tool").exists()
+    installer.uninstall("fake-tool")
+    assert installer.get_state("fake-tool") is None
+    assert not (installer.TOOLS_DIR / "fake-tool").exists()
+    assert not installer._state_file("fake-tool").exists()
+
+
+def test_uninstall_keeps_existing_users_files(sandbox, tmp_path):
+    exe = tmp_path / "AlreadyHere.exe"
+    exe.write_bytes(b"MZ")
+    installer.register_existing(_tool(), str(exe), "1.0")
+    # a tool dir sitting alongside a located ("existing") install must be left alone -
+    # this sentinel is what actually distinguishes the existing branch from a download
+    # (without it the assert can't fail even if the source=="existing" guard is deleted).
+    tool_dir = installer.TOOLS_DIR / "fake-tool"
+    tool_dir.mkdir(parents=True, exist_ok=True)
+    (tool_dir / "keep.txt").write_text("x", encoding="utf-8")
+    installer.uninstall("fake-tool")
+    assert exe.exists()  # the user's own file must not be deleted
+    assert (tool_dir / "keep.txt").exists()  # the existing-guard skipped rmtree
+    assert installer.get_state("fake-tool") is None
+
+
+def test_uninstall_missing_is_noop():
+    installer.uninstall("never-installed-xyz")  # must not raise
 
 
 def test_install_scans_when_relative_path_missing(sandbox):
@@ -296,7 +340,11 @@ def test_ui_smoke(monkeypatch):
     button = win.table.cellWidget(0, 4)
     assert isinstance(button, QToolButton)
     assert button.text() == "Install"
-    assert [a.text() for a in button.menu().actions()] == ["Locate existing install…"]
+    assert [a.text() for a in button.menu().actions()] == [
+        "Locate existing install…",
+        "Open install folder",
+        "Uninstall",
+    ]
 
 
 def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
@@ -652,3 +700,243 @@ def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):
     assert tab.log_table.rowCount() == 0
     red = next(c for c in garage.list_cars() if c["name"] == "Red")
     assert red["log"] == []
+
+
+def test_garage_tab_duplicate(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    # a saved car with a log entry, then selected
+    tab.name.setText("Original")
+    tab._on_save()
+    tab.log_note.setText("first run")
+    tab._on_add_log()
+    assert tab.log_table.rowCount() == 1
+
+    tab._on_duplicate()
+
+    cars = garage.list_cars()
+    assert len(cars) == 2  # the clone was saved alongside the original
+    copy = next(c for c in cars if c["name"] == "Original (copy)")
+    assert copy["log"] == []  # a duplicate starts with an empty log
+    assert copy["id"] != next(c for c in cars if c["name"] == "Original")["id"]
+    # the tab now shows the copy, selected
+    assert tab.current_id == copy["id"]
+    assert tab.name.text() == "Original (copy)"
+
+
+def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    # fill a car and export it to JSON (dialog stubbed to a .json path)
+    tab.name.setText("Exported Rig")
+    tab.chassis.setText("Yokomo")
+    tab.pinion.setValue(28)
+    out = tmp_path / "rig.json"
+    monkeypatch.setattr(
+        app_main.QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "JSON (*.json)")
+    )
+    tab._on_export()
+    dumped = json.loads(out.read_text(encoding="utf-8"))  # a valid, re-importable car dict
+    assert dumped["name"] == "Exported Rig" and dumped["gearing"]["pinion"] == 28
+
+    # import it back: a fresh car appears with a new id but the same fields
+    monkeypatch.setattr(
+        app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(out), "Car spec (*.json)")
+    )
+    tab._on_import()
+    cars = garage.list_cars()
+    assert len(cars) == 1  # the export was never saved; only the import persists
+    imported = cars[0]
+    assert imported["name"] == "Exported Rig"
+    assert imported["chassis"] == "Yokomo"
+    assert imported["gearing"]["pinion"] == 28
+    assert imported["id"] != dumped["id"]  # a fresh id, so import can't clobber
+
+
+def test_garage_tab_export_txt_writes_spec_sheet(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    tab.name.setText("Sheet Rig")
+    out = tmp_path / "rig.txt"  # non-.json path -> the readable spec-sheet branch
+    monkeypatch.setattr(
+        app_main.QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "Text files (*.txt)")
+    )
+    tab._on_export()
+    assert out.read_text(encoding="utf-8") == garage.format_spec_sheet(tab._form_to_car())
+
+
+def test_garage_tab_import_bad_json_warns(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    bad = tmp_path / "not-a-car.json"
+    bad.write_text("[1, 2, 3]", encoding="utf-8")  # valid JSON, but not a car object
+    monkeypatch.setattr(
+        app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
+    )
+    warned = {}
+    monkeypatch.setattr(
+        app_main.QMessageBox, "warning", lambda *a, **k: warned.update(shown=True)
+    )
+    tab._on_import()  # must warn, never raise
+    assert warned.get("shown")
+    assert garage.list_cars() == []  # nothing saved from a bad import
+
+
+def test_garage_tab_import_malformed_car_warns(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    # a JSON object (passes the "is a dict" check) but with a junk field type that only
+    # blows up when rendered into the form - must warn, never crash the GUI, never save.
+    bad = tmp_path / "bad-types.json"
+    bad.write_text('{"name": "X", "gearing": {"pinion": "not a number"}}', encoding="utf-8")
+    monkeypatch.setattr(
+        app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
+    )
+    warned = {}
+    monkeypatch.setattr(
+        app_main.QMessageBox, "warning", lambda *a, **k: warned.update(shown=True)
+    )
+    tab._on_import()
+    assert warned.get("shown")
+    assert garage.list_cars() == []  # a car that fails to render is never persisted
+
+
+def test_gear_tab_whatif_table(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage, gearing
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GearTab()
+
+    tab.pinion.setValue(20)  # triggers _recompute; span=3 -> pinions 17..23 = 7 rows
+    assert tab.sweep_table.rowCount() == 7
+
+    # exactly one row (the current pinion) is bold, and it reads "20"
+    bold_rows = [
+        r for r in range(tab.sweep_table.rowCount())
+        if tab.sweep_table.item(r, 0).font().bold()
+    ]
+    assert len(bold_rows) == 1
+    assert tab.sweep_table.item(bold_rows[0], 0).text() == "20"
+
+    # the base row's FDR matches gearing.compute for that pinion
+    expected = gearing.compute(
+        pinion=20, spur=tab.spur.value(), internal_ratio=tab.internal_ratio.value(),
+        tire_diameter_mm=tab.tire.value(), kv=tab.kv.value(),
+        voltage=gearing.pack_voltage(tab.cells.value()),
+    )
+    assert tab.sweep_table.item(bold_rows[0], 1).text() == f"{expected['fdr']:.2f}"
+
+
+def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+
+    # before install, both install-only menu actions are disabled
+    open_action, uninstall_action = tab._install_actions[0]
+    assert not open_action.isEnabled() and not uninstall_action.isEnabled()
+
+    installer.install(_tool())
+    tab._refresh_row(0)
+    assert open_action.isEnabled() and uninstall_action.isEnabled()
+    assert (installer.TOOLS_DIR / "fake-tool").exists()
+
+    # uninstall (confirmation auto-accepted) removes the install and refreshes the row
+    monkeypatch.setattr(
+        app_main.QMessageBox,
+        "question",
+        lambda *a, **k: app_main.QMessageBox.StandardButton.Yes,
+    )
+    tab._uninstall(0)
+    assert installer.get_state("fake-tool") is None
+    assert not (installer.TOOLS_DIR / "fake-tool").exists()
+    assert tab.table.item(0, 3).text() == "Not installed"
+    assert not open_action.isEnabled() and not uninstall_action.isEnabled()
+
+
+def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+
+    # scope QSettings to a temp INI so nothing leaks to the registry across tests
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app_main,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
+    seed = QSettings(str(ini), QSettings.Format.IniFormat)
+    seed.setValue("tab", 99)  # larger than any possible tab count
+    seed.sync()
+
+    _ = QApplication.instance() or QApplication([])
+    win = app_main.MainWindow()
+    assert win.tabs.currentIndex() == win.tabs.count() - 1  # clamped, not 99
+
+    win.close()  # closeEvent persists geometry + tab and must not raise
+    written = QSettings(str(ini), QSettings.Format.IniFormat)
+    assert int(written.value("tab")) == win.tabs.count() - 1

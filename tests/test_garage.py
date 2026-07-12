@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from app import garage
@@ -98,3 +100,42 @@ def test_format_spec_sheet_includes_filled_fields_and_skips_empty():
 def test_format_spec_sheet_handles_unnamed_car():
     car = garage.new_car("")
     assert garage.format_spec_sheet(car).startswith("Unnamed car")
+
+
+def test_clone_car_fresh_id_name_and_empty_log():
+    original = garage.new_car("RWD Street")
+    original["log"].append(garage.new_log_entry("Run", "practice"))
+    clone = garage.clone_car(original)
+    assert clone["id"] != original["id"]
+    assert clone["name"].endswith("(copy)")
+    assert clone["log"] == []
+
+
+def test_clone_car_is_deep_copy():
+    original = garage.new_car("Deep")
+    clone = garage.clone_car(original)
+    clone["gearing"]["pinion"] = 99
+    assert original["gearing"]["pinion"] == 22  # original untouched
+
+
+def test_load_car_file_assigns_fresh_id_and_preserves_fields(tmp_path):
+    car = garage.new_car("Imported")
+    path = tmp_path / "c.json"
+    path.write_text(json.dumps(car), encoding="utf-8")
+    loaded = garage.load_car_file(path)
+    assert loaded["id"] != car["id"]
+    assert loaded["name"] == "Imported"
+
+
+def test_load_car_file_rejects_non_dict(tmp_path):
+    path = tmp_path / "bad.json"
+    path.write_text("[]", encoding="utf-8")
+    with pytest.raises(ValueError):
+        garage.load_car_file(path)
+
+
+def test_load_car_file_rejects_malformed_json(tmp_path):
+    path = tmp_path / "junk.json"
+    path.write_text("{not json", encoding="utf-8")
+    with pytest.raises(ValueError):
+        garage.load_car_file(path)

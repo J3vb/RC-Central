@@ -78,3 +78,34 @@ def compute(
         "top_speed_mph": top_speed_mph(kmh),
         "motor_rpm": motor_rpm(kv, voltage),
     }
+
+
+def pinion_sweep(
+    *,
+    base_pinion: int,
+    spur: int,
+    internal_ratio: float,
+    tire_diameter_mm: float,
+    kv: float,
+    voltage: float,
+    span: int = 3,
+) -> list[dict]:
+    """Compute the gearing picture for pinions around base_pinion.
+
+    Swapping the pinion is the common gearing-drift adjustment: a tooth up
+    trades top speed for punch, a tooth down the reverse. Sweeps
+    base_pinion-span..base_pinion+span (low end clamped at 1), ascending, each
+    row = {"pinion", "is_base", **compute(...)}.
+    """
+    rows = []
+    for p in range(max(1, base_pinion - span), base_pinion + span + 1):
+        result = compute(
+            pinion=p,
+            spur=spur,
+            internal_ratio=internal_ratio,
+            tire_diameter_mm=tire_diameter_mm,
+            kv=kv,
+            voltage=voltage,
+        )
+        rows.append({"pinion": p, "is_base": p == base_pinion, **result})
+    return rows

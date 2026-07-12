@@ -1,5 +1,6 @@
 """RC Central - install and launch RC drift setup tools, plus gearing + garage."""
 
+import json
 import logging
 import subprocess
 import sys
@@ -7,7 +8,7 @@ import threading
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, QSettings, Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFontDatabase, QIcon
 from PySide6.QtWidgets import (
     QApplication,
@@ -135,6 +136,9 @@ class ToolsTab(QWidget):
         layout.addWidget(self.table)
         layout.addWidget(self.progress)
 
+        # Per-row menu actions that only make sense once a tool is installed;
+        # _refresh_row toggles their enabled state from the install state.
+        self._install_actions: dict[int, tuple] = {}
         for row, tool in enumerate(self.tools):
             name = QTableWidgetItem(tool["name"])
             name.setToolTip(tool.get("description", ""))
@@ -151,6 +155,15 @@ class ToolsTab(QWidget):
                     "Locate existing install…",
                     lambda _=False, r=row: self._locate_existing(r),
                 )
+                open_action = menu.addAction(
+                    "Open install folder",
+                    lambda _=False, r=row: self._open_install_folder(r),
+                )
+                uninstall_action = menu.addAction(
+                    "Uninstall",
+                    lambda _=False, r=row: self._uninstall(r),
+                )
+                self._install_actions[row] = (open_action, uninstall_action)
                 button.setMenu(menu)
             self.table.setCellWidget(row, 4, button)
             self.table.setCellWidget(row, 5, _link_button("Website", tool.get("homepage")))
@@ -199,6 +212,8 @@ class ToolsTab(QWidget):
             status, action = f"Installed v{state['version']}", "Launch"
         self.table.setItem(row, 3, QTableWidgetItem(status))
         self.table.cellWidget(row, 4).setText(action)
+        for act in self._install_actions.get(row, ()):
+            act.setEnabled(state is not None)  # uninstall / open-folder need an install
 
     def _on_action(self, row: int) -> None:
         tool = self.tools[row]
@@ -247,6 +262,29 @@ class ToolsTab(QWidget):
             return
         self._refresh_row(row)
         self._status(f"Linked existing {tool['name']}", 5000)
+
+    def _open_install_folder(self, row: int) -> None:
+        state = installer.get_state(self.tools[row]["id"])
+        if state is None:
+            return
+        folder = Path(state["exe_path"]).parent
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _uninstall(self, row: int) -> None:
+        tool = self.tools[row]
+        if installer.get_state(tool["id"]) is None:
+            return
+        if QMessageBox.question(
+            self, "Uninstall", f"Remove {tool['name']} and its downloaded files?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            installer.uninstall(tool["id"])
+        except OSError as e:  # a locked file etc. must reach the user, not a traceback
+            QMessageBox.warning(self, "Uninstall failed", str(e))
+            return
+        self._refresh_row(row)
+        self._status(f"Uninstalled {tool['name']}", 5000)
 
     def _install(self, row: int, tool: dict) -> None:
         self.table.cellWidget(row, 4).setEnabled(False)
@@ -418,9 +456,18 @@ class GearTab(QWidget):
         self.save_btn.clicked.connect(self._save_to_car)
         self.save_btn.setEnabled(False)
 
+        # What-if sweep: the current pinion ±3, so tuners see the effect of a
+        # pinion swap (the common drift adjustment) at a glance. The base row is bold.
+        self.sweep_table = QTableWidget(0, 4)
+        self.sweep_table.setHorizontalHeaderLabels(("Pinion", "FDR", "Rollout (mm)", "km/h"))
+        self.sweep_table.verticalHeader().hide()
+        self.sweep_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.sweep_table.horizontalHeader().setStretchLastSection(True)
+
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addWidget(self.save_btn)
+        layout.addWidget(self.sweep_table)
         layout.addStretch(1)
 
         self._reload_cars()
@@ -486,14 +533,42 @@ class GearTab(QWidget):
     def _recompute(self) -> None:
         try:
             r = self._current()
+            rows = gearing.pinion_sweep(
+                base_pinion=self.pinion.value(),
+                spur=self.spur.value(),
+                internal_ratio=self.internal_ratio.value(),
+                tire_diameter_mm=self.tire.value(),
+                kv=self.kv.value(),
+                voltage=gearing.pack_voltage(self.cells.value()),
+                span=3,
+            )
         except ValueError:
             for lbl in (self.fdr_out, self.rollout_out, self.kmh_out, self.mph_out):
                 lbl.setText("—")
+            self.sweep_table.setRowCount(0)
             return
         self.fdr_out.setText(f"{r['fdr']:.2f}")
         self.rollout_out.setText(f"{r['rollout_mm']:.1f}")
         self.kmh_out.setText(f"{r['top_speed_kmh']:.1f}")
         self.mph_out.setText(f"{r['top_speed_mph']:.1f}")
+        self._fill_sweep(rows)
+
+    def _fill_sweep(self, rows: list[dict]) -> None:
+        self.sweep_table.setRowCount(len(rows))
+        for row, data in enumerate(rows):
+            values = (
+                str(data["pinion"]),
+                f"{data['fdr']:.2f}",
+                f"{data['rollout_mm']:.1f}",
+                f"{data['top_speed_kmh']:.1f}",
+            )
+            for col, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                if data["is_base"]:  # the current pinion, bolded so it stands out
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.sweep_table.setItem(row, col, item)
 
     def _save_to_car(self) -> None:
         car_id = self.car_picker.currentData()
@@ -545,10 +620,16 @@ class GarageTab(QWidget):
         self.list.currentItemChanged.connect(self._on_select)
         new_btn = QPushButton("New")
         new_btn.clicked.connect(self._on_new)
+        import_btn = QPushButton("Import…")
+        import_btn.clicked.connect(self._on_import)
+        dup_btn = QPushButton("Duplicate")
+        dup_btn.clicked.connect(self._on_duplicate)
         del_btn = QPushButton("Delete")
         del_btn.clicked.connect(self._on_delete)
         left_buttons = QHBoxLayout()
         left_buttons.addWidget(new_btn)
+        left_buttons.addWidget(import_btn)
+        left_buttons.addWidget(dup_btn)
         left_buttons.addWidget(del_btn)
         left = QVBoxLayout()
         left.addWidget(self.search)
@@ -750,19 +831,56 @@ class GarageTab(QWidget):
         self._blank_form()
         self.name.setFocus()
 
-    def _on_save(self) -> None:
-        saved = garage.save_car(self._form_to_car())
-        self.current_id = saved["id"]
-        self._reload_list()
+    def _select_id(self, car_id: str) -> None:
+        """Select the list row for a car id, without firing _on_select."""
         for i in range(self.list.count()):
-            if self.list.item(i).data(Qt.ItemDataRole.UserRole) == saved["id"]:
+            if self.list.item(i).data(Qt.ItemDataRole.UserRole) == car_id:
                 self.list.blockSignals(True)
                 self.list.setCurrentRow(i)
                 self.list.blockSignals(False)
                 break
+
+    def _on_save(self) -> None:
+        saved = garage.save_car(self._form_to_car())
+        self.current_id = saved["id"]
+        self._reload_list()
+        self._select_id(saved["id"])
         win = self.window()
         if isinstance(win, QMainWindow):
             win.statusBar().showMessage(f"Saved {saved['name']}", 5000)
+
+    def _on_duplicate(self) -> None:
+        if not self.current_id:  # nothing open to clone
+            return
+        dup = garage.save_car(garage.clone_car(self._form_to_car()))
+        self.current_id = dup["id"]
+        self._fill_form(dup)
+        self._reload_list()
+        self._select_id(dup["id"])
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage(f"Duplicated to {dup['name']}", 5000)
+
+    def _on_import(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Import car", "", "Car spec (*.json)"
+        )
+        if not path:
+            return
+        try:
+            car = garage.load_car_file(path)
+            self._fill_form(car)  # render first: surfaces bad field types before we save
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            # unreadable / invalid JSON / not an object / a valid object with junk field types
+            QMessageBox.warning(self, "Import failed", str(e))
+            return
+        saved = garage.save_car(car)
+        self.current_id = saved["id"]
+        self._reload_list()
+        self._select_id(saved["id"])
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage(f"Imported {saved['name']}", 5000)
 
     def _on_delete(self) -> None:
         if not self.current_id:
@@ -777,13 +895,26 @@ class GarageTab(QWidget):
 
     def _on_export(self) -> None:
         car = self._form_to_car()
-        text = garage.format_spec_sheet(car)
+        if self.current_id:  # the form doesn't hold computed gearing; carry it from disk
+            stored_gearing = (garage.load_car(self.current_id) or {}).get("gearing", {})
+            for key in ("fdr", "rollout_mm", "top_speed_kmh"):
+                if stored_gearing.get(key) is not None:
+                    car["gearing"][key] = stored_gearing[key]
         suggested = f"{car['name'] or 'car'}.txt"
         path, _ = QFileDialog.getSaveFileName(
-            self, "Export spec sheet", suggested, "Text files (*.txt);;All files (*)"
+            self,
+            "Export spec sheet",
+            suggested,
+            "Text files (*.txt);;JSON (*.json);;All files (*)",
         )
         if not path:
             return
+        # .json exports the raw car (re-importable); anything else is the readable sheet
+        text = (
+            json.dumps(car, indent=2)
+            if path.endswith(".json")
+            else garage.format_spec_sheet(car)
+        )
         try:
             Path(path).write_text(text, encoding="utf-8")
         except OSError as e:  # unwritable path etc. must reach the user, not a traceback
@@ -1050,6 +1181,22 @@ class MainWindow(QMainWindow):
         # here — present only when the Tools tab is.
         if self.tools_tab is not None:
             self.table = self.tools_tab.table
+
+        # Restore window size and last tab from the previous run. The Tools tab is
+        # Windows-only, so a tab index saved on Windows can exceed the count here —
+        # clamp it into range rather than trust it.
+        settings = QSettings("RCCentral", "RCCentral")
+        geometry = settings.value("geometry")
+        if geometry is not None:
+            self.restoreGeometry(geometry)
+        tab = int(settings.value("tab", 0))
+        self.tabs.setCurrentIndex(max(0, min(tab, self.tabs.count() - 1)))
+
+    def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        settings = QSettings("RCCentral", "RCCentral")
+        settings.setValue("geometry", self.saveGeometry())
+        settings.setValue("tab", self.tabs.currentIndex())
+        super().closeEvent(event)
 
     def _build_update_banner(self) -> None:
         banner = QToolBar("Update")

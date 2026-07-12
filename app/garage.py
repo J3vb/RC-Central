@@ -4,6 +4,7 @@ Mirrors app/installer.py: a per-user DATA_DIR (see app/paths.py), one JSON file
 per record, module-level path constants that tests monkeypatch.
 """
 
+import copy
 import json
 import uuid
 from datetime import datetime, timezone
@@ -39,6 +40,25 @@ def new_car(name: str = "New Car") -> dict:
         "log": [],  # run/maintenance history; see new_log_entry()
         "notes": "",
     }
+
+
+def clone_car(car: dict) -> dict:
+    """A deep copy as a fresh, unsaved spec sheet: new id, "(copy)" name, empty log."""
+    dup = copy.deepcopy(car)
+    dup["id"] = uuid.uuid4().hex
+    dup["name"] = (car.get("name") or "Car") + " (copy)"
+    dup["log"] = []  # a duplicate starts with an empty run/maintenance log
+    dup.pop("updated_at", None)  # save_car re-stamps it
+    return dup
+
+
+def load_car_file(path) -> dict:
+    """Import a spec sheet from an external JSON file, with a fresh id so it never clobbers an existing car."""
+    car = json.loads(Path(path).read_text(encoding="utf-8"))
+    if not isinstance(car, dict):
+        raise ValueError("not a car spec sheet: expected a JSON object")
+    car["id"] = uuid.uuid4().hex
+    return car
 
 
 def new_log_entry(kind: str, note: str) -> dict:
