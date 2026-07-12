@@ -6,3 +6,6 @@ build/
 *.spec
 !RCCentral.spec
 .pytest_cache/
+.claude/
+.serena/
+.remember/
