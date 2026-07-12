@@ -1,0 +1,14 @@
+{
+    "id": "reved-revox-gyro",
+    "name": "REVOX Steering Gyro",
+    "vendor": "Rêve D",
+    "category": "gyro",
+    "homepage": "https://teamreved.com/",
+    "description": "Rêve D REVOX drift gyro. No PC app - curve, endpoints, reverse and gain are set on the unit with its switches and LEDs.",
+    "version": "n/a",
+    "links": [
+        {"name": "REVOX manual (EN PDF)", "url": "https://teamreved.com/wp-content/uploads/2022/06/hp_e.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
+}

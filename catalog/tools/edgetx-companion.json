@@ -1,0 +1,32 @@
+{
+    "id": "edgetx-companion",
+    "name": "EdgeTX Companion",
+    "vendor": "EdgeTX",
+    "category": "radio",
+    "homepage": "https://edgetx.org/",
+    "description": "Desktop companion for EdgeTX radios: manage models, edit settings, run the simulator, and flash firmware.",
+    "os": ["windows"],
+    "version": "2.12.2",
+    "download": {
+        "url": "https://github.com/EdgeTX/edgetx/releases/download/v2.12.2/edgetx-cpn-win64-v2.12.2.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "setup_relative_path": "companion-windows-2.12.2.exe",
+        "setup_args": ["/S", "/D={dest}"],
+        "exe_relative_path": "bin/companion.exe",
+        "portable": false,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://api.github.com/repos/EdgeTX/edgetx/releases/latest",
+        "pattern": "\"tag_name\":\\s*\"v?(\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "EdgeTX user manual (online)", "url": "https://edgetx.gitbook.io/edgetx-user-manual"}
+    ],
+    "notes": "Zip wraps an NSIS installer (companion-windows-<ver>.exe) run silently via /S /D={dest}. The installer manifest is requireAdministrator, so installing shows a UAC prompt (RC Central retries it elevated); the installed companion.exe is asInvoker and launches without one. Both the download URL and the inner installer filename embed the version, so both rot on the next release - bump them together.",
+    "source_verified": "2026-07-12"
+}

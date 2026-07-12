@@ -1,0 +1,30 @@
+{
+    "id": "skyrc-usb-link",
+    "name": "SKYRC USB Link",
+    "vendor": "SkyRC",
+    "category": "esc",
+    "homepage": "https://www.skyrc.com/",
+    "description": "Configure and update SkyRC / Toro TS-series brushless ESCs over the USB link.",
+    "os": ["windows"],
+    "version": "2.10",
+    "download": {
+        "url": "https://www.skyrc.com/files/117/SKYRC_USB_Link_V2.10.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "SKYRC USB Link V2.10/SKYRC USB Link V2.10.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.skyrc.com/TS120_Aluminum",
+        "pattern": "SKYRC[ _]USB[ _]Link[ _]V(\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "Toro TS120A ESC manual (PDF)", "url": "https://www.skyrc.com/files/32/Toro+TS120A+ESC+Manual.pdf"}
+    ],
+    "notes": "Portable exe - unzip and run. Linked from the Toro TS120A ESC product page. The versioned filename (download URL and the inner folder) changes each release, so this URL will rot; the app's single-exe scan still resolves the launcher if the pinned path drifts.",
+    "source_verified": "2026-07-12"
+}

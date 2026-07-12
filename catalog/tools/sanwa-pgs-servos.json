@@ -1,0 +1,14 @@
+{
+    "id": "sanwa-pgs-servos",
+    "name": "PGS-series Programmable Servos",
+    "vendor": "Sanwa",
+    "category": "servo",
+    "homepage": "https://www.sanwa-denshi.com/rc/car/servo/",
+    "description": "Sanwa PGS programmable drift/touring servos. No PC software - set with the Multi Setting Gear unit or wirelessly from an SSL transmitter.",
+    "version": "n/a",
+    "links": [
+        {"name": "Manual (PGS-CLE, EN PDF)", "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS_CLE_ENG_Manual.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
+}

@@ -1,0 +1,30 @@
+{
+    "id": "agfrc-servo-programmer",
+    "name": "AGFRC Programmable Software",
+    "vendor": "AGFRC",
+    "category": "servo",
+    "homepage": "https://www.agfrc.com/",
+    "description": "Configure AGFRC programmable servos via the AGF-SP USB program card.",
+    "os": ["windows"],
+    "version": "3.73",
+    "download": {
+        "url": "https://www.agfrc.com/res/excel/0d8052f9183934d1.exe",
+        "archive": "exe",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "0d8052f9183934d1.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.agfrc.com/index.php?id=2787",
+        "pattern": "AGFRC Programmable Software V([\\d.]+) for USB Programmer AGF-SPV4"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "AGF-SP USB program card instructions", "url": "https://www.agfrc.com/index.php?id=2550"}
+    ],
+    "notes": "Bare portable exe (AGF-SP V4 build) - no installer, run directly. AGFRC serves it under an opaque hashed filename that changes when re-uploaded, so both the download URL and exe_relative_path rot together (the single-exe scan still resolves the launcher). A separate legacy build exists for the older AGF-SPV2 card.",
+    "source_verified": "2026-07-12"
+}

@@ -1,5 +1,167 @@
 [
   {
+    "id": "acuvance-update-tool",
+    "name": "Acuvance Update Tool",
+    "vendor": "Acuvance",
+    "category": "esc",
+    "homepage": "https://acuvance.co.jp/software/",
+    "description": "Firmware-rewrite tool for Acuvance XARVIS / Ne-St / AIRIA / TACHYON ESCs (needs the Acuvance Update Device Kit).",
+    "os": [
+      "windows"
+    ],
+    "version": "1.0.9",
+    "download": {
+      "url": "https://acuvance.co.jp/data/software/AcuvanceUpdateTool_(Ver.1.0.9).zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "Acuvance Update Tool_(Ver.1.0.9)/Acuvance Update Tool_(Ver.1.0.9).exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://acuvance.co.jp/software/",
+      "pattern": "AcuvanceUpdateTool_\\(Ver\\.(\\d+(?:\\.\\d+)+)\\)"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "Update Tool setup manual (PDF)",
+        "url": "https://acuvance.co.jp/pdf/software-english/setup-manual.pdf"
+      }
+    ],
+    "notes": "Portable exe - unzip and run. Now distributed as .zip (not the older .lzh). ESC firmware is a separate user-supplied .kyc file (out of scope). The version is embedded in the download URL and inner folder, so expect the URL to rot on the next release.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "agfrc-servo-programmer",
+    "name": "AGFRC Programmable Software",
+    "vendor": "AGFRC",
+    "category": "servo",
+    "homepage": "https://www.agfrc.com/",
+    "description": "Configure AGFRC programmable servos via the AGF-SP USB program card.",
+    "os": [
+      "windows"
+    ],
+    "version": "3.73",
+    "download": {
+      "url": "https://www.agfrc.com/res/excel/0d8052f9183934d1.exe",
+      "archive": "exe",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "0d8052f9183934d1.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.agfrc.com/index.php?id=2787",
+      "pattern": "AGFRC Programmable Software V([\\d.]+) for USB Programmer AGF-SPV4"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "AGF-SP USB program card instructions",
+        "url": "https://www.agfrc.com/index.php?id=2550"
+      }
+    ],
+    "notes": "Bare portable exe (AGF-SP V4 build) - no installer, run directly. AGFRC serves it under an opaque hashed filename that changes when re-uploaded, so both the download URL and exe_relative_path rot together (the single-exe scan still resolves the launcher). A separate legacy build exists for the older AGF-SPV2 card.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "edgetx-companion",
+    "name": "EdgeTX Companion",
+    "vendor": "EdgeTX",
+    "category": "radio",
+    "homepage": "https://edgetx.org/",
+    "description": "Desktop companion for EdgeTX radios: manage models, edit settings, run the simulator, and flash firmware.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.12.2",
+    "download": {
+      "url": "https://github.com/EdgeTX/edgetx/releases/download/v2.12.2/edgetx-cpn-win64-v2.12.2.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "setup_relative_path": "companion-windows-2.12.2.exe",
+      "setup_args": [
+        "/S",
+        "/D={dest}"
+      ],
+      "exe_relative_path": "bin/companion.exe",
+      "portable": false,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://api.github.com/repos/EdgeTX/edgetx/releases/latest",
+      "pattern": "\"tag_name\":\\s*\"v?(\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "EdgeTX user manual (online)",
+        "url": "https://edgetx.gitbook.io/edgetx-user-manual"
+      }
+    ],
+    "notes": "Zip wraps an NSIS installer (companion-windows-<ver>.exe) run silently via /S /D={dest}. The installer manifest is requireAdministrator, so installing shows a UAC prompt (RC Central retries it elevated); the installed companion.exe is asInvoker and launches without one. Both the download URL and the inner installer filename embed the version, so both rot on the next release - bump them together.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "flysky-noble-tool",
+    "name": "Noble NB4 Update Tool",
+    "vendor": "FlySky",
+    "category": "radio",
+    "homepage": "https://www.flysky-cn.com/copy-of-nb4gaishu",
+    "description": "Firmware update tool for the FlySky Noble NB4 transmitter (connect the NB4 by USB in update mode).",
+    "os": [
+      "windows"
+    ],
+    "version": "2.0.116",
+    "download": {
+      "url": "https://www.flysky-cn.com/s/Flysky_NB4_UpdateFirmware_20116-1.exe",
+      "archive": "exe",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "Flysky_NB4_UpdateFirmware_20116-1.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.flysky-cn.com/nb4-xiazai",
+      "pattern": "FW(\\d+\\.\\d+\\.\\d+)\\("
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "Noble NB4 user manual (PDF)",
+        "url": "https://www.flysky-cn.com/s/Noble_NB4_User_Manual-20250512-EN.pdf"
+      }
+    ],
+    "notes": "Bare portable exe (self-contained firmware updater) - no installer, run directly. STD/global build; an FCC (US) variant also exists. USB flashing may trigger an antivirus warning (vendor says this is expected). The download URL redirects to a Squarespace static host whose token changes if FlySky re-uploads.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "futaba-gyd550",
+    "name": "GYD550 Steering Gyro",
+    "vendor": "Futaba",
+    "category": "gyro",
+    "homepage": "https://futabausa.com/product/gyd550-drift-rc-car-counter-steer-gyro-system/",
+    "description": "Futaba GYD550 drift counter-steer gyro. No PC software - all settings are adjusted wirelessly from a Futaba S.BUS2 transmitter.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "Instruction manual (EN PDF)",
+        "url": "https://futabausa.com/wp-content/uploads/manuals/GYD550_ENG_0306.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no PC app; firmware updates use the CIU-3 interface.",
+    "source_verified": "2026-07-12"
+  },
+  {
     "id": "hobbywing-usb-link",
     "name": "USB Link Software",
     "vendor": "Hobbywing",
@@ -32,8 +194,52 @@
       "pattern": "USB[ _]Link[ _]V(\\d+\\.\\d+\\.\\d+)"
     },
     "drivers": [],
+    "links": [
+      {
+        "name": "USB Link software / support page",
+        "url": "https://hobbywing.com/en/service/application?id=1"
+      },
+      {
+        "name": "XeRun XR10 Justock ESC manual (PDF)",
+        "url": "https://www.hobbywing.com/en/uploads/file/20221012/705a865b5f96846c156633191af766d3.pdf"
+      }
+    ],
     "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release.",
     "source_verified": "2026-07-10"
+  },
+  {
+    "id": "onisiki-gyro",
+    "name": "High-Stability Gyro (ONI2801)",
+    "vendor": "Onisiki",
+    "category": "gyro",
+    "homepage": "https://www.onisiki.com/manuals",
+    "description": "Onisiki drift gyro. No PC software - gain is set on the gyro or a spare transmitter channel; tuning uses the ONI4602/ONI4606 LCD program box.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "ONI2801 gyro manual (PDF)",
+        "url": "https://www.onisiki.com/manuals-setups/onisiki-ONI2801-gyro-manual.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "reved-revox-gyro",
+    "name": "REVOX Steering Gyro",
+    "vendor": "Rêve D",
+    "category": "gyro",
+    "homepage": "https://teamreved.com/",
+    "description": "Rêve D REVOX drift gyro. No PC app - curve, endpoints, reverse and gain are set on the unit with its switches and LEDs.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "REVOX manual (EN PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2022/06/hp_e.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
   },
   {
     "id": "reved-rs-st-pro",
@@ -61,7 +267,82 @@
       "pattern": "RS-ST servo program [Vv](\\d+\\.\\d+\\.\\d+)"
     },
     "drivers": [],
+    "links": [
+      {
+        "name": "RS-ST instruction manual (EN PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2019/11/Manual_EN.pdf"
+      }
+    ],
     "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so expect this URL to rot on the next release.",
     "source_verified": "2026-07-10"
+  },
+  {
+    "id": "sanwa-pgs-servos",
+    "name": "PGS-series Programmable Servos",
+    "vendor": "Sanwa",
+    "category": "servo",
+    "homepage": "https://www.sanwa-denshi.com/rc/car/servo/",
+    "description": "Sanwa PGS programmable drift/touring servos. No PC software - set with the Multi Setting Gear unit or wirelessly from an SSL transmitter.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "Manual (PGS-CLE, EN PDF)",
+        "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS_CLE_ENG_Manual.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "skyrc-usb-link",
+    "name": "SKYRC USB Link",
+    "vendor": "SkyRC",
+    "category": "esc",
+    "homepage": "https://www.skyrc.com/",
+    "description": "Configure and update SkyRC / Toro TS-series brushless ESCs over the USB link.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.10",
+    "download": {
+      "url": "https://www.skyrc.com/files/117/SKYRC_USB_Link_V2.10.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "SKYRC USB Link V2.10/SKYRC USB Link V2.10.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.skyrc.com/TS120_Aluminum",
+      "pattern": "SKYRC[ _]USB[ _]Link[ _]V(\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "Toro TS120A ESC manual (PDF)",
+        "url": "https://www.skyrc.com/files/32/Toro+TS120A+ESC+Manual.pdf"
+      }
+    ],
+    "notes": "Portable exe - unzip and run. Linked from the Toro TS120A ESC product page. The versioned filename (download URL and the inner folder) changes each release, so this URL will rot; the app's single-exe scan still resolves the launcher if the pinned path drifts.",
+    "source_verified": "2026-07-12"
+  },
+  {
+    "id": "yokomo-rpx-esc",
+    "name": "RPX-series Competition ESC",
+    "vendor": "Yokomo",
+    "category": "esc",
+    "homepage": "https://teamyokomo.com/parts/BL-RPX3/",
+    "description": "Yokomo RPX competition/drift ESCs. No Windows PC app - configured with the BL-R26P program card or the Wi-Fi programmer module app.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "BL-RPX3/RPXS instruction manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX3_RPXS_Instruction_Manual.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
   }
 ]

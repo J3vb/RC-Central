@@ -18,14 +18,16 @@ CATALOG = Path(__file__).resolve().parents[1] / "catalog"
 BUNDLE = CATALOG / "catalog.json"
 
 
-def _check_url(url: str, attempts: int = 3) -> str | None:
-    """Health-check a download URL. Returns a failure message, or None if reachable.
+def _check_url(url: str, attempts: int = 3, expect_file: bool = True) -> str | None:
+    """Health-check a URL. Returns a failure message, or None if reachable.
 
-    A definitive answer fails at once: HTTP >=400, or an HTML page where a file is
-    expected (dead vendor links serve a "file not found" page with HTTP 200). A
-    network error is retried instead - vendor sites intermittently time out or
-    throttle CI datacenter IPs, and one transient blip must not be mistaken for
-    link rot. Only a network error that persists across every attempt is reported.
+    A definitive answer fails at once: HTTP >=400, or (when ``expect_file``) an HTML
+    page where a file is expected (dead vendor links serve a "file not found" page
+    with HTTP 200). Info-card ``links`` point at manuals/product pages, which are
+    legitimately HTML, so they pass ``expect_file=False``. A network error is retried
+    instead - vendor sites intermittently time out or throttle CI datacenter IPs, and
+    one transient blip must not be mistaken for link rot. Only a network error that
+    persists across every attempt is reported.
     """
     last_exc = None
     for _ in range(attempts):
@@ -35,7 +37,7 @@ def _check_url(url: str, attempts: int = 3) -> str | None:
             with requests.get(url, stream=True, timeout=60) as resp:
                 if resp.status_code >= 400:
                     return f"HTTP {resp.status_code}"
-                if "text/html" in resp.headers.get("content-type", ""):
+                if expect_file and "text/html" in resp.headers.get("content-type", ""):
                     return "served a web page, not a file (link moved?)"
                 return None
         except requests.RequestException as e:
@@ -62,10 +64,15 @@ def main() -> int:
         if tool["id"] != f.stem:
             failures.append(f"{f.name}: id {tool['id']!r} must match filename")
         if check_urls:
-            url = tool["download"]["url"]
-            problem = _check_url(url)
-            if problem:
-                failures.append(f"{f.name}: {url} -> {problem}")
+            if "download" in tool:  # info-only cards have no download to check
+                url = tool["download"]["url"]
+                problem = _check_url(url)
+                if problem:
+                    failures.append(f"{f.name}: {url} -> {problem}")
+            for link in tool.get("links", []):
+                problem = _check_url(link["url"], expect_file=False)
+                if problem:
+                    failures.append(f"{f.name}: {link['url']} -> {problem}")
         print(f"ok: {f.name}")
     bundle = json.dumps(tools, ensure_ascii=False, indent=2) + "\n"
     if "--write" in sys.argv[1:]:

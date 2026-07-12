@@ -28,7 +28,7 @@ class ExeNotFound(Exception):
 
 
 def install(tool: dict, progress=None) -> Path:
-    """Download + extract a catalog tool. Returns the resolved exe path."""
+    """Download + unpack a catalog tool (extract archive, or run/keep a bare exe). Returns the resolved exe path."""
     dest = TOOLS_DIR / tool["id"]
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as tmp:
@@ -42,14 +42,26 @@ def install(tool: dict, progress=None) -> Path:
             )
         if dest.exists():
             shutil.rmtree(dest)
-        _extract(archive, dest)
-    inst = tool.get("install", {})
+        inst = tool.get("install", {})
+        if tool["download"]["archive"] == "exe":
+            # the download IS the installer / portable exe - nothing to extract.
+            # keep it in the tool dir under its declared name so setup_args and
+            # exe_relative_path resolve exactly as they do for archive tools.
+            target = dest / (
+                inst.get("setup_relative_path")
+                or inst.get("exe_relative_path")
+                or "installer.exe"
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)  # covers a nested relative path
+            shutil.copy2(archive, target)
+        else:
+            _extract(archive, dest)
     if inst.get("setup_args"):
         # archive ships a silent-capable installer (e.g. Inno Setup) instead of a
         # portable exe: run it into the tool dir, then resolve the installed app
         setup = _find_exe(dest, inst.get("setup_relative_path"))
         args = [a.replace("{dest}", str(dest)) for a in inst["setup_args"]]
-        subprocess.run([str(setup), *args], check=True, timeout=900)
+        _run_setup(setup, args)
     exe = _find_exe(dest, inst.get("exe_relative_path"))
     _state_file(tool["id"]).write_text(
         json.dumps(
@@ -125,6 +137,47 @@ def _sha256(path: Path) -> str:
         while chunk := f.read(65536):
             h.update(chunk)
     return h.hexdigest()
+
+
+def _ps_single_quote(s: str) -> str:
+    """Wrap a value as a PowerShell single-quoted literal, doubling embedded quotes.
+
+    Single-quoting keeps a path with spaces intact and stops an apostrophe (a legal
+    Windows filename char, e.g. C:\\Users\\O'Brien) from closing the string early or
+    injecting into the -Command we pass to powershell.
+    """
+    return "'" + s.replace("'", "''") + "'"
+
+
+def _run_setup(setup: Path, args: list[str], timeout: int = 900) -> None:
+    """Run a bundled installer, elevating only if its manifest demands admin.
+
+    Most bundled installers are asInvoker (e.g. Hobbywing's Inno setup) and run fine
+    with CreateProcess. A requireAdministrator installer (e.g. EdgeTX's NSIS setup)
+    cannot be started that way from a non-elevated process - CreateProcess fails with
+    WinError 740. Fall back to ShellExecute 'runas' via PowerShell, which raises the
+    UAC prompt and (-Wait) blocks until the silent install finishes.
+    """
+    try:
+        subprocess.run([str(setup), *args], check=True, timeout=timeout)
+    except OSError as e:
+        if getattr(e, "winerror", None) != 740:  # 740 = ERROR_ELEVATION_REQUIRED
+            raise
+        # -PassThru + `exit $p.ExitCode` makes powershell surface the installer's own
+        # exit code, so a failed elevated install raises here instead of being mistaken
+        # for success (and only later confusing us as a missing exe).
+        # ponytail ceiling unchanged: Start-Process re-quotes -ArgumentList when it
+        # serializes to the child, which still mangles an NSIS /D= path that has spaces.
+        arglist = ",".join(_ps_single_quote(a) for a in args)
+        subprocess.run(
+            [
+                "powershell", "-NoProfile", "-NonInteractive", "-Command",
+                f"$p = Start-Process -FilePath {_ps_single_quote(str(setup))} "
+                f"-ArgumentList {arglist} -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
+            ],
+            check=True,
+            timeout=timeout,
+        )
 
 
 def _extract(archive: Path, dest: Path) -> None:

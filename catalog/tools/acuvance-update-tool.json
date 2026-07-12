@@ -1,0 +1,30 @@
+{
+    "id": "acuvance-update-tool",
+    "name": "Acuvance Update Tool",
+    "vendor": "Acuvance",
+    "category": "esc",
+    "homepage": "https://acuvance.co.jp/software/",
+    "description": "Firmware-rewrite tool for Acuvance XARVIS / Ne-St / AIRIA / TACHYON ESCs (needs the Acuvance Update Device Kit).",
+    "os": ["windows"],
+    "version": "1.0.9",
+    "download": {
+        "url": "https://acuvance.co.jp/data/software/AcuvanceUpdateTool_(Ver.1.0.9).zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "Acuvance Update Tool_(Ver.1.0.9)/Acuvance Update Tool_(Ver.1.0.9).exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://acuvance.co.jp/software/",
+        "pattern": "AcuvanceUpdateTool_\\(Ver\\.(\\d+(?:\\.\\d+)+)\\)"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "Update Tool setup manual (PDF)", "url": "https://acuvance.co.jp/pdf/software-english/setup-manual.pdf"}
+    ],
+    "notes": "Portable exe - unzip and run. Now distributed as .zip (not the older .lzh). ESC firmware is a separate user-supplied .kyc file (out of scope). The version is embedded in the download URL and inner folder, so expect the URL to rot on the next release.",
+    "source_verified": "2026-07-12"
+}

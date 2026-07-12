@@ -1,0 +1,30 @@
+{
+    "id": "flysky-noble-tool",
+    "name": "Noble NB4 Update Tool",
+    "vendor": "FlySky",
+    "category": "radio",
+    "homepage": "https://www.flysky-cn.com/copy-of-nb4gaishu",
+    "description": "Firmware update tool for the FlySky Noble NB4 transmitter (connect the NB4 by USB in update mode).",
+    "os": ["windows"],
+    "version": "2.0.116",
+    "download": {
+        "url": "https://www.flysky-cn.com/s/Flysky_NB4_UpdateFirmware_20116-1.exe",
+        "archive": "exe",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "Flysky_NB4_UpdateFirmware_20116-1.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.flysky-cn.com/nb4-xiazai",
+        "pattern": "FW(\\d+\\.\\d+\\.\\d+)\\("
+    },
+    "drivers": [],
+    "links": [
+        {"name": "Noble NB4 user manual (PDF)", "url": "https://www.flysky-cn.com/s/Noble_NB4_User_Manual-20250512-EN.pdf"}
+    ],
+    "notes": "Bare portable exe (self-contained firmware updater) - no installer, run directly. STD/global build; an FCC (US) variant also exists. USB flashing may trigger an antivirus warning (vendor says this is expected). The download URL redirects to a Squarespace static host whose token changes if FlySky re-uploads.",
+    "source_verified": "2026-07-12"
+}

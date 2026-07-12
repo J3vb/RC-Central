@@ -1,0 +1,14 @@
+{
+    "id": "yokomo-rpx-esc",
+    "name": "RPX-series Competition ESC",
+    "vendor": "Yokomo",
+    "category": "esc",
+    "homepage": "https://teamyokomo.com/parts/BL-RPX3/",
+    "description": "Yokomo RPX competition/drift ESCs. No Windows PC app - configured with the BL-R26P program card or the Wi-Fi programmer module app.",
+    "version": "n/a",
+    "links": [
+        {"name": "BL-RPX3/RPXS instruction manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX3_RPXS_Instruction_Manual.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software.",
+    "source_verified": "2026-07-12"
+}

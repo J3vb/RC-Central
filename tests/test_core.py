@@ -54,6 +54,31 @@ def test_catalog_entries_match_schema():
         assert tool["id"] == f.stem, f"{f.name}: id must match filename"
 
 
+def test_info_only_entry_validates_without_download():
+    # a hardware-only device is an info card: no download/install, just links
+    schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
+    info = {
+        "id": "some-gyro",
+        "name": "Some Gyro",
+        "vendor": "Test",
+        "version": "n/a",
+        "category": "gyro",
+        "links": [{"name": "Manual", "url": "https://example.invalid/manual.pdf"}],
+    }
+    jsonschema.validate(info, schema)
+
+
+def test_download_without_install_rejected():
+    # dependentRequired: a software entry must still declare how to install
+    schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
+    bad = {
+        "id": "x", "name": "X", "vendor": "T", "version": "1",
+        "download": {"url": "https://x/f.zip", "archive": "zip"},
+    }
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(bad, schema)
+
+
 def test_install_and_state(sandbox):
     exe = installer.install(_tool())
     assert exe.name == "FakeTool.exe" and exe.exists()
@@ -110,6 +135,71 @@ def test_install_runs_setup_when_configured(sandbox, monkeypatch):
     assert exe.name == "Installed.exe"
     assert ran["cmd"][0].endswith("FakeTool.exe")  # the extracted setup was run
     assert ran["cmd"][-1] == f"/DIR={dest}"  # {dest} placeholder substituted
+
+
+def test_install_exe_download_runs_installer(sandbox, monkeypatch):
+    # archive:"exe" -> the download IS the installer: copied in, run, app resolved
+    dest = installer.TOOLS_DIR / "fake-tool"
+    ran = {}
+
+    def fake_run(cmd, check, timeout):
+        ran["cmd"] = cmd
+        (dest / "App.exe").write_bytes(b"MZ")  # the installer "installs" the app
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    monkeypatch.setattr(
+        installer, "_download", lambda url, d, progress: d.write_bytes(b"MZ installer")
+    )
+    tool = _tool()
+    tool["download"] = {"url": "https://x/setup.exe", "archive": "exe", "sha256": None}
+    tool["install"] = {
+        "setup_relative_path": "setup.exe",
+        "setup_args": ["/S", "/D={dest}"],
+        "exe_relative_path": "App.exe",
+    }
+    exe = installer.install(tool)
+    assert exe.name == "App.exe" and exe.exists()
+    assert ran["cmd"][0].endswith("setup.exe")  # the copied installer was run
+    assert ran["cmd"][-1] == f"/D={dest}"  # {dest} placeholder substituted
+
+
+def test_install_exe_download_nested_relative_path(sandbox, monkeypatch):
+    # archive:"exe" with a nested exe_relative_path must create the parent dir before copy
+    monkeypatch.setattr(
+        installer, "_download", lambda url, d, progress: d.write_bytes(b"MZ portable")
+    )
+    tool = _tool()
+    tool["download"] = {"url": "https://x/app.exe", "archive": "exe", "sha256": None}
+    tool["install"] = {"exe_relative_path": "sub/App.exe", "portable": True}
+    exe = installer.install(tool)  # would crash with FileNotFoundError before the fix
+    assert exe.name == "App.exe" and exe.exists() and exe.parent.name == "sub"
+
+
+@WINDOWS_ONLY
+def test_install_elevates_when_setup_requires_admin(sandbox, monkeypatch):
+    # a requireAdministrator installer fails CreateProcess (WinError 740) -> the
+    # install must retry it elevated via ShellExecute 'runas' (PowerShell), waited.
+    dest = installer.TOOLS_DIR / "fake-tool"
+    calls = []
+
+    def fake_run(cmd, check, timeout):
+        calls.append(cmd)
+        if cmd[0] == "powershell":
+            (dest / "App.exe").write_bytes(b"MZ")  # the elevated installer "installs"
+            return
+        raise OSError(0, "requires elevation", None, 740)  # direct CreateProcess
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    tool = _tool()
+    tool["install"] = {
+        "setup_relative_path": "FakeTool.exe",  # present in the sandbox zip
+        "setup_args": ["/S", "/D={dest}"],
+        "exe_relative_path": "App.exe",
+    }
+    exe = installer.install(tool)
+    assert exe.name == "App.exe"
+    ps = next(c for c in calls if c[0] == "powershell")  # elevated fallback was used
+    assert "-PassThru" in ps[-1] and "exit $p.ExitCode" in ps[-1]  # installer exit propagated
 
 
 @WINDOWS_ONLY
@@ -186,6 +276,27 @@ def test_ui_smoke(monkeypatch):
     assert [a.text() for a in button.menu().actions()] == ["Locate existing install…"]
 
 
+def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
+    # ToolsTab (Windows) + ManualsTab must share one fetch, not fetch twice at startup
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    calls = {"n": 0}
+
+    def counting_load():
+        calls["n"] += 1
+        return [_tool()]
+
+    monkeypatch.setattr(catalog, "load_catalog", counting_load)
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    app_main.MainWindow()
+    assert calls["n"] == 1
+
+
 def test_tabs_smoke(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -200,7 +311,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
     tools = ["Tools"] if sys.platform == "win32" else []
-    expected = tools + ["Gear Calculator", "Garage", "Log"]
+    expected = tools + ["Manuals", "Gear Calculator", "Garage", "Log"]
     assert win.tabs.count() == len(expected)
     assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == expected
     if sys.platform == "win32":
@@ -349,6 +460,125 @@ def test_tools_tab_search_and_category_filter(monkeypatch):
     tab.search.setText("esc")
     assert tab.table.isRowHidden(0)
     assert tab.table.isRowHidden(1)
+
+
+def test_info_only_row_is_manual_button(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    info = {
+        "id": "gyd550", "name": "GYD550", "vendor": "Futaba", "version": "n/a",
+        "category": "gyro",
+        "links": [{"name": "Manual", "url": "https://example.invalid/gyd550"}],
+    }
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [info])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+
+    assert tab.table.item(0, 3).text() == "No PC software"
+    button = tab.table.cellWidget(0, 4)
+    assert button.text() == "Manual"
+    assert button.menu() is None  # no "Locate existing install…" on an info card
+
+    # acting on the row opens the manual URL instead of installing
+    opened = {}
+    monkeypatch.setattr(
+        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    tab._on_action(0)
+    assert opened["u"].endswith("gyd550")
+
+
+def test_info_only_row_without_links_disables_button(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    # an info card with neither links nor a homepage has nothing to open
+    bare = {"id": "bare", "name": "Bare Device", "vendor": "T", "version": "n/a", "category": "gyro"}
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [bare])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ToolsTab()
+
+    button = tab.table.cellWidget(0, 4)
+    assert button.text() == "Manual" and not button.isEnabled()
+
+
+def test_tools_tab_website_button_opens_homepage(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(
+        catalog, "load_catalog", lambda: [_tool(homepage="https://example.invalid/vendor")]
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ToolsTab()
+
+    web = tab.table.cellWidget(0, 5)  # Website column, alongside the action button at col 4
+    assert web.text() == "Website"
+    opened = {}
+    monkeypatch.setattr(
+        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    web.click()
+    assert opened["u"].endswith("/vendor")
+
+
+def test_manuals_tab_lists_website_and_manuals(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QToolButton
+
+    from app import catalog
+    from app import main as app_main
+
+    tool = _tool(
+        homepage="https://example.invalid/site",
+        links=[{"name": "Manual (PDF)", "url": "https://example.invalid/manual.pdf"}],
+    )
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [tool])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()  # cross-platform: no install/launch, just links
+
+    buttons = {b.text(): b for b in tab.findChildren(QToolButton)}
+    assert "Website" in buttons and "Manual (PDF)" in buttons
+    opened = {}
+    monkeypatch.setattr(
+        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    buttons["Manual (PDF)"].click()
+    assert opened["u"].endswith("/manual.pdf")
+
+
+def test_manuals_tab_search_filters(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    tools = [
+        _tool(id="a", name="Servo Prog", vendor="Reve D", category="servo"),
+        _tool(id="b", name="ESC Link", vendor="Hobbywing", category="esc"),
+    ]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()  # rows sorted by category: esc (ESC Link) then servo (Servo Prog)
+
+    tab.search.setText("hobbywing")
+    assert [r.isHidden() for r in tab._rows] == [False, True]  # only the Hobbywing row shows
+    assert not tab._headers["esc"].isHidden() and tab._headers["servo"].isHidden()
+
+    tab.search.setText("")  # clearing restores every row and header
+    assert not any(r.isHidden() for r in tab._rows)
+    assert not any(h.isHidden() for h in tab._headers.values())
 
 
 def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):

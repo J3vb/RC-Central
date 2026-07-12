@@ -2,7 +2,8 @@
     "$schema": "https://json-schema.org/draft/2020-12/schema",
     "title": "RC Central tool manifest",
     "type": "object",
-    "required": ["id", "name", "vendor", "version", "download", "install"],
+    "required": ["id", "name", "vendor", "version"],
+    "dependentRequired": {"download": ["install"]},
     "additionalProperties": false,
     "properties": {
         "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9-]*$"},
@@ -19,7 +20,7 @@
             "additionalProperties": false,
             "properties": {
                 "url": {"type": "string", "pattern": "^https://"},
-                "archive": {"enum": ["zip", "7z"]},
+                "archive": {"enum": ["zip", "7z", "exe"]},
                 "sha256": {"type": ["string", "null"], "pattern": "^[a-fA-F0-9]{64}$"}
             }
         },
@@ -44,6 +45,17 @@
             }
         },
         "drivers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "required": ["name", "url"],
+                "properties": {
+                    "name": {"type": "string"},
+                    "url": {"type": "string", "pattern": "^https://"}
+                }
+            }
+        },
+        "links": {
             "type": "array",
             "items": {
                 "type": "object",

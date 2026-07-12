@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QHeaderView,
     QInputDialog,
     QLabel,
     QLineEdit,
@@ -27,6 +28,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QScrollArea,
     QSizePolicy,
     QSpinBox,
     QTableWidget,
@@ -61,7 +63,31 @@ def app_icon() -> QIcon:
 
 
 # Pretty display names for catalog category codes; unknowns fall back to .title().
-_CATEGORY_LABELS = {"esc": "ESC", "servo": "Servo"}
+_CATEGORY_LABELS = {"esc": "ESC", "servo": "Servo", "radio": "Radio", "gyro": "Gyro"}
+
+
+def _is_software(tool: dict) -> bool:
+    """A tool RC Central can download and launch (vs. an info-only card)."""
+    return "download" in tool
+
+
+def _info_url(tool: dict) -> str | None:
+    """Where an info-only card's Manual button points: first manual link, else homepage."""
+    links = tool.get("links") or []
+    return links[0]["url"] if links else tool.get("homepage")
+
+
+def _link_button(text: str, url: str | None) -> QToolButton:
+    """A text button that opens a URL in the browser; disabled when there is no URL."""
+    btn = QToolButton()
+    btn.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
+    btn.setText(text)
+    if url:
+        btn.setToolTip(url)
+        btn.clicked.connect(lambda _=False, u=url: QDesktopServices.openUrl(QUrl(u)))
+    else:
+        btn.setEnabled(False)
+    return btn
 
 
 class _InstallSignals(QObject):
@@ -75,11 +101,11 @@ class _InstallSignals(QObject):
 class ToolsTab(QWidget):
     """The catalog: install/launch each vendor tool. Formerly the whole window."""
 
-    COLS = ("Tool", "Vendor", "Version", "Status", "")
+    COLS = ("Tool", "Vendor", "Version", "Status", "", "Website")
 
-    def __init__(self):
+    def __init__(self, tools: list[dict] | None = None):
         super().__init__()
-        self.tools = catalog.load_catalog()
+        self.tools = catalog.load_catalog() if tools is None else tools
 
         self.table = QTableWidget(len(self.tools), len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
@@ -116,19 +142,22 @@ class ToolsTab(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(tool["vendor"]))
             self.table.setItem(row, 2, QTableWidgetItem(tool["version"]))
             button = QToolButton()
-            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             button.clicked.connect(lambda _=False, r=row: self._on_action(r))
-            menu = QMenu(button)
-            menu.addAction(
-                "Locate existing install…",
-                lambda _=False, r=row: self._locate_existing(r),
-            )
-            button.setMenu(menu)
+            if _is_software(tool):
+                button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+                menu = QMenu(button)
+                menu.addAction(
+                    "Locate existing install…",
+                    lambda _=False, r=row: self._locate_existing(r),
+                )
+                button.setMenu(menu)
             self.table.setCellWidget(row, 4, button)
+            self.table.setCellWidget(row, 5, _link_button("Website", tool.get("homepage")))
             self._refresh_row(row)
         self.table.resizeColumnsToContents()
-        self.table.horizontalHeader().setStretchLastSection(True)
+        # stretch the tool-name column so the two trailing button columns stay compact
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
 
     def _apply_filter(self) -> None:
         """Show only rows matching both the search text and the chosen category."""
@@ -155,6 +184,12 @@ class ToolsTab(QWidget):
 
     def _refresh_row(self, row: int) -> None:
         tool = self.tools[row]
+        if not _is_software(tool):
+            self.table.setItem(row, 3, QTableWidgetItem("No PC software"))
+            button = self.table.cellWidget(row, 4)
+            button.setText("Manual")
+            button.setEnabled(_info_url(tool) is not None)  # no link -> nothing to open
+            return
         state = installer.get_state(tool["id"])
         if state is None:
             status, action = "Not installed", "Install"
@@ -167,6 +202,11 @@ class ToolsTab(QWidget):
 
     def _on_action(self, row: int) -> None:
         tool = self.tools[row]
+        if not _is_software(tool):
+            url = _info_url(tool)
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+            return
         state = installer.get_state(tool["id"])
         if state and state["version"] == tool["version"]:
             try:
@@ -241,6 +281,77 @@ class ToolsTab(QWidget):
             QMessageBox.warning(self, "Install failed", error)
         else:
             self._status(f"Installed {self.tools[row]['name']}", 5000)
+
+
+class ManualsTab(QWidget):
+    """One-stop reference: every catalog tool's official website + manual links.
+
+    Pure links (no install/launch), so unlike the Tools tab it is cross-platform.
+    """
+
+    _SEARCH_FIELDS = ("name", "vendor", "category", "description")
+
+    def __init__(self, tools: list[dict] | None = None):
+        super().__init__()
+        self._tools = sorted(
+            catalog.load_catalog() if tools is None else tools,
+            key=lambda t: (t.get("category", ""), t["name"].lower()),
+        )
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search manuals…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_filter)
+
+        inner = QWidget()
+        col = QVBoxLayout(inner)
+        self._rows: list[QWidget] = []  # index-aligned with self._tools, for filtering
+        self._headers: dict[str, QLabel] = {}  # category -> its bold section header
+        current_cat = None
+        for tool in self._tools:
+            cat = tool.get("category", "")
+            if cat != current_cat:  # a bold section header each time the category changes
+                current_cat = cat
+                header = QLabel(f"<b>{_CATEGORY_LABELS.get(cat, cat.title()) or 'Other'}</b>")
+                self._headers[cat] = header
+                col.addWidget(header)
+            row = self._tool_row(tool)
+            self._rows.append(row)
+            col.addWidget(row)
+        col.addStretch(1)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setWidget(inner)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.search)
+        layout.addWidget(scroll)
+
+    def _tool_row(self, tool: dict) -> QWidget:
+        row = QWidget()
+        h = QHBoxLayout(row)
+        h.setContentsMargins(0, 0, 0, 0)
+        label = QLabel(f"{tool['name']} — {tool['vendor']}")
+        label.setToolTip(tool.get("description", ""))
+        h.addWidget(label, 1)
+        h.addWidget(_link_button("Website", tool.get("homepage")))
+        for link in tool.get("links", []):
+            h.addWidget(_link_button(link["name"], link.get("url")))
+        return row
+
+    def _apply_filter(self) -> None:
+        """Hide tool rows that don't match the search box, and any now-empty header."""
+        query = self.search.text().strip().lower()
+        shown_cats: set[str] = set()
+        for tool, row in zip(self._tools, self._rows):
+            match = not query or any(
+                query in str(tool.get(f, "")).lower() for f in self._SEARCH_FIELDS
+            )
+            row.setVisible(match)
+            if match:
+                shown_cats.add(tool.get("category", ""))
+        for cat, header in self._headers.items():
+            header.setVisible(not query or cat in shown_cats)
 
 
 class GearTab(QWidget):
@@ -898,10 +1009,15 @@ class MainWindow(QMainWindow):
         # for it via the banner; dismissing leaves the download unused.
         self.update_consented = False
 
+        # One catalog fetch, shared by both tabs that render it, so startup makes a
+        # single (blocking) network round-trip and both tabs show the same snapshot.
+        tools = catalog.load_catalog()
+
         self.tabs = QTabWidget()
         self.gear_tab = GearTab()
         self.garage_tab = GarageTab(on_open_in_calc=self._open_in_calc)
         self.log_tab = LogTab()
+        self.manuals_tab = ManualsTab(tools)
 
         tabs: list[tuple[QWidget, str]] = []
         # The Tools tab installs and launches Windows-only vendor programmers, so
@@ -909,9 +1025,10 @@ class MainWindow(QMainWindow):
         # OS emulation). Elsewhere the app is the cross-platform gearing + garage.
         self.tools_tab: ToolsTab | None = None
         if sys.platform == "win32":
-            self.tools_tab = ToolsTab()
+            self.tools_tab = ToolsTab(tools)
             tabs.append((self.tools_tab, "Tools"))
         tabs += [
+            (self.manuals_tab, "Manuals"),
             (self.gear_tab, "Gear Calculator"),
             (self.garage_tab, "Garage"),
             (self.log_tab, "Log"),
