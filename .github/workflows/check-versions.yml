@@ -1,0 +1,76 @@
+name: Check vendor versions
+
+# Vendors ship new tool releases without any API, so this periodically scrapes
+# each catalog entry's version_check page and opens an issue when one looks
+# outdated. A human then refreshes the manifest (version + rotated download URL +
+# sha256 + exe path) - the check only flags staleness, it can't auto-fix it.
+
+on:
+  schedule:
+    - cron: "23 5 * * 1" # weekly, Monday
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Probe vendor pages
+        run: uv run --no-project --with requests python scripts/check_versions.py --json findings.json
+      - name: File an issue per outdated tool
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          count=$(jq length findings.json)
+          echo "$count finding(s)"
+          [ "$count" = "0" ] && exit 0
+
+          # ensure the dedupe label exists (idempotent)
+          gh label create catalog-update \
+            --description "A vendor may have released a newer version than the catalog lists" \
+            --color FBCA04 --force
+
+          for i in $(seq 0 $((count - 1))); do
+            id=$(jq -r ".[$i].id" findings.json)
+            name=$(jq -r ".[$i].name" findings.json)
+            current=$(jq -r ".[$i].current" findings.json)
+            latest=$(jq -r ".[$i].latest" findings.json)
+            homepage=$(jq -r ".[$i].homepage" findings.json)
+            checked=$(jq -r ".[$i].checked_url" findings.json)
+
+            # dedupe on a hidden per-tool marker in the body, immune to search tokenization
+            marker="<!-- tool:$id -->"
+            open=$(gh issue list --state open --label catalog-update --limit 100 --json body \
+              --jq "[.[] | select(.body | contains(\"$marker\"))] | length")
+            if [ "$open" != "0" ]; then
+              echo "issue already open for $id; skipping"
+              continue
+            fi
+
+            body=$(cat <<EOF
+$marker
+The vendor page for **$name** advertises **v$latest**, but the catalog lists **v$current**.
+
+Refresh \`catalog/tools/$id.json\`:
+- bump \`version\` to the new release
+- update \`download.url\` (vendor URLs rot per release) and re-pin \`sha256\`
+- fix \`install.exe_relative_path\` if it embeds the version
+- run \`uv run python scripts/validate_catalog.py --write\` to regenerate the bundle
+
+Vendor page: $homepage
+Checked: $checked
+
+_Filed automatically by check-versions.yml._
+EOF
+)
+            gh issue create --label catalog-update \
+              --title "Catalog: $name may be outdated (v$current → v$latest)" \
+              --body "$body"
+            echo "filed issue for $id"
+          done
