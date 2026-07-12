@@ -1,5 +1,6 @@
 """Download, verify, and extract vendor tools; track installed state."""
 
+import ctypes
 import hashlib
 import json
 import shutil
@@ -139,45 +140,101 @@ def _sha256(path: Path) -> str:
     return h.hexdigest()
 
 
-def _ps_single_quote(s: str) -> str:
-    """Wrap a value as a PowerShell single-quoted literal, doubling embedded quotes.
+# Windows ShellExecuteEx elevation (see _run_elevated). Constants + struct.
+_SEE_MASK_NOCLOSEPROCESS = 0x00000040
+_SEE_MASK_NOASYNC = 0x00000100  # required: we call from a daemon thread w/ no message loop
+_SW_HIDE = 0
+_WAIT_TIMEOUT = 0x00000102
 
-    Single-quoting keeps a path with spaces intact and stops an apostrophe (a legal
-    Windows filename char, e.g. C:\\Users\\O'Brien) from closing the string early or
-    injecting into the -Command we pass to powershell.
+
+class _SHELLEXECUTEINFOW(ctypes.Structure):
+    _fields_ = [
+        ("cbSize", ctypes.c_uint),
+        ("fMask", ctypes.c_ulong),
+        ("hwnd", ctypes.c_void_p),
+        ("lpVerb", ctypes.c_wchar_p),
+        ("lpFile", ctypes.c_wchar_p),
+        ("lpParameters", ctypes.c_wchar_p),
+        ("lpDirectory", ctypes.c_wchar_p),
+        ("nShow", ctypes.c_int),
+        ("hInstApp", ctypes.c_void_p),
+        ("lpIDList", ctypes.c_void_p),
+        ("lpClass", ctypes.c_wchar_p),
+        ("hkeyClass", ctypes.c_void_p),
+        ("dwHotKey", ctypes.c_ulong),
+        ("hIconOrMonitor", ctypes.c_void_p),  # DUMMYUNIONNAME (hIcon/hMonitor), both HANDLE
+        ("hProcess", ctypes.c_void_p),
+    ]
+
+
+def _shell_execute_ex(verb: str, file: str, params: str, timeout: int) -> None:
+    """Run 'file params' via ShellExecuteExW(verb), wait, raise on a nonzero exit.
+
+    Windows-only (uses ctypes.windll). Kept as a thin seam so _run_elevated's argument
+    building is unit-testable by monkeypatching this function.
     """
-    return "'" + s.replace("'", "''") + "'"
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    shell32.ShellExecuteExW.argtypes = [ctypes.POINTER(_SHELLEXECUTEINFOW)]
+    shell32.ShellExecuteExW.restype = ctypes.c_int
+    kernel32.WaitForSingleObject.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+    kernel32.WaitForSingleObject.restype = ctypes.c_ulong
+    kernel32.GetExitCodeProcess.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_ulong)]
+    kernel32.GetExitCodeProcess.restype = ctypes.c_int
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+
+    sei = _SHELLEXECUTEINFOW()
+    sei.cbSize = ctypes.sizeof(sei)
+    sei.fMask = _SEE_MASK_NOCLOSEPROCESS | _SEE_MASK_NOASYNC
+    sei.lpVerb = verb
+    sei.lpFile = file
+    sei.lpParameters = params
+    sei.nShow = _SW_HIDE
+    if not shell32.ShellExecuteExW(ctypes.byref(sei)):
+        raise ctypes.WinError(ctypes.get_last_error())  # e.g. 1223 = UAC declined
+    if not sei.hProcess:
+        return  # no process handle returned (rare) - nothing to wait on
+    try:
+        if kernel32.WaitForSingleObject(sei.hProcess, int(timeout * 1000)) == _WAIT_TIMEOUT:
+            raise subprocess.TimeoutExpired(cmd=file, timeout=timeout)
+        code = ctypes.c_ulong()
+        kernel32.GetExitCodeProcess(sei.hProcess, ctypes.byref(code))
+        if code.value != 0:
+            raise subprocess.CalledProcessError(code.value, f"{file} {params}")
+    finally:
+        kernel32.CloseHandle(sei.hProcess)
+
+
+def _run_elevated(setup: Path, args: list[str], timeout: int) -> None:
+    """Run an installer elevated (UAC) via ShellExecuteEx, waiting for it to finish.
+
+    ShellExecuteEx passes lpParameters to the child verbatim, so an NSIS /D= install path
+    with spaces survives - unlike PowerShell Start-Process, which re-quotes -ArgumentList
+    and mangles /D=. Args are space-joined and NOT quoted; the catalog orders /D={dest}
+    last, exactly as NSIS requires.
+    """
+    _shell_execute_ex("runas", str(setup), " ".join(args), timeout)
 
 
 def _run_setup(setup: Path, args: list[str], timeout: int = 900) -> None:
-    """Run a bundled installer, elevating only if its manifest demands admin.
+    """Run a bundled installer, elevating (UAC) only if its manifest demands admin.
 
-    Most bundled installers are asInvoker (e.g. Hobbywing's Inno setup) and run fine
-    with CreateProcess. A requireAdministrator installer (e.g. EdgeTX's NSIS setup)
-    cannot be started that way from a non-elevated process - CreateProcess fails with
-    WinError 740. Fall back to ShellExecute 'runas' via PowerShell, which raises the
-    UAC prompt and (-Wait) blocks until the silent install finishes.
+    Most bundled installers are asInvoker (e.g. Hobbywing's Inno setup) and run fine with
+    CreateProcess. A requireAdministrator installer (e.g. EdgeTX's NSIS setup) fails
+    CreateProcess from a non-elevated process with WinError 740; retry it elevated via
+    ShellExecuteEx (_run_elevated), which raises the UAC prompt, waits, and surfaces the
+    installer's exit code.
     """
     try:
+        # ponytail: the direct path relies on subprocess list-quoting, correct for
+        # Inno/asInvoker installers; an asInvoker NSIS installer with a spaced /D= would
+        # need _run_elevated's verbatim args too - no such catalog entry exists.
         subprocess.run([str(setup), *args], check=True, timeout=timeout)
     except OSError as e:
         if getattr(e, "winerror", None) != 740:  # 740 = ERROR_ELEVATION_REQUIRED
             raise
-        # -PassThru + `exit $p.ExitCode` makes powershell surface the installer's own
-        # exit code, so a failed elevated install raises here instead of being mistaken
-        # for success (and only later confusing us as a missing exe).
-        # ponytail ceiling unchanged: Start-Process re-quotes -ArgumentList when it
-        # serializes to the child, which still mangles an NSIS /D= path that has spaces.
-        arglist = ",".join(_ps_single_quote(a) for a in args)
-        subprocess.run(
-            [
-                "powershell", "-NoProfile", "-NonInteractive", "-Command",
-                f"$p = Start-Process -FilePath {_ps_single_quote(str(setup))} "
-                f"-ArgumentList {arglist} -Verb RunAs -Wait -PassThru; exit $p.ExitCode",
-            ],
-            check=True,
-            timeout=timeout,
-        )
+        _run_elevated(setup, args, timeout)
 
 
 def _extract(archive: Path, dest: Path) -> None:

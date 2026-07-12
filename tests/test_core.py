@@ -177,19 +177,21 @@ def test_install_exe_download_nested_relative_path(sandbox, monkeypatch):
 
 @WINDOWS_ONLY
 def test_install_elevates_when_setup_requires_admin(sandbox, monkeypatch):
-    # a requireAdministrator installer fails CreateProcess (WinError 740) -> the
-    # install must retry it elevated via ShellExecute 'runas' (PowerShell), waited.
+    # a requireAdministrator installer fails CreateProcess (WinError 740) -> the install
+    # must retry it elevated via ShellExecuteEx, passing the /D= path verbatim (unquoted).
     dest = installer.TOOLS_DIR / "fake-tool"
-    calls = []
+    elevated = {}
 
-    def fake_run(cmd, check, timeout):
-        calls.append(cmd)
-        if cmd[0] == "powershell":
-            (dest / "App.exe").write_bytes(b"MZ")  # the elevated installer "installs"
-            return
+    def fake_direct(cmd, check, timeout):
         raise OSError(0, "requires elevation", None, 740)  # direct CreateProcess
 
-    monkeypatch.setattr(installer.subprocess, "run", fake_run)
+    def fake_elevated(verb, file, params, timeout):
+        elevated["verb"] = verb
+        elevated["params"] = params
+        (dest / "App.exe").write_bytes(b"MZ")  # the elevated installer "installs" the app
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_direct)
+    monkeypatch.setattr(installer, "_shell_execute_ex", fake_elevated)
     tool = _tool()
     tool["install"] = {
         "setup_relative_path": "FakeTool.exe",  # present in the sandbox zip
@@ -198,8 +200,29 @@ def test_install_elevates_when_setup_requires_admin(sandbox, monkeypatch):
     }
     exe = installer.install(tool)
     assert exe.name == "App.exe"
-    ps = next(c for c in calls if c[0] == "powershell")  # elevated fallback was used
-    assert "-PassThru" in ps[-1] and "exit $p.ExitCode" in ps[-1]  # installer exit propagated
+    assert elevated["verb"] == "runas"
+    assert elevated["params"] == f"/S /D={dest}"  # verbatim, /D= unquoted and last
+
+
+@WINDOWS_ONLY
+def test_install_propagates_elevated_failure(sandbox, monkeypatch):
+    # a failed elevated install must raise, not be mistaken for success
+    def fake_direct(cmd, check, timeout):
+        raise OSError(0, "requires elevation", None, 740)
+
+    def fake_elevated(verb, file, params, timeout):
+        raise installer.subprocess.CalledProcessError(1, file)
+
+    monkeypatch.setattr(installer.subprocess, "run", fake_direct)
+    monkeypatch.setattr(installer, "_shell_execute_ex", fake_elevated)
+    tool = _tool()
+    tool["install"] = {
+        "setup_relative_path": "FakeTool.exe",
+        "setup_args": ["/S", "/D={dest}"],
+        "exe_relative_path": "App.exe",
+    }
+    with pytest.raises(installer.subprocess.CalledProcessError):
+        installer.install(tool)
 
 
 @WINDOWS_ONLY
