@@ -2,7 +2,6 @@
 
 import json
 import logging
-import subprocess
 import sys
 import threading
 from pathlib import Path
@@ -76,12 +75,6 @@ def _is_pdf(url: str | None) -> bool:
     ponytail: extension heuristic; add an explicit links[].type to the schema if a
     vendor serves a PDF without a .pdf URL and it needs offline caching too."""
     return bool(url) and url.lower().split("?")[0].split("#")[0].endswith(".pdf")
-
-
-def _info_url(tool: dict) -> str | None:
-    """Where an info-only card's Manual button points: first manual link, else homepage."""
-    links = tool.get("links") or []
-    return links[0]["url"] if links else tool.get("homepage")
 
 
 def _link_button(text: str, url: str | None) -> QToolButton:
@@ -158,7 +151,10 @@ class ToolsTab(_DownloadTab):
 
     def __init__(self, tools: list[dict] | None = None):
         super().__init__()
-        self.tools = catalog.load_catalog() if tools is None else tools
+        tools = catalog.load_catalog() if tools is None else tools
+        # Only installable tools belong here; info-only devices (no download) are
+        # reference-only and live on the Manuals tab via their manual links.
+        self.tools = [t for t in tools if _is_software(t)]
 
         self.table = QTableWidget(len(self.tools), len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
@@ -200,23 +196,22 @@ class ToolsTab(_DownloadTab):
             button = QToolButton()
             button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextOnly)
             button.clicked.connect(lambda _=False, r=row: self._on_action(r))
-            if _is_software(tool):
-                button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-                menu = QMenu(button)
-                menu.addAction(
-                    "Locate existing install…",
-                    lambda _=False, r=row: self._locate_existing(r),
-                )
-                open_action = menu.addAction(
-                    "Open install folder",
-                    lambda _=False, r=row: self._open_install_folder(r),
-                )
-                uninstall_action = menu.addAction(
-                    "Uninstall",
-                    lambda _=False, r=row: self._uninstall(r),
-                )
-                self._install_actions[row] = (open_action, uninstall_action)
-                button.setMenu(menu)
+            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
+            menu = QMenu(button)
+            menu.addAction(
+                "Locate existing install…",
+                lambda _=False, r=row: self._locate_existing(r),
+            )
+            open_action = menu.addAction(
+                "Open install folder",
+                lambda _=False, r=row: self._open_install_folder(r),
+            )
+            uninstall_action = menu.addAction(
+                "Uninstall",
+                lambda _=False, r=row: self._uninstall(r),
+            )
+            self._install_actions[row] = (open_action, uninstall_action)
+            button.setMenu(menu)
             self.table.setCellWidget(row, 4, button)
             self.table.setCellWidget(row, 5, _link_button("Website", tool.get("homepage")))
             self._refresh_row(row)
@@ -238,12 +233,6 @@ class ToolsTab(_DownloadTab):
 
     def _refresh_row(self, row: int) -> None:
         tool = self.tools[row]
-        if not _is_software(tool):
-            self.table.setItem(row, 3, QTableWidgetItem("No PC software"))
-            button = self.table.cellWidget(row, 4)
-            button.setText("Manual")
-            button.setEnabled(_info_url(tool) is not None)  # no link -> nothing to open
-            return
         state = installer.get_state(tool["id"])
         if state is None:
             status, action = "Not installed", "Install"
@@ -258,11 +247,6 @@ class ToolsTab(_DownloadTab):
 
     def _on_action(self, row: int) -> None:
         tool = self.tools[row]
-        if not _is_software(tool):
-            url = _info_url(tool)
-            if url:
-                QDesktopServices.openUrl(QUrl(url))
-            return
         state = installer.get_state(tool["id"])
         if state and state["version"] == tool["version"]:
             try:
@@ -1438,7 +1422,7 @@ def main() -> None:
         updater.apply_pending()
         if getattr(sys, "frozen", False):
             try:
-                subprocess.Popen([sys.executable])
+                updater.relaunch()  # resets the PyInstaller env so the child gets a fresh _MEI
             except OSError:
                 updater.log.exception("could not relaunch after applying the update")
     sys.exit(code)

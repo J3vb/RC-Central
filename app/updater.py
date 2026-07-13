@@ -13,6 +13,7 @@ import logging
 import os
 import platform
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -227,6 +228,22 @@ def apply_pending() -> None:
                 old,
                 PENDING,
             )
+
+
+def relaunch() -> None:
+    """Start a fresh copy of the (freshly-swapped) binary as an INDEPENDENT process.
+
+    PYINSTALLER_RESET_ENVIRONMENT=1 is mandatory here. Without it, PyInstaller 6.x
+    treats a child spawned via sys.executable as a *worker subprocess* and has it reuse
+    THIS process's onefile temp dir (_MEIxxxx) instead of unpacking its own. When this
+    parent then exits and its bootloader deletes that dir, the relaunched app is left
+    running against a half-deleted _MEI — which is exactly why certifi's cacert.pem
+    disappeared (breaking HTTPS/PDF downloads) and the "failed to remove _MEI" warning
+    appeared after an update. See PyInstaller "Common Issues and Pitfalls".
+    """
+    subprocess.Popen(
+        [sys.executable], env={**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}
+    )
 
 
 def cleanup() -> None:

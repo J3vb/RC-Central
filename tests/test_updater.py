@@ -186,6 +186,25 @@ def test_apply_pending_rolls_back_on_failed_swap(monkeypatch, tmp_path, caplog):
     assert "rolled back" in caplog.text
 
 
+def test_relaunch_resets_pyinstaller_environment(monkeypatch):
+    # The self-update relaunch MUST set PYINSTALLER_RESET_ENVIRONMENT=1. Without it,
+    # PyInstaller 6.x treats the child as a worker that reuses THIS process's _MEI temp
+    # dir, which the exiting parent then deletes -> the relaunched app loses
+    # certifi/cacert.pem (breaking HTTPS/PDF downloads) and warns "failed to remove _MEI".
+    captured = {}
+    monkeypatch.setattr(
+        updater.subprocess, "Popen",
+        lambda argv, env=None, **k: captured.update(argv=argv, env=env),
+    )
+    monkeypatch.setenv("PATH", "sentinel-path")  # unrelated env must carry through
+
+    updater.relaunch()
+
+    assert captured["argv"] == [sys.executable]
+    assert captured["env"]["PYINSTALLER_RESET_ENVIRONMENT"] == "1"
+    assert captured["env"]["PATH"] == "sentinel-path"
+
+
 def test_newer_without_matching_asset(sandbox, monkeypatch, caplog):
     api = FakeResp(
         json_data={

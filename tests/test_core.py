@@ -649,51 +649,32 @@ def test_tools_tab_search_and_category_filter(monkeypatch):
     assert tab.table.isRowHidden(1)
 
 
-def test_info_only_row_is_manual_button(monkeypatch):
+def test_tools_tab_excludes_info_only_tools(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
     from app import main as app_main
 
-    info = {
+    info = {  # a hardware device: no PC software, only a manual link
         "id": "gyd550", "name": "GYD550", "vendor": "Futaba", "version": "n/a",
         "category": "gyro",
-        "links": [{"name": "Manual", "url": "https://example.invalid/gyd550"}],
+        "links": [{"name": "Manual (PDF)", "url": "https://example.invalid/gyd550.pdf"}],
     }
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [info])
+    software = _tool(id="sw", name="USB Link", vendor="Hobbywing")  # has "download"
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [info, software])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
 
-    assert tab.table.item(0, 3).text() == "No PC software"
-    button = tab.table.cellWidget(0, 4)
-    assert button.text() == "Manual"
-    assert button.menu() is None  # no "Locate existing install…" on an info card
+    # the Tools tab shows only the installable tool; the info-only device is filtered out
+    tools = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+    assert tools.table.rowCount() == 1
+    assert tools.table.item(0, 0).text() == "USB Link"
+    assert [t["id"] for t in tools.tools] == ["sw"]
 
-    # acting on the row opens the manual URL instead of installing
-    opened = {}
-    monkeypatch.setattr(
-        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
-    )
-    tab._on_action(0)
-    assert opened["u"].endswith("gyd550")
-
-
-def test_info_only_row_without_links_disables_button(monkeypatch):
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication
-
-    from app import catalog
-    from app import main as app_main
-
-    # an info card with neither links nor a homepage has nothing to open
-    bare = {"id": "bare", "name": "Bare Device", "vendor": "T", "version": "n/a", "category": "gyro"}
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [bare])
-    _ = QApplication.instance() or QApplication([])
-    tab = app_main.ToolsTab()
-
-    button = tab.table.cellWidget(0, 4)
-    assert button.text() == "Manual" and not button.isEnabled()
+    # but the info-only device's manual is still reachable on the Manuals tab
+    manuals = app_main.ManualsTab()
+    names = [manuals.table.item(r, 0).text() for r in range(manuals.table.rowCount())]
+    assert "Manual (PDF)" in names
 
 
 def test_tools_tab_website_button_opens_homepage(monkeypatch):
