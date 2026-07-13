@@ -187,10 +187,11 @@ def fetch_update(force: bool = False) -> bool:
 def apply_pending() -> None:
     """Swap the downloaded update into place. Call after the event loop exits.
 
-    Crash-safe: the running binary is moved aside first (both Windows and Linux
-    allow renaming a running executable), and if putting the new one in place
-    fails the original is restored — the app must never be left without a
-    launchable binary.
+    Recovers from a failed swap: the running binary is moved aside first (both
+    Windows and Linux allow renaming a running executable), and if putting the
+    new one in place raises (e.g. an AV lock) the original is restored. A hard
+    crash or power loss inside the move window is not covered — the previous
+    binary then survives as the sidelined .old copy and can be restored by hand.
     """
     if not (getattr(sys, "frozen", False) and PENDING.exists()):
         return

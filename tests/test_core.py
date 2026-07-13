@@ -382,7 +382,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
     tools = ["Tools"] if sys.platform == "win32" else []
-    expected = tools + ["Manuals", "Gear Calculator", "Garage", "Log"]
+    expected = tools + ["Manuals", "Garage", "Gear Calculator", "Log"]
     assert win.tabs.count() == len(expected)
     assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == expected
     if sys.platform == "win32":
@@ -876,6 +876,38 @@ def test_gear_tab_whatif_table(monkeypatch, tmp_path):
         voltage=gearing.pack_voltage(tab.cells.value()),
     )
     assert tab.sweep_table.item(bold_rows[0], 1).text() == f"{expected['fdr']:.2f}"
+
+
+def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
+    # switching away and back (showEvent -> _reload_cars) must keep the picked car,
+    # not silently reset to "— none —" and disable the save button
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GearTab()
+
+    a = garage.save_car(garage.new_car("Car A"))
+    garage.save_car(garage.new_car("Car B"))
+    tab._reload_cars()  # picks up the two saved cars
+
+    tab.car_picker.setCurrentIndex(tab.car_picker.findData(a["id"]))
+    assert tab.car_picker.currentData() == a["id"]
+
+    tab._reload_cars()  # simulates returning to the tab
+    assert tab.car_picker.currentData() == a["id"]  # selection survived
+    assert tab.save_btn.isEnabled()
+
+    # a car deleted elsewhere falls back to "— none —" without error
+    garage.delete_car(a["id"])
+    tab._reload_cars()
+    assert tab.car_picker.currentData() is None
+    assert not tab.save_btn.isEnabled()
 
 
 def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):

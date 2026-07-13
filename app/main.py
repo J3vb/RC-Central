@@ -474,12 +474,23 @@ class GearTab(QWidget):
         self._recompute()
 
     def _reload_cars(self) -> None:
-        """Refresh the car picker from the garage (blocks signals to avoid a spurious load)."""
+        """Refresh the car picker from the garage, keeping the current selection.
+
+        Blocks signals so the rebuild doesn't fire a spurious _on_pick_car. showEvent
+        calls this on every switch back to this tab, so it must re-select the car the
+        user had chosen — a bare clear()+addItem auto-selects "— none —" and would
+        otherwise silently drop the selection (and disable "Save results to car").
+        """
+        current = self.car_picker.currentData()
         self.car_picker.blockSignals(True)
         self.car_picker.clear()
         self.car_picker.addItem("— none —", None)
         for car in garage.list_cars():
             self.car_picker.addItem(car.get("name", "Unnamed"), car["id"])
+        if current is not None:
+            idx = self.car_picker.findData(current)
+            if idx != -1:  # the selected car may have been deleted on the Garage tab
+                self.car_picker.setCurrentIndex(idx)
         self.car_picker.blockSignals(False)
         self.save_btn.setEnabled(self.car_picker.currentData() is not None)
 
@@ -1160,8 +1171,8 @@ class MainWindow(QMainWindow):
             tabs.append((self.tools_tab, "Tools"))
         tabs += [
             (self.manuals_tab, "Manuals"),
-            (self.gear_tab, "Gear Calculator"),
             (self.garage_tab, "Garage"),
+            (self.gear_tab, "Gear Calculator"),
             (self.log_tab, "Log"),
         ]
         for widget, label in tabs:
