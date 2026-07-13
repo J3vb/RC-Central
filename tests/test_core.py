@@ -58,6 +58,13 @@ def _hermetic_qsettings(tmp_path, monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _hermetic_manuals_dir(tmp_path, monkeypatch):
+    """Redirect the manual cache to tmp so ManualsTab's startup sweep (clear_partial_manuals)
+    and any download never touch the real user data dir."""
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+
+
 def test_catalog_entries_match_schema():
     schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
     entries = sorted((ROOT / "catalog" / "tools").glob("*.json"))
@@ -308,6 +315,115 @@ def test_download_rejects_html_page(tmp_path, monkeypatch):
     monkeypatch.setattr(installer.requests, "get", lambda *a, **k: FakeResp())
     with pytest.raises(installer.VendorFileChanged):
         installer._download("https://example.invalid/x.zip", tmp_path / "x.zip", None)
+
+
+def test_manual_cache_path_is_deterministic_and_pdf(monkeypatch, tmp_path):
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    a = installer.manual_cache_path("https://x/one.pdf")
+    b = installer.manual_cache_path("https://x/two.pdf")
+    assert a == installer.manual_cache_path("https://x/one.pdf")  # same url -> same file
+    assert a != b  # different url -> different file
+    assert a.suffix == ".pdf" and a.parent == installer.MANUALS_DIR
+
+
+def test_download_manual_caches_and_leaves_no_partial(monkeypatch, tmp_path):
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    monkeypatch.setattr(
+        installer, "_download",
+        lambda url, dest, progress, cancel=None: dest.write_bytes(b"%PDF data"),
+    )
+    url = "https://example.invalid/manual.pdf"
+    assert not installer.manual_is_cached(url)
+    path = installer.download_manual(url)
+    assert path == installer.manual_cache_path(url)
+    assert path.read_bytes() == b"%PDF data"
+    assert installer.manual_is_cached(url)
+    assert not path.with_suffix(".part").exists()  # temp renamed in, not left behind
+
+
+def test_download_manual_failure_caches_nothing(monkeypatch, tmp_path):
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+
+    def boom(url, dest, progress, cancel=None):
+        dest.write_bytes(b"partial")  # a real mid-stream failure leaves a partial file
+        raise installer.VendorFileChanged("dead link returned a web page")
+
+    monkeypatch.setattr(installer, "_download", boom)
+    url = "https://example.invalid/manual.pdf"
+    with pytest.raises(installer.VendorFileChanged):
+        installer.download_manual(url)
+    assert not installer.manual_is_cached(url)  # no .pdf left as if it were downloaded
+    assert not installer.manual_cache_path(url).with_suffix(".part").exists()  # cleaned up
+
+
+def test_is_pdf_heuristic():
+    from app.main import _is_pdf
+
+    assert _is_pdf("https://x/a.pdf")
+    assert _is_pdf("https://x/a.PDF")  # case-insensitive
+    assert _is_pdf("https://x/a.pdf?ver=2")  # query string ignored
+    assert _is_pdf("https://x/a.pdf#page=3")  # fragment ignored
+    assert not _is_pdf("https://x/support")
+    assert not _is_pdf(None)
+
+
+def test_clear_partial_manuals_removes_orphans(tmp_path, monkeypatch):
+    # startup cleanup clears a .part left by a past download the app was killed mid-flight
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    (installer.MANUALS_DIR / "deadbeef.part").write_bytes(b"leftover")
+    installer.clear_partial_manuals()
+    assert not list(installer.MANUALS_DIR.glob("*.part"))
+
+
+def test_clear_partial_manuals_missing_dir_is_noop(tmp_path, monkeypatch):
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "nope")
+    installer.clear_partial_manuals()  # glob on a missing dir yields nothing; must not raise
+
+
+def test_download_manual_does_not_sweep_other_parts(monkeypatch, tmp_path):
+    # parallel-safety: downloading one URL must NOT delete another in-flight download's temp
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    sibling = installer.MANUALS_DIR / "aaaa1111.part"  # pretend another row is mid-download
+    sibling.write_bytes(b"in flight")
+    monkeypatch.setattr(
+        installer, "_download",
+        lambda url, dest, progress, cancel=None: dest.write_bytes(b"%PDF"),
+    )
+    installer.download_manual("https://example.invalid/other.pdf")
+    assert sibling.exists()  # the other download's temp survived
+
+
+def test_download_manual_cancel_raises_and_caches_nothing(monkeypatch, tmp_path):
+    import threading
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+
+    class FakeResp:  # a streaming response with two chunks; cancel fires before the first
+        headers = {"content-type": "application/pdf", "content-length": "8"}
+
+        def raise_for_status(self):
+            pass
+
+        def iter_content(self, chunk_size):
+            yield b"1234"
+            yield b"5678"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    monkeypatch.setattr(installer.requests, "get", lambda *a, **k: FakeResp())
+    ev = threading.Event()
+    ev.set()  # already cancelled -> aborts at the first chunk
+    url = "https://example.invalid/manual.pdf"
+    with pytest.raises(installer.DownloadCancelled):
+        installer.download_manual(url, cancel=ev)
+    assert not installer.manual_is_cached(url)  # nothing cached
+    assert not installer.manual_cache_path(url).with_suffix(".part").exists()  # temp cleaned
 
 
 def test_find_exe_skips_uninstallers(tmp_path):
@@ -603,53 +719,346 @@ def test_tools_tab_website_button_opens_homepage(monkeypatch):
     assert opened["u"].endswith("/vendor")
 
 
-def test_manuals_tab_lists_website_and_manuals(monkeypatch):
-    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
-    from PySide6.QtWidgets import QApplication, QToolButton
-
-    from app import catalog
-    from app import main as app_main
-
-    tool = _tool(
-        homepage="https://example.invalid/site",
-        links=[{"name": "Manual (PDF)", "url": "https://example.invalid/manual.pdf"}],
-    )
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [tool])
-    _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()  # cross-platform: no install/launch, just links
-
-    buttons = {b.text(): b for b in tab.findChildren(QToolButton)}
-    assert "Website" in buttons and "Manual (PDF)" in buttons
-    opened = {}
-    monkeypatch.setattr(
-        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
-    )
-    buttons["Manual (PDF)"].click()
-    assert opened["u"].endswith("/manual.pdf")
-
-
-def test_manuals_tab_search_filters(monkeypatch):
+def test_manuals_tab_table_rows_and_actions(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
     from app import main as app_main
 
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")  # cache stays in tmp
+    tool = _tool(
+        category="esc",
+        homepage="https://example.invalid/site",
+        links=[
+            {"name": "Support page", "url": "https://example.invalid/support"},
+            {"name": "Manual (PDF)", "url": "https://example.invalid/manual.pdf"},
+        ],
+    )
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [tool])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()  # cross-platform: one row per link
+
+    assert tab.table.rowCount() == 2
+    rows = {tab.table.item(r, 0).text(): r for r in range(2)}
+
+    web = rows["Support page"]  # a non-PDF link opens in the browser
+    assert tab.table.item(web, 3).text() == "Web page"
+    assert tab.table.cellWidget(web, 4).text() == "Open"
+
+    pdf = rows["Manual (PDF)"]  # a PDF starts uncached -> Download
+    assert tab.table.item(pdf, 3).text() == ""
+    assert tab.table.cellWidget(pdf, 4).text() == "Download"
+
+    opened = {}
+    monkeypatch.setattr(
+        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    tab.table.cellWidget(web, 4).click()  # web link -> its URL
+    assert opened["u"].endswith("/support")
+    tab.table.cellWidget(pdf, 5).click()  # Website column -> the homepage
+    assert opened["u"].endswith("/site")
+
+    # clicking Download on an uncached PDF routes to the (threaded) download, not open
+    routed = {}
+    monkeypatch.setattr(tab, "_start_download", lambda r, u: routed.update(row=r, url=u))
+    tab.table.cellWidget(pdf, 4).click()
+    assert routed == {"row": pdf, "url": "https://example.invalid/manual.pdf"}
+
+
+def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    url = "https://example.invalid/manual.pdf"
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(b"%PDF-1.4 fake")  # pre-seed the cache
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(links=[{"name": "M", "url": url}])])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+
+    assert tab.table.item(0, 3).text() == "Downloaded"
+    button = tab.table.cellWidget(0, 4)
+    assert button.text() == "Open"
+
+    opened = {}
+    monkeypatch.setattr(
+        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    button.click()
+    # opens the local cached file (a file:// URL), never the remote http URL
+    assert opened["u"].startswith("file:") and opened["u"].endswith(".pdf")
+
+
+def test_manuals_tab_parallel_downloads_and_dup_guard(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import threading
+
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    same = "https://example.invalid/shared.pdf"
     tools = [
-        _tool(id="a", name="Servo Prog", vendor="Reve D", category="servo"),
-        _tool(id="b", name="ESC Link", vendor="Hobbywing", category="esc"),
+        _tool(id="a", name="A", links=[{"name": "A (PDF)", "url": "https://example.invalid/a.pdf"}]),
+        _tool(id="b", name="B", links=[{"name": "B (PDF)", "url": same}]),
+        _tool(id="c", name="C", links=[{"name": "C (PDF)", "url": same}]),  # shares B's URL
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()  # rows sorted by category: esc (ESC Link) then servo (Servo Prog)
+    tab = app_main.ManualsTab()
 
+    started = []
+    monkeypatch.setattr(tab, "_start_download", lambda r, u: started.append((r, u)))
+    tab.table.cellWidget(0, 4).click()  # two different rows both start -> parallel, no refuse
+    tab.table.cellWidget(1, 4).click()
+    assert len(started) == 2
+
+    # row C shares row B's URL and B is (pretend) in flight -> no duplicate download thread
+    started.clear()
+    tab._active[1] = threading.Event()
+    row_c = next(r for r in range(3) if tab.table.item(r, 0).text() == "C (PDF)")
+    tab.table.cellWidget(row_c, 4).click()
+    assert started == []  # the dup-URL guard kept it from starting a second thread
+
+
+def test_manuals_tab_click_cancels_active_download(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import threading
+
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    url = "https://example.invalid/m.pdf"
+    monkeypatch.setattr(
+        catalog, "load_catalog", lambda: [_tool(links=[{"name": "M (PDF)", "url": url}])]
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+
+    ev = threading.Event()
+    tab._active[0] = ev  # simulate an in-flight download; its button shows "Cancel"
+    tab.table.cellWidget(0, 4).setText("Cancel")
+    tab.table.cellWidget(0, 4).click()  # -> _cancel_download
+    assert ev.is_set()  # the worker will see this and abort
+    assert tab.table.cellWidget(0, 4).text() == "Cancelling…"
+    assert not tab.table.cellWidget(0, 4).isEnabled()
+
+
+def test_manuals_tab_finished_success_refreshes_siblings(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import threading
+
+    from PySide6.QtWidgets import QApplication, QProgressBar
+
+    from app import catalog
+    from app import main as app_main
+
+    url = "https://example.invalid/shared.pdf"  # two rows link the SAME manual
+    tools = [
+        _tool(id="a", name="A", links=[{"name": "Shared (PDF)", "url": url}]),
+        _tool(id="b", name="B", links=[{"name": "Shared (PDF)", "url": url}]),
+    ]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+
+    # simulate row 0 downloading with its inline bar, then completing (file now cached)
+    tab._active[0] = threading.Event()
+    tab.table.setCellWidget(0, 3, QProgressBar())
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(b"%PDF")
+    tab._download_finished(0, None)
+
+    assert 0 not in tab._active
+    assert tab.table.cellWidget(0, 3) is None  # inline progress bar removed
+    # BOTH the finished row and its sibling sharing the URL flip to Open/Downloaded
+    assert [tab.table.cellWidget(r, 4).text() for r in range(2)] == ["Open", "Open"]
+    assert [tab.table.item(r, 3).text() for r in range(2)] == ["Downloaded", "Downloaded"]
+
+
+def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import threading
+
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    url = "https://example.invalid/m.pdf"
+    monkeypatch.setattr(
+        catalog, "load_catalog", lambda: [_tool(links=[{"name": "M (PDF)", "url": url}])]
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+
+    warned = {"n": 0}
+    monkeypatch.setattr(
+        app_main.QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1)
+    )
+
+    # cancel: no error, nothing cached -> row resets to "Download", NO dialog
+    tab._active[0] = threading.Event()
+    tab._download_finished(0, None)
+    assert tab.table.cellWidget(0, 4).text() == "Download"
+    assert warned["n"] == 0
+
+    # real failure: warning dialog, row still reset
+    tab._active[0] = threading.Event()
+    tab._download_finished(0, "network boom")
+    assert warned["n"] == 1
+    assert tab.table.cellWidget(0, 4).text() == "Download"
+
+
+def test_manuals_tab_pdf_row_menu_open_and_delete(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    url = "https://example.invalid/shared.pdf"
+    tools = [
+        _tool(id="a", name="A", links=[
+            {"name": "Support", "url": "https://example.invalid/support"},  # web link -> no menu
+            {"name": "A (PDF)", "url": url},
+        ]),
+        _tool(id="b", name="B", links=[{"name": "B (PDF)", "url": url}]),  # sibling, same URL
+    ]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+    rows = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
+
+    # a web-page row has no dropdown; PDF rows carry the two actions
+    assert tab.table.cellWidget(rows["Support"], 4).menu() is None
+    menu = tab.table.cellWidget(rows["A (PDF)"], 4).menu()
+    assert [a.text() for a in menu.actions()] == ["Open containing folder", "Delete downloaded PDF"]
+    assert all(not a.isEnabled() for a in menu.actions())  # disabled until downloaded
+
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(b"%PDF")  # now "downloaded"
+    tab._refresh_idle_rows()
+    assert all(a.isEnabled() for a in menu.actions())
+
+    # Open containing folder -> the manuals cache dir
+    opened = {}
+    monkeypatch.setattr(
+        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    tab._open_folder(rows["A (PDF)"])
+    assert opened["u"].startswith("file:") and "manuals" in opened["u"].lower()
+
+    # declining the delete confirmation keeps the file
+    monkeypatch.setattr(
+        app_main.QMessageBox, "question", lambda *a, **k: app_main.QMessageBox.StandardButton.No
+    )
+    tab._delete_pdf(rows["A (PDF)"])
+    assert installer.manual_is_cached(url)
+
+    # confirming deletes it and resets BOTH rows sharing the URL back to "Download"
+    monkeypatch.setattr(
+        app_main.QMessageBox, "question", lambda *a, **k: app_main.QMessageBox.StandardButton.Yes
+    )
+    tab._delete_pdf(rows["A (PDF)"])
+    assert not installer.manual_is_cached(url)
+    assert tab.table.cellWidget(rows["A (PDF)"], 4).text() == "Download"
+    assert tab.table.cellWidget(rows["B (PDF)"], 4).text() == "Download"  # sibling reset too
+    assert all(not a.isEnabled() for a in menu.actions())  # menu disabled again
+
+
+def test_manuals_tab_refresh_all_updates_sibling_row(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    url = "https://example.invalid/shared.pdf"  # two tools link the SAME manual
+    tools = [
+        _tool(id="a", name="Tool A", links=[{"name": "Shared (PDF)", "url": url}]),
+        _tool(id="b", name="Tool B", links=[{"name": "Shared (PDF)", "url": url}]),
+    ]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+    assert [tab.table.cellWidget(r, 4).text() for r in range(2)] == ["Download", "Download"]
+
+    # simulate row 0's download completing: the file is now cached and _download_finished runs
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(b"%PDF")
+    tab._download_finished(0, None)
+
+    # BOTH rows (not just row 0) must now read "Open"/"Downloaded"
+    assert [tab.table.cellWidget(r, 4).text() for r in range(2)] == ["Open", "Open"]
+    assert [tab.table.item(r, 3).text() for r in range(2)] == ["Downloaded", "Downloaded"]
+
+
+def test_manuals_tab_skips_link_without_name(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    # an unvalidated remote catalog link missing "name" must be skipped, not crash the build
+    tool = _tool(links=[
+        {"url": "https://example.invalid/nameless.pdf"},  # malformed: no name
+        {"name": "Good (PDF)", "url": "https://example.invalid/good.pdf"},
+    ])
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [tool])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()  # would raise KeyError on link["name"] before the guard
+    assert tab.table.rowCount() == 1
+    assert tab.table.item(0, 0).text() == "Good (PDF)"
+
+
+def test_manuals_tab_search_and_category_filter(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    tools = [
+        _tool(id="a", name="Servo Prog", vendor="Reve D", category="servo",
+              links=[{"name": "Servo manual (PDF)", "url": "https://example.invalid/servo.pdf"}]),
+        _tool(id="b", name="ESC Link", vendor="Hobbywing", category="esc",
+              links=[{"name": "ESC support page", "url": "https://example.invalid/esc"}]),
+    ]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+    assert tab.table.rowCount() == 2
+    esc_row = next(r for r in range(2) if "ESC" in tab.table.item(r, 0).text())
+    servo_row = 1 - esc_row
+
+    # text search matches vendor and hides the rest
     tab.search.setText("hobbywing")
-    assert [r.isHidden() for r in tab._rows] == [False, True]  # only the Hobbywing row shows
-    assert not tab._headers["esc"].isHidden() and tab._headers["servo"].isHidden()
+    assert not tab.table.isRowHidden(esc_row) and tab.table.isRowHidden(servo_row)
 
-    tab.search.setText("")  # clearing restores every row and header
-    assert not any(r.isHidden() for r in tab._rows)
-    assert not any(h.isHidden() for h in tab._headers.values())
+    # searching the manual name itself now works (the old grouped-list tab couldn't)
+    tab.search.setText("servo manual")
+    assert tab.table.isRowHidden(esc_row) and not tab.table.isRowHidden(servo_row)
+
+    tab.search.setText("")  # cleared -> every row back
+    assert not tab.table.isRowHidden(esc_row) and not tab.table.isRowHidden(servo_row)
+
+    # category dropdown filters independently (index 0 is "All categories")
+    tab.category_filter.setCurrentIndex(tab.category_filter.findData("servo"))
+    assert tab.table.isRowHidden(esc_row) and not tab.table.isRowHidden(servo_row)
 
 
 def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):

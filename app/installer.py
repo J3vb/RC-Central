@@ -15,6 +15,7 @@ from app.paths import data_dir
 
 DATA_DIR = data_dir()
 TOOLS_DIR = DATA_DIR / "tools"
+MANUALS_DIR = DATA_DIR / "manuals"
 
 # exe names that are never the tool itself
 _EXE_SKIP = ("unins", "uninstall", "setup", "install", "update", "vcredist")
@@ -26,6 +27,10 @@ class VendorFileChanged(Exception):
 
 class ExeNotFound(Exception):
     pass
+
+
+class DownloadCancelled(Exception):
+    """Raised out of _download when its cancel event is set, to unwind the stream cleanly."""
 
 
 def install(tool: dict, progress=None) -> Path:
@@ -128,7 +133,43 @@ def _state_file(tool_id: str) -> Path:
     return TOOLS_DIR / f"{tool_id}.state.json"
 
 
-def _download(url: str, dest: Path, progress) -> None:
+def manual_cache_path(url: str) -> Path:
+    """Local cache path for a manual PDF; its existence IS the 'downloaded' state
+    (no state file needed). Named by a hash of the URL so any URL maps to one file."""
+    return MANUALS_DIR / (hashlib.sha256(url.encode()).hexdigest()[:16] + ".pdf")
+
+
+def manual_is_cached(url: str) -> bool:
+    return manual_cache_path(url).exists()
+
+
+def download_manual(url: str, progress=None, cancel=None) -> Path:
+    """Fetch a manual PDF into the local cache and return its path. Reuses _download's
+    HTML-guard, so a dead/moved link (a web page instead of a PDF) raises VendorFileChanged
+    instead of caching garbage. Pass a threading.Event as cancel to abort mid-download."""
+    MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    dest = manual_cache_path(url)
+    # Unique per URL, so parallel downloads never share a temp; the except-branch cleans
+    # this download's own temp on failure/cancel. Startup does the cross-run orphan sweep.
+    tmp = dest.with_suffix(".part")
+    try:
+        _download(url, tmp, progress, cancel)
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        raise
+    tmp.replace(dest)
+    return dest
+
+
+def clear_partial_manuals() -> None:
+    """Remove orphaned .part temps left by a past download the app was killed mid-flight
+    (the daemon thread dies without cleanup). Call once at startup, before any download
+    is in flight, so a global sweep can't clobber a live parallel download's temp."""
+    for stale in MANUALS_DIR.glob("*.part"):  # glob on a missing dir yields nothing
+        stale.unlink(missing_ok=True)
+
+
+def _download(url: str, dest: Path, progress, cancel=None) -> None:
     with requests.get(url, stream=True, timeout=30) as resp:
         resp.raise_for_status()
         if "text/html" in resp.headers.get("content-type", ""):
@@ -140,6 +181,10 @@ def _download(url: str, dest: Path, progress) -> None:
         done = 0
         with open(dest, "wb") as f:
             for chunk in resp.iter_content(chunk_size=65536):
+                # cooperative cancel: a thread can't be killed, but we can stop between
+                # chunks (~64 KB), so a cancel aborts within one chunk's worth of I/O
+                if cancel is not None and cancel.is_set():
+                    raise DownloadCancelled()
                 f.write(chunk)
                 done += len(chunk)
                 if progress:
