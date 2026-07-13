@@ -109,3 +109,23 @@ def pinion_sweep(
         )
         rows.append({"pinion": p, "is_base": p == base_pinion, **result})
     return rows
+
+
+def solve_pinion_for_rollout(
+    *,
+    target_rollout_mm: float,
+    spur: int,
+    internal_ratio: float,
+    tire_diameter_mm: float,
+) -> int:
+    """Nearest whole-tooth pinion whose rollout is closest to target_rollout_mm.
+
+    Inverts rollout = tire_diameter_mm * pi * pinion / (internal_ratio * spur).
+    Rollout is monotonic in pinion, so rounding the exact solution gives the
+    closest achievable pinion. Clamped to >= 1 (a pinion is at least 1 tooth).
+    Raises ValueError on a non-positive target.
+    """
+    if target_rollout_mm <= 0:
+        raise ValueError("target_rollout_mm must be > 0")
+    pinion = round(target_rollout_mm * internal_ratio * spur / (tire_diameter_mm * math.pi))
+    return max(1, pinion)

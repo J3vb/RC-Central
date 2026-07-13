@@ -86,3 +86,30 @@ def test_pinion_sweep_base_row_matches_compute():
     assert base["fdr"] == expected["fdr"]
     assert base["rollout_mm"] == expected["rollout_mm"]
     assert base["top_speed_kmh"] == expected["top_speed_kmh"]
+
+
+def test_solve_pinion_round_trips_with_compute():
+    # The rollout produced by pinion 24 must solve back to 24.
+    r = gearing.compute(
+        pinion=24, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
+    )
+    solved = gearing.solve_pinion_for_rollout(
+        target_rollout_mm=r["rollout_mm"], spur=87, internal_ratio=1.9, tire_diameter_mm=60
+    )
+    assert solved == 24
+
+
+def test_solve_pinion_clamps_to_one():
+    assert (
+        gearing.solve_pinion_for_rollout(
+            target_rollout_mm=0.01, spur=87, internal_ratio=1.9, tire_diameter_mm=60
+        )
+        == 1
+    )
+
+
+def test_solve_pinion_rejects_nonpositive_target():
+    with pytest.raises(ValueError):
+        gearing.solve_pinion_for_rollout(
+            target_rollout_mm=0, spur=87, internal_ratio=1.9, tire_diameter_mm=60
+        )

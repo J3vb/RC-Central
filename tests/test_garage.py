@@ -139,3 +139,60 @@ def test_load_car_file_rejects_malformed_json(tmp_path):
     path.write_text("{not json", encoding="utf-8")
     with pytest.raises(ValueError):
         garage.load_car_file(path)
+
+
+def test_diff_cars_flags_only_changed_fields():
+    a = garage.new_car("Alpha")
+    b = garage.new_car("Alpha")
+    b["gearing"]["pinion"] = 30
+    rows = garage.diff_cars(a, b)
+    assert [label for label, _va, _vb, differs in rows if differs] == ["Pinion"]
+
+
+def test_diff_cars_identical_all_equal():
+    import copy
+
+    a = garage.new_car("Same")
+    assert all(not differs for *_rest, differs in garage.diff_cars(a, copy.deepcopy(a)))
+
+
+def test_diff_cars_handles_missing_gearing():
+    rows = garage.diff_cars({"name": "Sparse"}, garage.new_car("Full"))
+    pinion = next(r for r in rows if r[0] == "Pinion")
+    assert pinion[1] == "" and pinion[2] == "22"  # no KeyError; sparse side blank
+
+
+def test_add_preset_snapshots_current_gearing():
+    car = garage.new_car("Presetful")
+    car["gearing"]["pinion"] = 30
+    garage.add_preset(car, "carpet")
+    car["gearing"]["pinion"] = 22  # mutate after: preset must be a deep copy
+    assert garage.list_presets(car)[0]["gearing"]["pinion"] == 30
+
+
+def test_apply_preset_restores_gearing():
+    car = garage.new_car("Switcher")
+    car["gearing"]["pinion"] = 30
+    garage.add_preset(car, "high")
+    car["gearing"]["pinion"] = 18
+    garage.add_preset(car, "low")
+    garage.apply_preset(car, "high")
+    assert car["gearing"]["pinion"] == 30
+
+
+def test_add_preset_same_name_replaces():
+    car = garage.new_car("Dupe")
+    garage.add_preset(car, "carpet")
+    garage.add_preset(car, "carpet")
+    assert len(garage.list_presets(car)) == 1
+
+
+def test_delete_preset():
+    car = garage.new_car("Trim")
+    garage.add_preset(car, "carpet")
+    garage.delete_preset(car, "carpet")
+    assert garage.list_presets(car) == []
+
+
+def test_list_presets_missing_key_returns_empty():
+    assert garage.list_presets({}) == []  # a car saved before presets existed

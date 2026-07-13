@@ -4,14 +4,17 @@ import json
 import logging
 import sys
 import threading
+import zipfile
 from pathlib import Path
 from typing import Callable
 
 from PySide6.QtCore import QObject, QSettings, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QFontDatabase, QIcon
+from PySide6.QtGui import QColor, QDesktopServices, QFontDatabase, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QComboBox,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
@@ -41,12 +44,14 @@ from PySide6.QtWidgets import (
 
 from app import (
     __version__,
+    backup,
     catalog,
     garage,
     gearing,
     installer,
     launcher,
     logsetup,
+    paths,
     updater,
 )
 
@@ -171,9 +176,13 @@ class ToolsTab(_DownloadTab):
         for cat in sorted({t.get("category", "") for t in self.tools if t.get("category")}):
             self.category_filter.addItem(_CATEGORY_LABELS.get(cat, cat.title()), cat)
         self.category_filter.currentIndexChanged.connect(self._apply_filter)
+        # Count of installed tools with a newer catalog version, kept in sync with
+        # the per-row Update buttons (see _refresh_summary).
+        self.update_summary = QLabel()
         controls = QHBoxLayout()
         controls.addWidget(self.search, 1)
         controls.addWidget(self.category_filter)
+        controls.addWidget(self.update_summary)
 
         # ponytail: one shared progress bar; per-row bars if parallel installs matter
         self.progress = QProgressBar()
@@ -211,10 +220,23 @@ class ToolsTab(_DownloadTab):
                 lambda _=False, r=row: self._uninstall(r),
             )
             self._install_actions[row] = (open_action, uninstall_action)
+            # USB/adapter drivers are often needed *before* first launch, so these
+            # stay always-enabled (not in _install_actions). "Install" = open the
+            # driver URL; drivers vary (web page/.inf/.zip/.exe) and opening is
+            # universally correct. Guard url — the remote catalog is unvalidated.
+            valid_drivers = [d for d in (tool.get("drivers") or []) if d.get("url")]
+            if valid_drivers:
+                menu.addSeparator()
+                for d in valid_drivers:
+                    menu.addAction(
+                        f"Install driver: {d.get('name') or 'driver'}…",
+                        lambda _=False, u=d["url"]: QDesktopServices.openUrl(QUrl(u)),
+                    )
             button.setMenu(menu)
             self.table.setCellWidget(row, 4, button)
             self.table.setCellWidget(row, 5, _link_button("Website", tool.get("homepage")))
             self._refresh_row(row)
+        self._refresh_summary()
         self.table.resizeColumnsToContents()
         # stretch the tool-name column so the two trailing button columns stay compact
         self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
@@ -244,6 +266,17 @@ class ToolsTab(_DownloadTab):
         self.table.cellWidget(row, 4).setText(action)
         for act in self._install_actions.get(row, ()):
             act.setEnabled(state is not None)  # uninstall / open-folder need an install
+
+    def _refresh_summary(self) -> None:
+        """Count rows whose action button reads 'Update'. Reading the button text the
+        rows already set keeps the badge from ever disagreeing with them (and needs no
+        extra state read). Global count, not filtered — total updates, not visible ones."""
+        n = sum(
+            1
+            for r in range(len(self.tools))
+            if self.table.cellWidget(r, 4).text() == "Update"
+        )
+        self.update_summary.setText(f"{n} update{'' if n == 1 else 's'} available" if n else "")
 
     def _on_action(self, row: int) -> None:
         tool = self.tools[row]
@@ -286,6 +319,7 @@ class ToolsTab(_DownloadTab):
             QMessageBox.warning(self, "Couldn't add existing install", str(e))
             return
         self._refresh_row(row)
+        self._refresh_summary()
         self._status(f"Linked existing {tool['name']}", 5000)
 
     def _open_install_folder(self, row: int) -> None:
@@ -309,6 +343,7 @@ class ToolsTab(_DownloadTab):
             QMessageBox.warning(self, "Uninstall failed", str(e))
             return
         self._refresh_row(row)
+        self._refresh_summary()
         self._status(f"Uninstalled {tool['name']}", 5000)
 
     def _install(self, row: int, tool: dict) -> None:
@@ -322,6 +357,7 @@ class ToolsTab(_DownloadTab):
     def _install_finished(self, row: int, error: str | None) -> None:
         self.table.cellWidget(row, 4).setEnabled(True)
         self._refresh_row(row)
+        self._refresh_summary()
         if error:
             self._clear_status()
             QMessageBox.warning(self, "Install failed", error)
@@ -585,6 +621,19 @@ class GearTab(QWidget):
         self.kmh_out = QLabel()
         self.mph_out = QLabel()
 
+        # Reverse-solve: enter a target rollout, get the nearest whole-tooth pinion.
+        self.target_rollout = QDoubleSpinBox()
+        self.target_rollout.setRange(1.0, 999.0)
+        self.target_rollout.setSingleStep(0.5)
+        self.target_rollout.setValue(30.0)
+        solve_btn = QPushButton("Solve → pinion")
+        solve_btn.clicked.connect(self._solve_pinion)
+        solve_row = QHBoxLayout()
+        solve_row.addWidget(self.target_rollout, 1)
+        solve_row.addWidget(solve_btn)
+        solve_widget = QWidget()
+        solve_widget.setLayout(solve_row)
+
         form = QFormLayout()
         form.addRow("Load from car", self.car_picker)
         form.addRow("Pinion (teeth)", self.pinion)
@@ -593,6 +642,7 @@ class GearTab(QWidget):
         form.addRow("Tire diameter (mm)", self.tire)
         form.addRow("Motor Kv", self.kv)
         form.addRow("Battery cells (S)", self.cells)
+        form.addRow("Target rollout (mm)", solve_widget)
         form.addRow(QLabel("<b>Results</b>"))
         form.addRow("Final drive ratio", self.fdr_out)
         form.addRow("Rollout (mm)", self.rollout_out)
@@ -711,6 +761,25 @@ class GearTab(QWidget):
         self.mph_out.setText(f"{r['top_speed_mph']:.1f}")
         self._fill_sweep(rows)
 
+    def _solve_pinion(self) -> None:
+        """Fill the pinion spinbox with the nearest tooth for the target rollout.
+
+        setValue fires the existing valueChanged -> _recompute, so results and the
+        sweep table refresh for free. QSpinBox clamps to its 1..99 range; integer
+        teeth mean the achieved rollout may differ slightly from target, and
+        _recompute shows that honest resulting value.
+        """
+        try:
+            p = gearing.solve_pinion_for_rollout(
+                target_rollout_mm=self.target_rollout.value(),
+                spur=self.spur.value(),
+                internal_ratio=self.internal_ratio.value(),
+                tire_diameter_mm=self.tire.value(),
+            )
+        except ValueError:
+            return
+        self.pinion.setValue(p)
+
     def _fill_sweep(self, rows: list[dict]) -> None:
         self.sweep_table.setRowCount(len(rows))
         for row, data in enumerate(rows):
@@ -761,6 +830,61 @@ class GearTab(QWidget):
             win.statusBar().showMessage(f"Saved gearing to {car['name']}", 5000)
 
 
+class _CompareDialog(QDialog):
+    """Read-only side-by-side of two cars' spec fields; differing rows highlighted.
+
+    Highlight uses yellow bg + black text so it stays readable in either theme
+    (a themed foreground could otherwise vanish on the yellow).
+    """
+
+    def __init__(self, cars: list[dict], default_id: str | None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Compare cars")
+        self.combo_a = QComboBox()
+        self.combo_b = QComboBox()
+        for combo in (self.combo_a, self.combo_b):
+            for car in cars:
+                combo.addItem(car.get("name", "Unnamed"), car["id"])
+            combo.currentIndexChanged.connect(self._render)
+        idx_a = max(0, self.combo_a.findData(default_id))  # open car, or first
+        self.combo_a.setCurrentIndex(idx_a)
+        self.combo_b.setCurrentIndex(1 if idx_a == 0 else 0)  # a different car
+
+        self.table = QTableWidget(0, 3)
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setStretchLastSection(True)
+
+        pick_row = QHBoxLayout()
+        pick_row.addWidget(self.combo_a, 1)
+        pick_row.addWidget(self.combo_b, 1)
+        layout = QVBoxLayout(self)
+        layout.addLayout(pick_row)
+        layout.addWidget(self.table)
+        self.resize(520, 480)
+        self._render()
+
+    def _render(self) -> None:
+        # a car may have been deleted between opening the dialog and picking it
+        a = garage.load_car(self.combo_a.currentData()) or {}
+        b = garage.load_car(self.combo_b.currentData()) or {}
+        rows = garage.diff_cars(a, b)
+        self.table.setHorizontalHeaderLabels(
+            ("Field", a.get("name", "A"), b.get("name", "B"))
+        )
+        self.table.setRowCount(len(rows))
+        for r, (label, va, vb, differs) in enumerate(rows):
+            self.table.setItem(r, 0, QTableWidgetItem(label))
+            for col, text in ((1, va), (2, vb)):
+                item = QTableWidgetItem(text)
+                if differs:
+                    item.setBackground(Qt.GlobalColor.yellow)
+                    item.setForeground(Qt.GlobalColor.black)
+                self.table.setItem(r, col, item)
+        self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setStretchLastSection(True)
+
+
 class GarageTab(QWidget):
     """Create/edit/delete RC car spec sheets."""
 
@@ -784,15 +908,29 @@ class GarageTab(QWidget):
         dup_btn.clicked.connect(self._on_duplicate)
         del_btn = QPushButton("Delete")
         del_btn.clicked.connect(self._on_delete)
+        self.compare_btn = QPushButton("Compare…")
+        self.compare_btn.clicked.connect(self._on_compare)
         left_buttons = QHBoxLayout()
         left_buttons.addWidget(new_btn)
         left_buttons.addWidget(import_btn)
         left_buttons.addWidget(dup_btn)
         left_buttons.addWidget(del_btn)
+        left_buttons.addWidget(self.compare_btn)
+
+        # Whole-garage actions (all cars), distinct from the per-car form buttons.
+        backup_btn = QPushButton("Back up all…")
+        backup_btn.clicked.connect(self._on_backup)
+        restore_btn = QPushButton("Restore all…")
+        restore_btn.clicked.connect(self._on_restore)
+        backup_row = QHBoxLayout()
+        backup_row.addWidget(backup_btn)
+        backup_row.addWidget(restore_btn)
+
         left = QVBoxLayout()
         left.addWidget(self.search)
         left.addWidget(self.list)
         left.addLayout(left_buttons)
+        left.addLayout(backup_row)
 
         self.name = QLineEdit()
         self.chassis = QLineEdit()
@@ -851,6 +989,22 @@ class GarageTab(QWidget):
         form_buttons.addWidget(export_btn)
         form_buttons.addWidget(copy_btn)
 
+        # Named gearing presets (e.g. "indoor carpet", "outdoor asphalt"): snapshot the
+        # current gearing, or switch the form to a saved one. activated fires only on
+        # user picks, never on programmatic repopulation in _fill_form.
+        self._current_presets: list[dict] = []
+        self.preset_combo = QComboBox()
+        self.preset_combo.activated.connect(self._on_apply_preset)
+        save_preset_btn = QPushButton("Save as preset…")
+        save_preset_btn.clicked.connect(self._on_save_preset)
+        del_preset_btn = QPushButton("Delete preset")
+        del_preset_btn.clicked.connect(self._on_delete_preset)
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Preset"))
+        preset_row.addWidget(self.preset_combo, 1)
+        preset_row.addWidget(save_preset_btn)
+        preset_row.addWidget(del_preset_btn)
+
         # Run / maintenance log for the selected car.
         self._current_log: list[dict] = []
         self.log_table = QTableWidget(0, 3)
@@ -876,6 +1030,7 @@ class GarageTab(QWidget):
 
         right = QVBoxLayout()
         right.addLayout(form)
+        right.addLayout(preset_row)
         right.addLayout(form_buttons)
         right.addWidget(QLabel("<b>Run / maintenance log</b>"))
         right.addWidget(self.log_table)
@@ -897,6 +1052,7 @@ class GarageTab(QWidget):
             item.setData(Qt.ItemDataRole.UserRole, car["id"])
             self.list.addItem(item)
         self.list.blockSignals(False)
+        self.compare_btn.setEnabled(len(self._cars) >= 2)  # needs two cars to compare
         self._apply_filter()
 
     _SEARCH_FIELDS = ("name", "chassis", "motor", "esc", "servo", "tires")
@@ -933,6 +1089,11 @@ class GarageTab(QWidget):
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
+        self._current_presets = list(car.get("presets", []))
+        self.preset_combo.clear()
+        self.preset_combo.addItem("— preset —", None)
+        for p in self._current_presets:
+            self.preset_combo.addItem(p.get("name", "preset"), p.get("name"))
 
     def _fill_log_table(self) -> None:
         self.log_table.setRowCount(len(self._current_log))
@@ -958,6 +1119,9 @@ class GarageTab(QWidget):
                 "tires": self.tires.text().strip(),
                 "notes": self.notes.toPlainText(),
                 "log": self._current_log,
+                # carry presets through: _form_to_car rebuilds from new_car(), which
+                # would otherwise reset presets to [] and Save would wipe them.
+                "presets": self._current_presets,
             }
         )
         car["gearing"].update(
@@ -1050,6 +1214,71 @@ class GarageTab(QWidget):
     def _on_open_calc(self) -> None:
         if self._on_open_in_calc:
             self._on_open_in_calc(self._form_to_car())
+
+    def _on_compare(self) -> None:
+        if len(self._cars) >= 2:
+            _CompareDialog(self._cars, self.current_id, self).exec()
+
+    def _on_save_preset(self) -> None:
+        name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        car = garage.save_car(garage.add_preset(self._form_to_car(), name.strip()))
+        self.current_id = car["id"]
+        self._reload_list()
+        self._select_id(car["id"])
+        self._fill_form(car)  # refresh the preset dropdown with the new snapshot
+
+    def _on_apply_preset(self) -> None:
+        name = self.preset_combo.currentData()  # None for the "— preset —" placeholder
+        if not name:
+            return
+        car = garage.save_car(garage.apply_preset(self._form_to_car(), name))
+        self._fill_form(car)  # reflect the applied gearing in the form
+
+    def _on_delete_preset(self) -> None:
+        name = self.preset_combo.currentData()
+        if not name:
+            return
+        car = garage.save_car(garage.delete_preset(self._form_to_car(), name))
+        self._fill_form(car)
+
+    def _on_backup(self) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Back up garage", "rc-central-backup.zip", "Zip archive (*.zip)"
+        )
+        if not path:
+            return
+        try:
+            backup.make_backup(Path(path))
+        except OSError as e:  # unwritable path etc. must reach the user, not a traceback
+            QMessageBox.warning(self, "Backup failed", str(e))
+            return
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage("Backed up garage", 5000)
+
+    def _on_restore(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Restore garage", "", "Zip archive (*.zip)"
+        )
+        if not path:
+            return
+        if QMessageBox.question(
+            self,
+            "Restore",
+            "Restore cars from this backup? Cars with the same id will be overwritten.",
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        try:
+            n = backup.restore_backup(Path(path))
+        except (OSError, zipfile.BadZipFile) as e:  # bad/corrupt zip must reach the user
+            QMessageBox.warning(self, "Restore failed", str(e))
+            return
+        self._reload_list()  # Gear tab's picker self-refreshes on its showEvent
+        win = self.window()
+        if isinstance(win, QMainWindow):
+            win.statusBar().showMessage(f"Restored {n} car(s)", 5000)
 
     def _on_export(self) -> None:
         car = self._form_to_car()
@@ -1282,6 +1511,100 @@ class LogTab(QWidget):
         self.view.clear()
 
 
+def _dark_palette() -> QPalette:
+    """A neutral dark grey palette; Highlight matches the update banner's blue."""
+    p = QPalette()
+    window, base, text = QColor("#353535"), QColor("#2a2a2a"), QColor("#ffffff")
+    disabled = QColor("#7f7f7f")
+    p.setColor(QPalette.ColorRole.Window, window)
+    p.setColor(QPalette.ColorRole.WindowText, text)
+    p.setColor(QPalette.ColorRole.Base, base)
+    p.setColor(QPalette.ColorRole.AlternateBase, window)
+    p.setColor(QPalette.ColorRole.ToolTipBase, window)
+    p.setColor(QPalette.ColorRole.ToolTipText, text)
+    p.setColor(QPalette.ColorRole.Text, text)
+    p.setColor(QPalette.ColorRole.Button, window)
+    p.setColor(QPalette.ColorRole.ButtonText, text)
+    p.setColor(QPalette.ColorRole.Highlight, QColor("#1f6feb"))
+    p.setColor(QPalette.ColorRole.HighlightedText, text)
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, disabled)
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, disabled)
+    return p
+
+
+def _light_palette() -> QPalette:
+    """A cool-neutral light palette that mirrors the dark one and shares its blue
+    accent. Deliberately flat — the native Windows style renders tan tab/header
+    gradients and accent-colored data text that clash with the app's identity."""
+    p = QPalette()
+    window, base, text = QColor("#f4f5f7"), QColor("#ffffff"), QColor("#1c1f23")
+    button, disabled = QColor("#e9ebef"), QColor("#a0a4ab")
+    p.setColor(QPalette.ColorRole.Window, window)
+    p.setColor(QPalette.ColorRole.WindowText, text)
+    p.setColor(QPalette.ColorRole.Base, base)
+    p.setColor(QPalette.ColorRole.AlternateBase, QColor("#eef0f3"))
+    p.setColor(QPalette.ColorRole.ToolTipBase, base)
+    p.setColor(QPalette.ColorRole.ToolTipText, text)
+    p.setColor(QPalette.ColorRole.Text, text)
+    p.setColor(QPalette.ColorRole.Button, button)
+    p.setColor(QPalette.ColorRole.ButtonText, text)
+    p.setColor(QPalette.ColorRole.Highlight, QColor("#1f6feb"))
+    p.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, disabled)
+    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, disabled)
+    return p
+
+
+def apply_theme(app: QApplication, dark: bool) -> None:
+    """Paint the app with the dark or light palette on the Fusion style.
+
+    Fusion (not the native OS style) is used in BOTH modes so the app has one flat,
+    controlled look with a shared blue accent — the native Windows style renders tan
+    tab/header gradients and accent-colored data text that don't match either palette.
+    """
+    app.setStyle("Fusion")
+    app.setPalette(_dark_palette() if dark else _light_palette())
+
+
+class SettingsTab(QWidget):
+    """App preferences, all persisted in QSettings: theme, startup check, data folder."""
+
+    def __init__(self):
+        super().__init__()
+        settings = QSettings("RCCentral", "RCCentral")
+
+        self.dark_toggle = QCheckBox("Dark mode")
+        self.dark_toggle.setChecked(settings.value("dark_mode", False, type=bool))
+        self.dark_toggle.toggled.connect(self._on_dark_toggled)
+
+        self.update_toggle = QCheckBox("Check for updates on startup")
+        self.update_toggle.setChecked(
+            settings.value("check_updates_on_startup", True, type=bool)
+        )
+        self.update_toggle.toggled.connect(self._on_update_toggled)
+
+        open_folder_btn = QPushButton("Open data folder")
+        open_folder_btn.clicked.connect(self._open_data_folder)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.dark_toggle)
+        layout.addWidget(self.update_toggle)
+        layout.addWidget(open_folder_btn)
+        layout.addStretch(1)
+
+    def _on_dark_toggled(self, checked: bool) -> None:
+        apply_theme(QApplication.instance(), checked)
+        QSettings("RCCentral", "RCCentral").setValue("dark_mode", checked)
+
+    def _on_update_toggled(self, checked: bool) -> None:
+        QSettings("RCCentral", "RCCentral").setValue("check_updates_on_startup", checked)
+
+    def _open_data_folder(self) -> None:
+        folder = paths.data_dir()
+        folder.mkdir(parents=True, exist_ok=True)  # may not exist on a fresh run
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+
 class MainWindow(QMainWindow):
     # Emitted (with the ready version tag) when a background check has staged an
     # update. Carried across threads by Qt's queued connection, so the check can
@@ -1321,6 +1644,10 @@ class MainWindow(QMainWindow):
             (self.garage_tab, "Garage"),
             (self.gear_tab, "Gear Calculator"),
             (self.log_tab, "Log"),
+            # Settings is appended LAST so every existing tab keeps its index — the
+            # saved-tab restore below clamps but doesn't remap, so inserting mid-list
+            # would restore the wrong tab.
+            (SettingsTab(), "Settings"),
         ]
         for widget, label in tabs:
             self.tabs.addTab(widget, label)
@@ -1406,6 +1733,8 @@ def main() -> None:
     logsetup.init()  # first line: nothing logged after here should be missed
     app = QApplication(sys.argv)
     app.setWindowIcon(app_icon())
+    settings = QSettings("RCCentral", "RCCentral")
+    apply_theme(app, settings.value("dark_mode", False, type=bool))
     updater.cleanup()
     win = MainWindow()
     win.show()
@@ -1414,7 +1743,8 @@ def main() -> None:
         if updater.fetch_update():
             win.update_ready.emit(updater.staged_version() or "")
 
-    threading.Thread(target=check_for_update, daemon=True).start()
+    if settings.value("check_updates_on_startup", True, type=bool):
+        threading.Thread(target=check_for_update, daemon=True).start()
     code = app.exec()
     # Only swap the binary in when the user asked for it from the banner, then
     # relaunch into the new version so "Restart & update" actually restarts.

@@ -89,6 +89,15 @@ def test_info_only_entry_validates_without_download():
     jsonschema.validate(info, schema)
 
 
+def test_drivers_entry_validates():
+    # a tool may list USB/adapter drivers the Tools tab surfaces as "Install driver…"
+    schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
+    tool = _tool(
+        drivers=[{"name": "CH340 USB driver", "url": "https://example.invalid/ch340.zip"}]
+    )
+    jsonschema.validate(tool, schema)
+
+
 def test_download_without_install_rejected():
     # dependentRequired: a software entry must still declare how to install
     schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
@@ -498,7 +507,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
     tools = ["Tools"] if sys.platform == "win32" else []
-    expected = tools + ["Manuals", "Garage", "Gear Calculator", "Log"]
+    expected = tools + ["Manuals", "Garage", "Gear Calculator", "Log", "Settings"]
     assert win.tabs.count() == len(expected)
     assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == expected
     if sys.platform == "win32":
@@ -1331,6 +1340,27 @@ def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):
     assert not (installer.TOOLS_DIR / "fake-tool").exists()
     assert tab.table.item(0, 3).text() == "Not installed"
     assert not open_action.isEnabled() and not uninstall_action.isEnabled()
+
+
+def test_tools_tab_update_summary_badge(monkeypatch, sandbox):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(version="2.0")])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+
+    assert tab.update_summary.text() == ""  # nothing installed -> no badge
+
+    # install an older version: the row reads "Update" and the badge counts it
+    installer.install(_tool(version="1.0"))
+    tab._refresh_row(0)
+    tab._refresh_summary()
+    assert tab.table.cellWidget(0, 4).text() == "Update"
+    assert tab.update_summary.text() == "1 update available"
 
 
 def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):

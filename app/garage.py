@@ -38,8 +38,39 @@ def new_car(name: str = "New Car") -> dict:
             "top_speed_kmh": None,
         },
         "log": [],  # run/maintenance history; see new_log_entry()
+        "presets": [],  # named gearing snapshots; see add_preset()
         "notes": "",
     }
+
+
+def list_presets(car: dict) -> list[dict]:
+    """Named gearing snapshots on a car (empty for cars saved before presets existed)."""
+    return car.get("presets", [])
+
+
+def add_preset(car: dict, name: str) -> dict:
+    """Snapshot the car's current gearing under name, replacing any preset with that name."""
+    presets = car.setdefault("presets", [])
+    presets[:] = [p for p in presets if p.get("name") != name]
+    presets.append({"name": name, "gearing": copy.deepcopy(car.get("gearing", {}))})
+    return car
+
+
+def apply_preset(car: dict, name: str) -> dict:
+    """Copy a named preset's gearing onto car['gearing']. No-op if name is unknown."""
+    for p in car.get("presets", []):
+        if p.get("name") == name:
+            car.setdefault("gearing", {}).update(copy.deepcopy(p["gearing"]))
+            break
+    return car
+
+
+def delete_preset(car: dict, name: str) -> dict:
+    """Remove the named preset. No-op if absent."""
+    presets = car.get("presets")
+    if presets:
+        presets[:] = [p for p in presets if p.get("name") != name]
+    return car
 
 
 def clone_car(car: dict) -> dict:
@@ -117,6 +148,26 @@ def format_spec_sheet(car: dict) -> str:
         lines.append(notes)
 
     return "\n".join(lines) + "\n"
+
+
+def _fmt(value) -> str:
+    """Render a field value for display; None (unset gearing) shows as blank."""
+    return "" if value is None else str(value)
+
+
+def diff_cars(a: dict, b: dict) -> list[tuple[str, str, str, bool]]:
+    """Per-field (label, value_a, value_b, differs) for a side-by-side compare view.
+
+    Same field order as format_spec_sheet: name, spec fields, then gearing. `differs`
+    is the display-level comparison, which is exactly what a compare view highlights.
+    """
+    rows = [("Name", _fmt(a.get("name")), _fmt(b.get("name")))]
+    for key, label in _SPEC_LABELS:
+        rows.append((label, _fmt(a.get(key)), _fmt(b.get(key))))
+    ga, gb = a.get("gearing", {}), b.get("gearing", {})
+    for key, label in _GEARING_LABELS:
+        rows.append((label, _fmt(ga.get(key)), _fmt(gb.get(key))))
+    return [(label, va, vb, va != vb) for label, va, vb in rows]
 
 
 def save_car(car: dict) -> dict:
