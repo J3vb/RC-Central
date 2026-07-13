@@ -1,6 +1,6 @@
 [project]
 name = "rc-central"
-version = "0.4.0"
+version = "0.4.1"
 description = "One app to install and launch all your RC drift setup tools"
 readme = "README.md"
 license = "MIT"
