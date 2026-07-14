@@ -739,7 +739,7 @@ wheels = [
 
 [[package]]
 name = "rc-central"
-version = "0.5.0"
+version = "0.6.0"
 source = { virtual = "." }
 dependencies = [
     { name = "py7zr" },
