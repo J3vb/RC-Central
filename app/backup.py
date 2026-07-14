@@ -2,17 +2,23 @@
 
 Only the garage holds irreplaceable, hand-authored data (spec sheets + run logs).
 Catalog cache, tool downloads, and manual PDFs are all re-downloadable and large,
-so they are deliberately excluded. Mirrors garage.py's module-constant pattern so
-tests can monkeypatch GARAGE_DIR.
+so they are deliberately excluded. The garage directory is owned by garage.py;
+this module reads garage.GARAGE_DIR at call time so tests need patch only that one
+constant and a future relocation can't desync the two.
 """
 
+import json
 import zipfile
+import zlib
 from pathlib import Path
 
-from app.paths import data_dir
+from app import garage
 
-DATA_DIR = data_dir()
-GARAGE_DIR = DATA_DIR / "garage"
+# A restored member can be unreadable in several ways; none should abort the whole
+# restore or crash the caller: not JSON (ValueError incl. JSONDecodeError), I/O
+# error (OSError), encrypted (RuntimeError), or corrupt compressed data
+# (BadZipFile on CRC, zlib.error on a malformed deflate stream).
+_MEMBER_READ_ERRORS = (ValueError, OSError, RuntimeError, zipfile.BadZipFile, zlib.error)
 
 
 def make_backup(dest_zip) -> Path:
@@ -22,26 +28,44 @@ def make_backup(dest_zip) -> Path:
     """
     dest_zip = Path(dest_zip)
     dest_zip.parent.mkdir(parents=True, exist_ok=True)
+    garage_dir = garage.GARAGE_DIR
     with zipfile.ZipFile(dest_zip, "w", zipfile.ZIP_DEFLATED) as z:
-        files = sorted(GARAGE_DIR.glob("*.json")) if GARAGE_DIR.exists() else []
+        files = sorted(garage_dir.glob("*.json")) if garage_dir.exists() else []
         for f in files:
             z.write(f, arcname=f"garage/{f.name}")
     return dest_zip
 
 
 def restore_backup(src_zip) -> int:
-    """Extract garage/*.json from src_zip into GARAGE_DIR, overwriting by id.
+    """Restore garage cars from src_zip, overwriting existing cars by id.
 
-    Returns the number of car files restored. Reading each member and writing by
-    basename (rather than extractall) confines writes to GARAGE_DIR, so a crafted
-    'garage/../evil.json' member can't escape. Non-garage members are ignored.
+    Returns the number of cars restored. Each 'garage/*.json' member is read,
+    parsed, and written to '<id>.json' where <id> is the car's own validated id —
+    NOT the zip member name. That keys the file by id (matching garage's invariant,
+    so no ghost cars), and means a crafted member name or id cannot escape the
+    garage directory: the target's parent is asserted to be GARAGE_DIR. A member
+    that is unreadable, not JSON, not a car object, or whose id would escape the
+    directory is skipped rather than poisoning the garage or aborting the restore.
     """
-    GARAGE_DIR.mkdir(parents=True, exist_ok=True)
+    garage_dir = garage.GARAGE_DIR
+    garage_dir.mkdir(parents=True, exist_ok=True)
+    base = garage_dir.resolve()
     restored = 0
     with zipfile.ZipFile(src_zip) as z:
         for name in z.namelist():
             stem = name[len("garage/"):]
-            if name.startswith("garage/") and name.endswith(".json") and "/" not in stem:
-                (GARAGE_DIR / Path(name).name).write_bytes(z.read(name))
-                restored += 1
+            if not (name.startswith("garage/") and stem.lower().endswith(".json") and "/" not in stem):
+                continue  # not a top-level garage/*.json member
+            try:
+                data = z.read(name)
+                car = json.loads(data)
+            except _MEMBER_READ_ERRORS:
+                continue  # unreadable/encrypted/corrupt/not-JSON: skip this member
+            if not (isinstance(car, dict) and isinstance(car.get("id"), str) and car["id"]):
+                continue  # not a car spec sheet (no usable id)
+            target = garage_dir / f"{car['id']}.json"
+            if target.resolve().parent != base:
+                continue  # a crafted id ("../x", "C:x") that would escape the garage
+            target.write_bytes(data)
+            restored += 1
     return restored

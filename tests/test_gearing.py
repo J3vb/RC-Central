@@ -113,3 +113,18 @@ def test_solve_pinion_rejects_nonpositive_target():
         gearing.solve_pinion_for_rollout(
             target_rollout_mm=0, spur=87, internal_ratio=1.9, tire_diameter_mm=60
         )
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"target_rollout_mm": 30, "spur": 87, "internal_ratio": 1.9, "tire_diameter_mm": 0},
+        {"target_rollout_mm": 30, "spur": 0, "internal_ratio": 1.9, "tire_diameter_mm": 60},
+        {"target_rollout_mm": 30, "spur": 87, "internal_ratio": 0, "tire_diameter_mm": 60},
+    ],
+)
+def test_solve_pinion_rejects_nonpositive_inputs(bad):
+    # the module's contract is ValueError on bad input, not ZeroDivisionError or a
+    # silently-clamped bogus pinion (the sole UI caller catches only ValueError)
+    with pytest.raises(ValueError):
+        gearing.solve_pinion_for_rollout(**bad)

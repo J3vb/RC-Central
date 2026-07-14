@@ -1392,3 +1392,101 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
     win.close()  # closeEvent persists geometry + tab and must not raise
     written = QSettings(str(ini), QSettings.Format.IniFormat)
     assert int(written.value("tab")) == win.tabs.count() - 1
+
+
+def test_garage_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    # a car whose computed gearing was filled by the Gear Calculator
+    car = garage.new_car("Computed")
+    car["gearing"].update({"fdr": 7.5, "rollout_mm": 28.5, "top_speed_kmh": 42.1})
+    garage.save_car(car)
+    tab._reload_list()
+    tab.current_id = car["id"]
+    tab._fill_form(garage.load_car(car["id"]))
+
+    # saving a preset must not null the computed gearing on disk...
+    monkeypatch.setattr(app_main.QInputDialog, "getText", lambda *a, **k: ("carpet", True))
+    tab._on_save_preset()
+
+    reloaded = garage.load_car(car["id"])
+    assert reloaded["gearing"]["fdr"] == 7.5
+    assert reloaded["gearing"]["rollout_mm"] == 28.5
+    assert reloaded["gearing"]["top_speed_kmh"] == 42.1
+    # ...and the snapshot captures the computed values, not None
+    assert reloaded["presets"][0]["gearing"]["fdr"] == 7.5
+
+
+def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import backup, catalog, garage
+    from app import main as app_main
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.GarageTab()
+
+    # save Alpha (pinion 22) and open it, back it up, then make an unsaved local edit
+    tab.name.setText("Alpha")
+    tab.pinion.setValue(22)
+    tab._on_save()
+    zip_path = backup.make_backup(tmp_path / "b.zip")
+    tab.pinion.setValue(40)  # stale edit that would clobber the restore on next Save
+
+    monkeypatch.setattr(app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(zip_path), ""))
+    monkeypatch.setattr(
+        app_main.QMessageBox, "question",
+        lambda *a, **k: app_main.QMessageBox.StandardButton.Yes,
+    )
+    tab._on_restore()
+
+    # the form was re-filled from disk (22), not left showing the stale 40
+    assert tab.pinion.value() == 22
+
+
+def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app import main as app_main
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    a = garage.save_car(garage.new_car("Alpha"))
+    garage.save_car(garage.new_car("Beta"))
+
+    # constructing must fully render the table (no _render before self.table exists)
+    dlg = app_main._CompareDialog(garage.list_cars(), a["id"])
+    assert dlg.table.rowCount() > 0
+    assert dlg.combo_a.currentData() != dlg.combo_b.currentData()  # two distinct cars
+
+
+def test_manuals_tab_shows_homepage_only_info_device(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app import main as app_main
+
+    # an info-only device with a homepage but no links: reachable via a Manuals row
+    device = {
+        "id": "d", "name": "Gyro X", "vendor": "V", "version": "n/a",
+        "category": "gyro", "homepage": "https://vendor.example",
+    }
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [device])
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.ManualsTab()
+    assert tab.table.rowCount() == 1

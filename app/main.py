@@ -95,6 +95,30 @@ def _link_button(text: str, url: str | None) -> QToolButton:
     return btn
 
 
+# The one accent colour, shared by both palettes and the update banner so they
+# can never drift apart (see _dark_palette / _light_palette / _build_update_banner).
+_ACCENT = "#1f6feb"
+
+# QSettings identity and the persisted preference keys/defaults, defined once so a
+# reader and a writer can't disagree on the org/app pair, a key string, or a default.
+_SETTINGS_ORG = "RCCentral"
+_SETTINGS_APP = "RCCentral"
+_DARK_MODE_KEY, _DARK_MODE_DEFAULT = "dark_mode", False
+_STARTUP_CHECK_KEY, _STARTUP_CHECK_DEFAULT = "check_updates_on_startup", True
+
+
+def _settings() -> QSettings:
+    return QSettings(_SETTINGS_ORG, _SETTINGS_APP)
+
+
+def _show_status(widget: QWidget, msg: str, msecs: int = 0) -> None:
+    """Show msg on widget's top-level status bar (clear it when msg is empty), if any."""
+    win = widget.window()
+    if isinstance(win, QMainWindow):
+        bar = win.statusBar()
+        bar.showMessage(msg, msecs) if msg else bar.clearMessage()
+
+
 class _InstallSignals(QObject):
     """Bridge from the download thread back to the Qt main thread."""
 
@@ -111,10 +135,7 @@ class _DownloadTab(QWidget):
 
     def _status(self, msg: str = "", timeout: int = 0) -> None:
         """Show msg on the window's status bar (clear it when msg is empty), if any."""
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            bar = win.statusBar()
-            bar.showMessage(msg, timeout) if msg else bar.clearMessage()
+        _show_status(self, msg, timeout)
 
     def _clear_status(self) -> None:
         self._status()
@@ -381,7 +402,13 @@ class ManualsTab(_DownloadTab):
         self._active: dict[int, "threading.Event"] = {}  # row -> cancel event; in == downloading
         installer.clear_partial_manuals()  # drop orphaned .part temps from a prior killed run
         for tool in sorted(tools, key=lambda t: (t.get("category", ""), t["name"].lower())):
-            for link in tool.get("links", []):
+            links = tool.get("links", [])
+            if not links and not _is_software(tool) and tool.get("homepage"):
+                # An info-only device with a homepage but no manual links would other-
+                # wise appear nowhere (it's filtered off the Tools tab). Give it one
+                # row pointing at its homepage so the device stays reachable.
+                links = [{"name": f"{tool['name']} (website)", "url": tool["homepage"]}]
+            for link in links:
                 name = link.get("name")
                 if not name:  # skip a malformed (unvalidated remote) link that can't be a row
                     continue
@@ -825,9 +852,7 @@ class GearTab(QWidget):
             }
         )
         garage.save_car(car)
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage(f"Saved gearing to {car['name']}", 5000)
+        _show_status(self, f"Saved gearing to {car['name']}", 5000)
 
 
 class _CompareDialog(QDialog):
@@ -845,7 +870,6 @@ class _CompareDialog(QDialog):
         for combo in (self.combo_a, self.combo_b):
             for car in cars:
                 combo.addItem(car.get("name", "Unnamed"), car["id"])
-            combo.currentIndexChanged.connect(self._render)
         idx_a = max(0, self.combo_a.findData(default_id))  # open car, or first
         self.combo_a.setCurrentIndex(idx_a)
         self.combo_b.setCurrentIndex(1 if idx_a == 0 else 0)  # a different car
@@ -854,6 +878,11 @@ class _CompareDialog(QDialog):
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.horizontalHeader().setStretchLastSection(True)
+
+        # Connect only now that self.table exists: the setCurrentIndex calls above
+        # fire currentIndexChanged, and _render needs the table to write into.
+        for combo in (self.combo_a, self.combo_b):
+            combo.currentIndexChanged.connect(self._render)
 
         pick_row = QHBoxLayout()
         pick_row.addWidget(self.combo_a, 1)
@@ -1106,7 +1135,11 @@ class GarageTab(QWidget):
         self.log_table.horizontalHeader().setStretchLastSection(True)
 
     def _form_to_car(self) -> dict:
-        car = garage.new_car()
+        # Start from the stored car (not new_car()) and overlay only the fields the
+        # form edits, so values with no widget — computed gearing (fdr/rollout/top
+        # speed the calculator saved) and any field added later — survive a Save
+        # instead of being reset to their new_car() defaults.
+        car = (self.current_id and garage.load_car(self.current_id)) or garage.new_car()
         if self.current_id:
             car["id"] = self.current_id
         car.update(
@@ -1118,13 +1151,11 @@ class GarageTab(QWidget):
                 "servo": self.servo.text().strip(),
                 "tires": self.tires.text().strip(),
                 "notes": self.notes.toPlainText(),
-                "log": self._current_log,
-                # carry presets through: _form_to_car rebuilds from new_car(), which
-                # would otherwise reset presets to [] and Save would wipe them.
+                "log": self._current_log,  # the log is edited in-form before Save
                 "presets": self._current_presets,
             }
         )
-        car["gearing"].update(
+        car.setdefault("gearing", {}).update(
             {
                 "pinion": self.pinion.value(),
                 "spur": self.spur.value(),
@@ -1167,9 +1198,7 @@ class GarageTab(QWidget):
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage(f"Saved {saved['name']}", 5000)
+        _show_status(self, f"Saved {saved['name']}", 5000)
 
     def _on_duplicate(self) -> None:
         if not self.current_id:  # nothing open to clone
@@ -1179,9 +1208,7 @@ class GarageTab(QWidget):
         self._fill_form(dup)
         self._reload_list()
         self._select_id(dup["id"])
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage(f"Duplicated to {dup['name']}", 5000)
+        _show_status(self, f"Duplicated to {dup['name']}", 5000)
 
     def _on_import(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1200,9 +1227,7 @@ class GarageTab(QWidget):
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage(f"Imported {saved['name']}", 5000)
+        _show_status(self, f"Imported {saved['name']}", 5000)
 
     def _on_delete(self) -> None:
         if not self.current_id:
@@ -1254,9 +1279,7 @@ class GarageTab(QWidget):
         except OSError as e:  # unwritable path etc. must reach the user, not a traceback
             QMessageBox.warning(self, "Backup failed", str(e))
             return
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage("Backed up garage", 5000)
+        _show_status(self, "Backed up garage", 5000)
 
     def _on_restore(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -1276,17 +1299,21 @@ class GarageTab(QWidget):
             QMessageBox.warning(self, "Restore failed", str(e))
             return
         self._reload_list()  # Gear tab's picker self-refreshes on its showEvent
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage(f"Restored {n} car(s)", 5000)
+        # An open existing car may now be stale (the restore could have overwritten
+        # its file); re-fill from disk so the next Save doesn't clobber the restore.
+        # A blank form (unsaved new car, current_id None) is left alone — it saves
+        # under a fresh id and can't clobber anything restored.
+        if self.current_id:
+            current = garage.load_car(self.current_id)
+            if current:
+                self._fill_form(current)
+                self._select_id(self.current_id)
+            else:
+                self._blank_form()
+        _show_status(self, f"Restored {n} car(s)", 5000)
 
     def _on_export(self) -> None:
-        car = self._form_to_car()
-        if self.current_id:  # the form doesn't hold computed gearing; carry it from disk
-            stored_gearing = (garage.load_car(self.current_id) or {}).get("gearing", {})
-            for key in ("fdr", "rollout_mm", "top_speed_kmh"):
-                if stored_gearing.get(key) is not None:
-                    car["gearing"][key] = stored_gearing[key]
+        car = self._form_to_car()  # already carries computed gearing from disk
         suggested = f"{car['name'] or 'car'}.txt"
         path, _ = QFileDialog.getSaveFileName(
             self,
@@ -1307,15 +1334,11 @@ class GarageTab(QWidget):
         except OSError as e:  # unwritable path etc. must reach the user, not a traceback
             QMessageBox.warning(self, "Export failed", str(e))
             return
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage(f"Exported {car['name']}", 5000)
+        _show_status(self, f"Exported {car['name']}", 5000)
 
     def _on_copy(self) -> None:
         QApplication.clipboard().setText(garage.format_spec_sheet(self._form_to_car()))
-        win = self.window()
-        if isinstance(win, QMainWindow):
-            win.statusBar().showMessage("Copied spec sheet to clipboard", 5000)
+        _show_status(self, "Copied spec sheet to clipboard", 5000)
 
     def _on_add_log(self) -> None:
         note = self.log_note.text().strip()
@@ -1511,48 +1534,50 @@ class LogTab(QWidget):
         self.view.clear()
 
 
-def _dark_palette() -> QPalette:
-    """A neutral dark grey palette; Highlight matches the update banner's blue."""
+def _make_palette(
+    *, window, base, text, button, alt_base, tooltip_base, highlighted_text, disabled
+) -> QPalette:
+    """The one role→colour sequence both themes share; Highlight is always _ACCENT.
+
+    Every colour a theme varies is a parameter, so the two palettes can't drift in
+    which roles they set — only in the values they pass. All args are QColor.
+    """
     p = QPalette()
-    window, base, text = QColor("#353535"), QColor("#2a2a2a"), QColor("#ffffff")
-    disabled = QColor("#7f7f7f")
     p.setColor(QPalette.ColorRole.Window, window)
     p.setColor(QPalette.ColorRole.WindowText, text)
     p.setColor(QPalette.ColorRole.Base, base)
-    p.setColor(QPalette.ColorRole.AlternateBase, window)
-    p.setColor(QPalette.ColorRole.ToolTipBase, window)
-    p.setColor(QPalette.ColorRole.ToolTipText, text)
-    p.setColor(QPalette.ColorRole.Text, text)
-    p.setColor(QPalette.ColorRole.Button, window)
-    p.setColor(QPalette.ColorRole.ButtonText, text)
-    p.setColor(QPalette.ColorRole.Highlight, QColor("#1f6feb"))
-    p.setColor(QPalette.ColorRole.HighlightedText, text)
-    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, disabled)
-    p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, disabled)
-    return p
-
-
-def _light_palette() -> QPalette:
-    """A cool-neutral light palette that mirrors the dark one and shares its blue
-    accent. Deliberately flat — the native Windows style renders tan tab/header
-    gradients and accent-colored data text that clash with the app's identity."""
-    p = QPalette()
-    window, base, text = QColor("#f4f5f7"), QColor("#ffffff"), QColor("#1c1f23")
-    button, disabled = QColor("#e9ebef"), QColor("#a0a4ab")
-    p.setColor(QPalette.ColorRole.Window, window)
-    p.setColor(QPalette.ColorRole.WindowText, text)
-    p.setColor(QPalette.ColorRole.Base, base)
-    p.setColor(QPalette.ColorRole.AlternateBase, QColor("#eef0f3"))
-    p.setColor(QPalette.ColorRole.ToolTipBase, base)
+    p.setColor(QPalette.ColorRole.AlternateBase, alt_base)
+    p.setColor(QPalette.ColorRole.ToolTipBase, tooltip_base)
     p.setColor(QPalette.ColorRole.ToolTipText, text)
     p.setColor(QPalette.ColorRole.Text, text)
     p.setColor(QPalette.ColorRole.Button, button)
     p.setColor(QPalette.ColorRole.ButtonText, text)
-    p.setColor(QPalette.ColorRole.Highlight, QColor("#1f6feb"))
-    p.setColor(QPalette.ColorRole.HighlightedText, QColor("#ffffff"))
+    p.setColor(QPalette.ColorRole.Highlight, QColor(_ACCENT))
+    p.setColor(QPalette.ColorRole.HighlightedText, highlighted_text)
     p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.Text, disabled)
     p.setColor(QPalette.ColorGroup.Disabled, QPalette.ColorRole.ButtonText, disabled)
     return p
+
+
+def _dark_palette() -> QPalette:
+    """A neutral dark grey palette; Highlight is the shared accent (_ACCENT)."""
+    window, text = QColor("#353535"), QColor("#ffffff")
+    return _make_palette(
+        window=window, base=QColor("#2a2a2a"), text=text, button=window,
+        alt_base=window, tooltip_base=window, highlighted_text=text,
+        disabled=QColor("#7f7f7f"),
+    )
+
+
+def _light_palette() -> QPalette:
+    """A cool-neutral light palette that mirrors the dark one and shares the accent.
+    Deliberately flat — the native Windows style renders tan tab/header gradients
+    and accent-colored data text that clash with the app's identity."""
+    return _make_palette(
+        window=QColor("#f4f5f7"), base=QColor("#ffffff"), text=QColor("#1c1f23"),
+        button=QColor("#e9ebef"), alt_base=QColor("#eef0f3"), tooltip_base=QColor("#ffffff"),
+        highlighted_text=QColor("#ffffff"), disabled=QColor("#a0a4ab"),
+    )
 
 
 def apply_theme(app: QApplication, dark: bool) -> None:
@@ -1571,15 +1596,15 @@ class SettingsTab(QWidget):
 
     def __init__(self):
         super().__init__()
-        settings = QSettings("RCCentral", "RCCentral")
+        settings = _settings()
 
         self.dark_toggle = QCheckBox("Dark mode")
-        self.dark_toggle.setChecked(settings.value("dark_mode", False, type=bool))
+        self.dark_toggle.setChecked(settings.value(_DARK_MODE_KEY, _DARK_MODE_DEFAULT, type=bool))
         self.dark_toggle.toggled.connect(self._on_dark_toggled)
 
         self.update_toggle = QCheckBox("Check for updates on startup")
         self.update_toggle.setChecked(
-            settings.value("check_updates_on_startup", True, type=bool)
+            settings.value(_STARTUP_CHECK_KEY, _STARTUP_CHECK_DEFAULT, type=bool)
         )
         self.update_toggle.toggled.connect(self._on_update_toggled)
 
@@ -1594,10 +1619,10 @@ class SettingsTab(QWidget):
 
     def _on_dark_toggled(self, checked: bool) -> None:
         apply_theme(QApplication.instance(), checked)
-        QSettings("RCCentral", "RCCentral").setValue("dark_mode", checked)
+        _settings().setValue(_DARK_MODE_KEY, checked)
 
     def _on_update_toggled(self, checked: bool) -> None:
-        QSettings("RCCentral", "RCCentral").setValue("check_updates_on_startup", checked)
+        _settings().setValue(_STARTUP_CHECK_KEY, checked)
 
     def _open_data_folder(self) -> None:
         folder = paths.data_dir()
@@ -1670,7 +1695,7 @@ class MainWindow(QMainWindow):
         # Restore window size and last tab from the previous run. The Tools tab is
         # Windows-only, so a tab index saved on Windows can exceed the count here —
         # clamp it into range rather than trust it.
-        settings = QSettings("RCCentral", "RCCentral")
+        settings = _settings()
         geometry = settings.value("geometry")
         if geometry is not None:
             self.restoreGeometry(geometry)
@@ -1678,7 +1703,7 @@ class MainWindow(QMainWindow):
         self.tabs.setCurrentIndex(max(0, min(tab, self.tabs.count() - 1)))
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        settings = QSettings("RCCentral", "RCCentral")
+        settings = _settings()
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("tab", self.tabs.currentIndex())
         super().closeEvent(event)
@@ -1688,7 +1713,7 @@ class MainWindow(QMainWindow):
         banner.setMovable(False)
         banner.setFloatable(False)
         banner.setStyleSheet(
-            "QToolBar { background: #1f6feb; border: none; padding: 4px 8px; spacing: 8px; }"
+            f"QToolBar {{ background: {_ACCENT}; border: none; padding: 4px 8px; spacing: 8px; }}"
             "QToolBar QLabel { color: white; }"
         )
         self.update_label = QLabel()
@@ -1733,8 +1758,8 @@ def main() -> None:
     logsetup.init()  # first line: nothing logged after here should be missed
     app = QApplication(sys.argv)
     app.setWindowIcon(app_icon())
-    settings = QSettings("RCCentral", "RCCentral")
-    apply_theme(app, settings.value("dark_mode", False, type=bool))
+    settings = _settings()
+    apply_theme(app, settings.value(_DARK_MODE_KEY, _DARK_MODE_DEFAULT, type=bool))
     updater.cleanup()
     win = MainWindow()
     win.show()
@@ -1743,7 +1768,7 @@ def main() -> None:
         if updater.fetch_update():
             win.update_ready.emit(updater.staged_version() or "")
 
-    if settings.value("check_updates_on_startup", True, type=bool):
+    if settings.value(_STARTUP_CHECK_KEY, _STARTUP_CHECK_DEFAULT, type=bool):
         threading.Thread(target=check_for_update, daemon=True).start()
     code = app.exec()
     # Only swap the binary in when the user asked for it from the banner, then

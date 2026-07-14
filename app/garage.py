@@ -155,19 +155,32 @@ def _fmt(value) -> str:
     return "" if value is None else str(value)
 
 
+def _values_equal(x, y) -> bool:
+    """Whether two field values count as the same for compare highlighting.
+
+    Numerically-equal numbers are equal regardless of type/precision, so a car
+    with tire_diameter_mm 60 (int, from hand-edited JSON) doesn't highlight as
+    differing from one with 60.0 (float, from the form spinboxes).
+    """
+    if isinstance(x, (int, float)) and isinstance(y, (int, float)):
+        return x == y
+    return _fmt(x) == _fmt(y)
+
+
 def diff_cars(a: dict, b: dict) -> list[tuple[str, str, str, bool]]:
     """Per-field (label, value_a, value_b, differs) for a side-by-side compare view.
 
-    Same field order as format_spec_sheet: name, spec fields, then gearing. `differs`
-    is the display-level comparison, which is exactly what a compare view highlights.
+    Same field order as format_spec_sheet: name, spec fields, then gearing. Values
+    render via _fmt; `differs` compares the raw values (see _values_equal) so
+    numerically-equal numbers of different types aren't flagged.
     """
-    rows = [("Name", _fmt(a.get("name")), _fmt(b.get("name")))]
+    rows = [("Name", a.get("name"), b.get("name"))]
     for key, label in _SPEC_LABELS:
-        rows.append((label, _fmt(a.get(key)), _fmt(b.get(key))))
+        rows.append((label, a.get(key), b.get(key)))
     ga, gb = a.get("gearing", {}), b.get("gearing", {})
     for key, label in _GEARING_LABELS:
-        rows.append((label, _fmt(ga.get(key)), _fmt(gb.get(key))))
-    return [(label, va, vb, va != vb) for label, va, vb in rows]
+        rows.append((label, ga.get(key), gb.get(key)))
+    return [(label, _fmt(va), _fmt(vb), not _values_equal(va, vb)) for label, va, vb in rows]
 
 
 def save_car(car: dict) -> dict:

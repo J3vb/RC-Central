@@ -123,9 +123,14 @@ def solve_pinion_for_rollout(
     Inverts rollout = tire_diameter_mm * pi * pinion / (internal_ratio * spur).
     Rollout is monotonic in pinion, so rounding the exact solution gives the
     closest achievable pinion. Clamped to >= 1 (a pinion is at least 1 tooth).
-    Raises ValueError on a non-positive target.
+    Raises ValueError on any non-positive input (same contract as this module's
+    other functions, so callers can try/except ValueError rather than guard each).
     """
     if target_rollout_mm <= 0:
         raise ValueError("target_rollout_mm must be > 0")
+    if tire_diameter_mm <= 0:
+        raise ValueError("tire_diameter_mm must be > 0")
+    if spur <= 0 or internal_ratio <= 0:
+        raise ValueError("spur and internal_ratio must be > 0")
     pinion = round(target_rollout_mm * internal_ratio * spur / (tire_diameter_mm * math.pi))
     return max(1, pinion)
