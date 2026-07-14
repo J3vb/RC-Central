@@ -679,6 +679,11 @@ class GearTab(QWidget):
         self.save_btn = QPushButton("Save results to selected car")
         self.save_btn.clicked.connect(self._save_to_car)
         self.save_btn.setEnabled(False)
+        chart_btn = QPushButton("Gear ratio chart…")
+        chart_btn.clicked.connect(self._open_chart)
+        btn_row = QHBoxLayout()
+        btn_row.addWidget(self.save_btn, 1)
+        btn_row.addWidget(chart_btn)
 
         # What-if sweep: the current pinion ±3, so tuners see the effect of a
         # pinion swap (the common drift adjustment) at a glance. The base row is bold.
@@ -690,7 +695,7 @@ class GearTab(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
-        layout.addWidget(self.save_btn)
+        layout.addLayout(btn_row)
         layout.addWidget(self.sweep_table)
         layout.addStretch(1)
 
@@ -824,6 +829,12 @@ class GearTab(QWidget):
                     item.setFont(font)
                 self.sweep_table.setItem(row, col, item)
 
+    def _open_chart(self) -> None:
+        # snapshot of the current setup; the modal chart doesn't live-track the tab
+        _GearChartDialog(
+            self.pinion.value(), self.spur.value(), self.internal_ratio.value(), self
+        ).exec()
+
     def _save_to_car(self) -> None:
         car_id = self.car_picker.currentData()
         if car_id is None:
@@ -853,6 +864,92 @@ class GearTab(QWidget):
         )
         garage.save_car(car)
         _show_status(self, f"Saved gearing to {car['name']}", 5000)
+
+
+class _GearChartDialog(QDialog):
+    """Spur × pinion FDR matrix, like the printed gear chart that ships with a kit.
+
+    Internal ratio is a snapshot of the tab at open (change it there, like the fixed
+    "RATIO" header on a printed chart). Ranges are editable and persist via QSettings.
+    """
+
+    def __init__(self, pinion: int, spur: int, internal_ratio: float, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Gear ratio chart")
+        self._pinion = pinion
+        self._spur = spur
+        self._ratio = internal_ratio
+
+        self.pinion_min, self.pinion_max = QSpinBox(), QSpinBox()
+        self.spur_min, self.spur_max = QSpinBox(), QSpinBox()
+        # (box, settings key, first-run default centered on the current setup);
+        # done() persists through this same tuple so keys can't drift apart
+        self._persist = (
+            (self.pinion_min, "gearchart/pinion_min", pinion - 8),
+            (self.pinion_max, "gearchart/pinion_max", pinion + 8),
+            (self.spur_min, "gearchart/spur_min", spur - 10),
+            (self.spur_max, "gearchart/spur_max", spur + 10),
+        )
+        settings = _settings()
+        for box, key, default in self._persist:
+            box.setRange(1, 99 if box in (self.pinion_min, self.pinion_max) else 200)
+            box.setValue(settings.value(key, default, type=int))  # clamps to range
+
+        controls = QHBoxLayout()
+        controls.addWidget(QLabel("Pinion"))
+        controls.addWidget(self.pinion_min)
+        controls.addWidget(QLabel("–"))
+        controls.addWidget(self.pinion_max)
+        controls.addSpacing(16)
+        controls.addWidget(QLabel("Spur"))
+        controls.addWidget(self.spur_min)
+        controls.addWidget(QLabel("–"))
+        controls.addWidget(self.spur_max)
+        controls.addStretch(1)
+        controls.addWidget(QLabel(f"Internal ratio: {internal_ratio:.2f}"))
+
+        self.table = QTableWidget()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setDefaultSectionSize(52)
+
+        # connect only now that self.table exists (same trap as _CompareDialog:
+        # the setValue calls above would otherwise rebuild into a missing table)
+        for box, _key, _default in self._persist:
+            box.valueChanged.connect(self._rebuild)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(controls)
+        layout.addWidget(self.table)
+        self.resize(720, 480)
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        plo, phi = sorted((self.pinion_min.value(), self.pinion_max.value()))
+        slo, shi = sorted((self.spur_min.value(), self.spur_max.value()))
+        pinions = range(plo, phi + 1)
+        spurs = range(shi, slo - 1, -1)  # highest spur on top, like the printed charts
+        self.table.setColumnCount(len(pinions))
+        self.table.setRowCount(len(spurs))
+        self.table.setHorizontalHeaderLabels([str(p) for p in pinions])
+        self.table.setVerticalHeaderLabels([str(s) for s in spurs])
+        for row, s in enumerate(spurs):
+            for col, p in enumerate(pinions):
+                item = QTableWidgetItem(f"{gearing.final_drive_ratio(p, s, self._ratio):.2f}")
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                if p == self._pinion and s == self._spur:  # the current combo
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                    item.setBackground(QColor(_ACCENT))
+                    item.setForeground(QColor("white"))  # readable on accent in both themes
+                self.table.setItem(row, col, item)
+
+    def done(self, result: int) -> None:  # noqa: N802 (Qt override)
+        # done() runs on OK/Esc/titlebar-close alike, so ranges always persist
+        settings = _settings()
+        for box, key, _default in self._persist:
+            settings.setValue(key, box.value())
+        super().done(result)
 
 
 class _CompareDialog(QDialog):

@@ -1277,6 +1277,40 @@ def test_gear_tab_whatif_table(monkeypatch, tmp_path):
     assert tab.sweep_table.item(bold_rows[0], 1).text() == f"{expected['fdr']:.2f}"
 
 
+def test_gear_chart_dialog(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import main as app_main
+
+    _ = QApplication.instance() or QApplication([])
+    dlg = app_main._GearChartDialog(22, 87, 1.9)
+
+    # first run: ranges center on the current setup -> pinion 14..30, spur 77..97
+    assert dlg.table.columnCount() == 17
+    assert dlg.table.rowCount() == 21
+    assert dlg.table.horizontalHeaderItem(0).text() == "14"
+    assert dlg.table.verticalHeaderItem(0).text() == "97"  # highest spur on top
+
+    # the current-combo cell holds 1.9 * 87 / 22 and is the only styled one
+    row, col = 97 - 87, 22 - 14
+    cell = dlg.table.item(row, col)
+    assert cell.text() == "7.51"
+    assert cell.font().bold()
+    assert not dlg.table.item(row, col + 1).font().bold()
+
+    # editing a range rebuilds; an inverted range (min > max) still renders sorted
+    dlg.pinion_min.setValue(40)  # max is 30 -> sorted -> columns 30..40
+    assert dlg.table.columnCount() == 11
+    assert dlg.table.horizontalHeaderItem(0).text() == "30"
+
+    # closing persists the ranges; a fresh dialog restores them over its defaults
+    dlg.done(0)
+    dlg2 = app_main._GearChartDialog(22, 87, 1.9)
+    assert dlg2.pinion_min.value() == 40
+    assert dlg2.spur_max.value() == 97
+
+
 def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
     # switching away and back (showEvent -> _reload_cars) must keep the picked car,
     # not silently reset to "— none —" and disable the save button
