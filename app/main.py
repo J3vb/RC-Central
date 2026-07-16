@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QPlainTextEdit,
     QProgressBar,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
     QSpinBox,
     QTableWidget,
@@ -1503,6 +1504,114 @@ class QtLogHandler(logging.Handler):
             self.handleError(record)
 
 
+# (setting, action if understeering, action if oversteering) — transcribed from the
+# community "Drift RC Chassis Tuning Effects" chart. The chart's two conditional
+# "Track Width (rear)" rows are split into low/high-speed rows with plain values.
+_TUNING_ROWS: list[tuple[str, str, str]] = [
+    ("Ride Height (front)", "Decrease", "Increase"),
+    ("Ride Height (rear)", "Increase", "Decrease"),
+    ("Ackerman", "Increase angle", "Decrease angle"),
+    ("Front Toe", "Increase toe-out", "Decrease toe-out"),
+    ("Rear Toe", "Decrease toe-in", "Increase toe-in"),
+    ("Caster", "Decrease angle", "Increase angle"),
+    ("Track Width (front)", "Decrease", "Increase"),
+    ("Track Width (rear — low speed)", "Decrease", "Increase"),
+    ("Track Width (rear — high speed)", "Increase", "Decrease"),
+    ("Lower Shock Position (front)", "Move inward", "Move outward"),
+    ("Lower Shock Position (rear)", "Move outward", "Move inward"),
+    ("Upper Shock Position (rear)", "Make more vertical", "Make more laid down"),
+    ("Springs (front)", "Install softer", "Install stiffer"),
+    ("Springs (rear)", "Install stiffer", "Install softer"),
+    (
+        "Shock Oil/Damping (front)",
+        "Install thinner (or larger piston holes)",
+        "Install thicker (or smaller piston holes)",
+    ),
+    (
+        "Shock Oil/Damping (rear)",
+        "Install thicker (or smaller piston holes)",
+        "Install thinner (or larger piston holes)",
+    ),
+    (
+        "Front Camber Link/Roll",
+        "Longer link and/or more parallel to lower arm",
+        "Shorter link and/or move axis compared to lower arm",
+    ),
+    ("Rear Diff", "Tighten", "Loosen"),
+]
+
+
+class TuningTab(QWidget):
+    """Drift chassis tuning reference: what to change for understeer vs oversteer.
+
+    Static rows from _TUNING_ROWS; the symptom radios highlight the matching
+    column and the search box filters rows by setting name. Nothing persists —
+    it's a reference card, not state.
+    """
+
+    def __init__(self):
+        super().__init__()
+
+        self.table = QTableWidget(len(_TUNING_ROWS), 3)
+        self.table.setHorizontalHeaderLabels(("Setting", "If understeering", "If oversteering"))
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setWordWrap(True)  # camber-link cells are long
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
+        for row, texts in enumerate(_TUNING_ROWS):
+            for col, text in enumerate(texts):
+                self.table.setItem(row, col, QTableWidgetItem(text))
+        self.table.resizeRowsToContents()
+
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Filter settings…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_filter)
+
+        # Same-parent QRadioButtons are auto-exclusive; no QButtonGroup needed.
+        self.radio_both = QRadioButton("Both")
+        self.radio_under = QRadioButton("Understeering")
+        self.radio_over = QRadioButton("Oversteering")
+        self.radio_both.setChecked(True)  # before connect: table paint not needed yet
+        for radio in (self.radio_both, self.radio_under, self.radio_over):
+            radio.toggled.connect(self._highlight)
+
+        controls = QHBoxLayout()
+        controls.addWidget(self.search, 1)
+        controls.addWidget(QLabel("Symptom:"))
+        controls.addWidget(self.radio_both)
+        controls.addWidget(self.radio_under)
+        controls.addWidget(self.radio_over)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Drift chassis tuning effects — change one setting at a time"))
+        layout.addLayout(controls)
+        layout.addWidget(self.table)
+
+    def _apply_filter(self, text: str) -> None:
+        needle = text.strip().lower()
+        for row in range(self.table.rowCount()):
+            self.table.setRowHidden(row, needle not in self.table.item(row, 0).text().lower())
+
+    def _highlight(self, checked: bool) -> None:
+        if not checked:  # a radio switch fires toggled twice (old off, new on); paint once
+            return
+        col_on = 1 if self.radio_under.isChecked() else 2 if self.radio_over.isChecked() else None
+        for row in range(self.table.rowCount()):
+            for col in (1, 2):
+                item = self.table.item(row, col)
+                if col == col_on:
+                    item.setBackground(QColor(_ACCENT))
+                    item.setForeground(QColor("white"))  # readable on accent in both themes
+                else:
+                    # clear back to theme defaults (None removes the explicit brush)
+                    item.setData(Qt.ItemDataRole.BackgroundRole, None)
+                    item.setData(Qt.ItemDataRole.ForegroundRole, None)
+
+
 class LogTab(QWidget):
     """Live application log: preloaded from the in-memory buffer, then streaming.
 
@@ -1750,6 +1859,7 @@ class MainWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.gear_tab = GearTab()
         self.garage_tab = GarageTab(on_open_in_calc=self._open_in_calc)
+        self.tuning_tab = TuningTab()
         self.log_tab = LogTab()
         self.manuals_tab = ManualsTab(tools)
 
@@ -1765,6 +1875,7 @@ class MainWindow(QMainWindow):
             (self.manuals_tab, "Manuals"),
             (self.garage_tab, "Garage"),
             (self.gear_tab, "Gear Calculator"),
+            (self.tuning_tab, "Tuning"),
             (self.log_tab, "Log"),
             # Settings is appended LAST so every existing tab keeps its index — the
             # saved-tab restore below clamps but doesn't remap, so inserting mid-list
