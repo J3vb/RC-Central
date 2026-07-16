@@ -67,6 +67,34 @@ Offscreen pytest in `tests/test_core.py`, same idioms as today:
   toggling again collapses; filtering to one setting hides the other parents
   (children follow).
 
+## Implementation addendum (2026-07-16, supersedes the QTreeWidget architecture above)
+
+The QTreeWidget approach shipped briefly and was reworked the same day: cycling
+branch expansion across multiple rows (expand A, expand B, collapse A — by real
+mouse clicks) live-locks Qt's UIA accessibility bridge, freezing the GUI the next
+time anything walks the accessibility tree (screen readers, UI automation). A
+minimal bare-QTreeWidget repro confirmed it's a core Qt/PySide6 6.11.1 bug — not
+our spanning, item widgets, or animation, which were each bisected and exonerated.
+
+Shipped mechanism instead: the chart stays a **QTableWidget**; clicking a setting
+row **inserts** a spanned (3-column) explanation row beneath it, clicking again
+**removes** it. Real model changes emit proper accessibility notifications and
+survive the exact click sequence that hung the tree (verified by harness).
+Consequences vs. the tree design:
+
+- **One explanation open at a time** — clicking another setting moves the open
+  row there. (Simplifies the row bookkeeping; revisit only if users ask.)
+- **No slide animation** — tables don't animate row insertion; the row appears
+  instantly and pushes the rows below down.
+- The ▸/▾ affordance is a text prefix on the Setting cell (flips when open);
+  tests and the filter strip the 2-char prefix via `_setting_name()`.
+- Row height for the wrapped italic explanation is computed with `QFontMetrics`
+  (`_fit_explanation`, re-run on `resizeEvent`); the delegate paints the wrap
+  but sizes spanned rows single-line on its own.
+- Attribute stays `self.table`; `_toggle_row(row)` replaces `_toggle(item)`.
+- Filtering closes any open explanation first, so filter logic stays 1:1 with
+  `_TUNING_ROWS`.
+
 ## Out of scope
 
 - Accordion treatment for Shock Oil / Gyro tables (no per-row explanations exist).

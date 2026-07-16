@@ -290,6 +290,18 @@ Co-Authored-By: Claude Fable 5 <noreply@anthropic.com>"
 
 ---
 
+## Execution addendum (2026-07-16)
+
+Task 1 was executed as written and then **reworked in a follow-up commit**: the
+QTreeWidget accordion live-locks Qt's UIA accessibility bridge after expanding
+and collapsing multiple branches by mouse (freezes the whole GUI under screen
+readers / UI automation; reproduced with a bare QTreeWidget — core Qt bug on
+PySide6 6.11.1). The shipped implementation keeps the chart a QTableWidget and
+inserts/removes a spanned explanation row on click, one open at a time, with a
+▸/▾ text-prefix affordance and QFontMetrics-computed row height. See the spec's
+Implementation addendum for the full rationale and the final interface
+(`_toggle_row`, `_setting_name`, `_fit_explanation`).
+
 ## Final Verification (after the task)
 
 1. `uv run python -m pytest tests/ -q` — everything green.
