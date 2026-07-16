@@ -1321,31 +1321,36 @@ def test_tuning_tab(monkeypatch):
     _ = QApplication.instance() or QApplication([])
     tab = app_main.TuningTab()
 
-    assert tab.table.rowCount() == len(app_main._TUNING_ROWS) == 18
-    assert tab.table.columnCount() == 3
-    assert tab.table.horizontalHeaderItem(1).text() == "If understeering"
-    assert tab.table.item(0, 0).text() == "Ride Height (front)"
-    assert tab.table.item(0, 1).text() == "Decrease"
-    assert tab.table.item(0, 2).text() == "Increase"
+    # the chart now lives on the Chassis sub-tab of an inner QTabWidget
+    assert tab.subtabs.tabText(0) == "Chassis"
+    assert tab.subtabs.widget(0) is tab.chassis
+    chart = tab.chassis
+
+    assert chart.table.rowCount() == len(app_main._TUNING_ROWS) == 18
+    assert chart.table.columnCount() == 3
+    assert chart.table.horizontalHeaderItem(1).text() == "If understeering"
+    assert chart.table.item(0, 0).text() == "Ride Height (front)"
+    assert chart.table.item(0, 1).text() == "Decrease"
+    assert chart.table.item(0, 2).text() == "Increase"
 
     # search filters on the setting column, case-insensitive
-    tab.search.setText("DIFF")
-    visible = [r for r in range(tab.table.rowCount()) if not tab.table.isRowHidden(r)]
+    chart.search.setText("DIFF")
+    visible = [r for r in range(chart.table.rowCount()) if not chart.table.isRowHidden(r)]
     assert visible == [17]  # only Rear Diff
-    tab.search.setText("")
-    assert not any(tab.table.isRowHidden(r) for r in range(tab.table.rowCount()))
+    chart.search.setText("")
+    assert not any(chart.table.isRowHidden(r) for r in range(chart.table.rowCount()))
 
     # a symptom radio highlights only its column; Both clears the highlight
     accent = QColor(app_main._ACCENT)
-    tab.radio_under.setChecked(True)
-    assert tab.table.item(0, 1).background().color() == accent
-    assert tab.table.item(0, 2).background().color() != accent
-    tab.radio_over.setChecked(True)
-    assert tab.table.item(0, 2).background().color() == accent
-    assert tab.table.item(0, 1).background().color() != accent
-    tab.radio_both.setChecked(True)
-    assert tab.table.item(0, 1).background().color() != accent
-    assert tab.table.item(0, 2).background().color() != accent
+    chart.radio_under.setChecked(True)
+    assert chart.table.item(0, 1).background().color() == accent
+    assert chart.table.item(0, 2).background().color() != accent
+    chart.radio_over.setChecked(True)
+    assert chart.table.item(0, 2).background().color() == accent
+    assert chart.table.item(0, 1).background().color() != accent
+    chart.radio_both.setChecked(True)
+    assert chart.table.item(0, 1).background().color() != accent
+    assert chart.table.item(0, 2).background().color() != accent
 
 
 def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):

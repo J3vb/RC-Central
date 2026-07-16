@@ -1541,13 +1541,8 @@ _TUNING_ROWS: list[tuple[str, str, str]] = [
 ]
 
 
-class TuningTab(QWidget):
-    """Drift chassis tuning reference: what to change for understeer vs oversteer.
-
-    Static rows from _TUNING_ROWS; the symptom radios highlight the matching
-    column and the search box filters rows by setting name. Nothing persists —
-    it's a reference card, not state.
-    """
+class _ChassisGuide(QWidget):
+    """The understeer/oversteer chart with search filter and symptom highlight."""
 
     def __init__(self):
         super().__init__()
@@ -1610,6 +1605,18 @@ class TuningTab(QWidget):
                     # clear back to theme defaults (None removes the explicit brush)
                     item.setData(Qt.ItemDataRole.BackgroundRole, None)
                     item.setData(Qt.ItemDataRole.ForegroundRole, None)
+
+
+class TuningTab(QWidget):
+    """Tuning references in sub-tabs: chassis chart, shock oil, gyro, my log."""
+
+    def __init__(self):
+        super().__init__()
+        self.subtabs = QTabWidget()
+        self.chassis = _ChassisGuide()
+        self.subtabs.addTab(self.chassis, "Chassis")
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.subtabs)
 
 
 class LogTab(QWidget):
