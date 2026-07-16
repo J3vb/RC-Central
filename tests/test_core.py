@@ -48,11 +48,11 @@ def sandbox(tmp_path, monkeypatch):
 def _hermetic_qsettings(tmp_path, monkeypatch):
     """Keep every test's QSettings in its own temp INI, never the machine's real store,
     so MainWindow's geometry/last-tab restore can't read stale developer/CI state."""
-    import app.main
+    import app.ui.common
     from PySide6.QtCore import QSettings
 
     monkeypatch.setattr(
-        app.main,
+        app.ui.common,
         "QSettings",
         lambda *a, **k: QSettings(str(tmp_path / "qsettings.ini"), QSettings.Format.IniFormat),
     )
@@ -1585,6 +1585,7 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
 
     from app import catalog, garage
     from app import main as app_main
+    import app.ui.common
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
@@ -1592,7 +1593,7 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
     # scope QSettings to a temp INI so nothing leaks to the registry across tests
     ini = tmp_path / "settings.ini"
     monkeypatch.setattr(
-        app_main,
+        app.ui.common,
         "QSettings",
         lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
     )
