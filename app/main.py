@@ -8,7 +8,7 @@ import zipfile
 from pathlib import Path
 from typing import Callable
 
-from PySide6.QtCore import QObject, QSettings, Qt, QUrl, Signal
+from PySide6.QtCore import QObject, QSettings, QSize, Qt, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QFontDatabase, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication,
@@ -39,6 +39,8 @@ from PySide6.QtWidgets import (
     QTabWidget,
     QToolBar,
     QToolButton,
+    QTreeWidget,
+    QTreeWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -1637,27 +1639,44 @@ _GYRO_ROWS: list[tuple[str, str]] = [
 
 
 class _ChassisGuide(QWidget):
-    """The understeer/oversteer chart with search filter and symptom highlight."""
+    """The understeer/oversteer chart with click-to-expand setting explainers.
+
+    Each setting is a QTreeWidget top-level row; its explanation is a spanned
+    child row holding a word-wrapped label, so clicking a setting slides the
+    explanation open beneath it (accordion). Hover tooltips are kept as a bonus.
+    """
 
     def __init__(self):
         super().__init__()
 
-        self.table = QTableWidget(len(_TUNING_ROWS), 3)
-        self.table.setHorizontalHeaderLabels(("Setting", "If understeering", "If oversteering"))
-        self.table.verticalHeader().hide()
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setWordWrap(True)  # camber-link cells are long
-        header = self.table.horizontalHeader()
+        self.tree = QTreeWidget()
+        self.tree.setColumnCount(3)
+        self.tree.setHeaderLabels(("Setting", "If understeering", "If oversteering"))
+        self.tree.setEditTriggers(QTreeWidget.EditTrigger.NoEditTriggers)
+        self.tree.setAnimated(True)  # expanding slides the rows below down
+        self.tree.setWordWrap(True)  # camber-link cells are long
+        self.tree.setExpandsOnDoubleClick(False)  # single click owns toggling
+        header = self.tree.header()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        for row, texts in enumerate(_TUNING_ROWS):
-            for col, text in enumerate(texts):
-                item = QTableWidgetItem(text)
-                if col == 0:
-                    item.setToolTip(_TUNING_TIPS[text])
-                self.table.setItem(row, col, item)
-        self.table.resizeRowsToContents()
+        for texts in _TUNING_ROWS:
+            item = QTreeWidgetItem(list(texts))
+            item.setToolTip(0, _TUNING_TIPS[texts[0]])
+            child = QTreeWidgetItem()
+            item.addChild(child)
+            self.tree.addTopLevelItem(item)
+            child.setFirstColumnSpanned(True)  # only works once the item is in the tree
+            tip = QLabel(_TUNING_TIPS[texts[0]])
+            tip.setWordWrap(True)
+            tip.setContentsMargins(8, 4, 8, 6)
+            font = tip.font()
+            font.setItalic(True)
+            tip.setFont(font)
+            self.tree.setItemWidget(child, 0, tip)
+        self.tree.itemClicked.connect(self._toggle)
+        self.tree.itemActivated.connect(self._toggle)  # Enter key
+        self.tree.itemExpanded.connect(lambda _item: self._fit_explanations())
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Filter settings…")
@@ -1668,7 +1687,7 @@ class _ChassisGuide(QWidget):
         self.radio_both = QRadioButton("Both")
         self.radio_under = QRadioButton("Understeering")
         self.radio_over = QRadioButton("Oversteering")
-        self.radio_both.setChecked(True)  # before connect: table paint not needed yet
+        self.radio_both.setChecked(True)  # before connect: tree paint not needed yet
         for radio in (self.radio_both, self.radio_under, self.radio_over):
             radio.toggled.connect(self._highlight)
 
@@ -1680,29 +1699,49 @@ class _ChassisGuide(QWidget):
         controls.addWidget(self.radio_over)
 
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Drift chassis tuning effects — change one setting at a time"))
+        layout.addWidget(QLabel("Drift chassis tuning effects — click a setting for details"))
         layout.addLayout(controls)
-        layout.addWidget(self.table)
+        layout.addWidget(self.tree)
+
+    def _toggle(self, item, column: int = 0) -> None:
+        if item.parent() is None:  # explanation rows don't toggle anything
+            item.setExpanded(not item.isExpanded())
+
+    def _fit_explanations(self) -> None:
+        # A word-wrapped QLabel's height depends on the width the view gives it;
+        # recompute expanded children so multi-line tips aren't clipped.
+        width = self.tree.viewport().width() - self.tree.indentation()
+        for i in range(self.tree.topLevelItemCount()):
+            parent = self.tree.topLevelItem(i)
+            child = parent.child(0)
+            label = self.tree.itemWidget(child, 0)
+            if label is not None and parent.isExpanded():
+                child.setSizeHint(0, QSize(width, label.heightForWidth(width) + 8))
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().resizeEvent(event)
+        self._fit_explanations()  # re-wrap open explanations at the new width
 
     def _apply_filter(self, text: str) -> None:
         needle = text.strip().lower()
-        for row in range(self.table.rowCount()):
-            self.table.setRowHidden(row, needle not in self.table.item(row, 0).text().lower())
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
+            item.setHidden(needle not in item.text(0).lower())
 
     def _highlight(self, checked: bool) -> None:
         if not checked:  # a radio switch fires toggled twice (old off, new on); paint once
             return
         col_on = 1 if self.radio_under.isChecked() else 2 if self.radio_over.isChecked() else None
-        for row in range(self.table.rowCount()):
+        for i in range(self.tree.topLevelItemCount()):
+            item = self.tree.topLevelItem(i)
             for col in (1, 2):
-                item = self.table.item(row, col)
                 if col == col_on:
-                    item.setBackground(QColor(_ACCENT))
-                    item.setForeground(QColor("white"))  # readable on accent in both themes
+                    item.setBackground(col, QColor(_ACCENT))
+                    item.setForeground(col, QColor("white"))  # readable on accent in both themes
                 else:
                     # clear back to theme defaults (None removes the explicit brush)
-                    item.setData(Qt.ItemDataRole.BackgroundRole, None)
-                    item.setData(Qt.ItemDataRole.ForegroundRole, None)
+                    item.setData(col, Qt.ItemDataRole.BackgroundRole, None)
+                    item.setData(col, Qt.ItemDataRole.ForegroundRole, None)
 
 
 class _OilGuide(QWidget):

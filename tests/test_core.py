@@ -1321,36 +1321,39 @@ def test_tuning_tab(monkeypatch):
     _ = QApplication.instance() or QApplication([])
     tab = app_main.TuningTab()
 
-    # the chart now lives on the Chassis sub-tab of an inner QTabWidget
     assert tab.subtabs.tabText(0) == "Chassis"
     assert tab.subtabs.widget(0) is tab.chassis
     chart = tab.chassis
+    tree = chart.tree
 
-    assert chart.table.rowCount() == len(app_main._TUNING_ROWS) == 18
-    assert chart.table.columnCount() == 3
-    assert chart.table.horizontalHeaderItem(1).text() == "If understeering"
-    assert chart.table.item(0, 0).text() == "Ride Height (front)"
-    assert chart.table.item(0, 1).text() == "Decrease"
-    assert chart.table.item(0, 2).text() == "Increase"
+    assert tree.topLevelItemCount() == len(app_main._TUNING_ROWS) == 18
+    assert tree.columnCount() == 3
+    assert tree.headerItem().text(1) == "If understeering"
+    first = tree.topLevelItem(0)
+    assert first.text(0) == "Ride Height (front)"
+    assert first.text(1) == "Decrease"
+    assert first.text(2) == "Increase"
 
     # search filters on the setting column, case-insensitive
     chart.search.setText("DIFF")
-    visible = [r for r in range(chart.table.rowCount()) if not chart.table.isRowHidden(r)]
+    visible = [
+        i for i in range(tree.topLevelItemCount()) if not tree.topLevelItem(i).isHidden()
+    ]
     assert visible == [17]  # only Rear Diff
     chart.search.setText("")
-    assert not any(chart.table.isRowHidden(r) for r in range(chart.table.rowCount()))
+    assert not any(tree.topLevelItem(i).isHidden() for i in range(tree.topLevelItemCount()))
 
     # a symptom radio highlights only its column; Both clears the highlight
     accent = QColor(app_main._ACCENT)
     chart.radio_under.setChecked(True)
-    assert chart.table.item(0, 1).background().color() == accent
-    assert chart.table.item(0, 2).background().color() != accent
+    assert first.background(1).color() == accent
+    assert first.background(2).color() != accent
     chart.radio_over.setChecked(True)
-    assert chart.table.item(0, 2).background().color() == accent
-    assert chart.table.item(0, 1).background().color() != accent
+    assert first.background(2).color() == accent
+    assert first.background(1).color() != accent
     chart.radio_both.setChecked(True)
-    assert chart.table.item(0, 1).background().color() != accent
-    assert chart.table.item(0, 2).background().color() != accent
+    assert first.background(1).color() != accent
+    assert first.background(2).color() != accent
 
 
 def test_tuning_explainer_tooltips(monkeypatch):
@@ -1364,8 +1367,42 @@ def test_tuning_explainer_tooltips(monkeypatch):
 
     _ = QApplication.instance() or QApplication([])
     tab = app_main.TuningTab()  # keep a reference or Qt deletes the widget tree
-    table = tab.chassis.table
-    assert all(table.item(r, 0).toolTip() for r in range(table.rowCount()))
+    tree = tab.chassis.tree
+    assert all(tree.topLevelItem(i).toolTip(0) for i in range(tree.topLevelItemCount()))
+
+
+def test_tuning_accordion(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QLabel
+
+    from app import main as app_main
+
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.TuningTab()
+    chart = tab.chassis
+    tree = chart.tree
+
+    # every setting row carries exactly one collapsed explanation row
+    for i in range(tree.topLevelItemCount()):
+        item = tree.topLevelItem(i)
+        assert item.childCount() == 1
+        assert not item.isExpanded()
+
+    # toggling a row expands it; the child label shows that setting's tip
+    first = tree.topLevelItem(0)
+    chart._toggle(first)
+    assert first.isExpanded()
+    label = tree.itemWidget(first.child(0), 0)
+    assert isinstance(label, QLabel)
+    assert label.text() == app_main._TUNING_TIPS[first.text(0)]
+
+    # toggling again collapses
+    chart._toggle(first)
+    assert not first.isExpanded()
+
+    # clicking an explanation row is a no-op (only setting rows toggle)
+    chart._toggle(first.child(0))
+    assert not first.isExpanded()
 
 
 def test_tuning_oil_guide(monkeypatch):
