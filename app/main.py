@@ -1609,6 +1609,22 @@ _TUNING_TIPS: dict[str, str] = {
 }
 
 
+# (WT, approx. cSt) — the commonly circulated shock-oil conversion; scales
+# differ by brand, so the tab carries an "approximate" caption.
+_OIL_ROWS: list[tuple[str, str]] = [
+    ("10", "100"),
+    ("15", "150"),
+    ("20", "200"),
+    ("25", "275"),
+    ("30", "350"),
+    ("35", "425"),
+    ("40", "500"),
+    ("45", "575"),
+    ("50", "650"),
+    ("60", "800"),
+]
+
+
 class _ChassisGuide(QWidget):
     """The understeer/oversteer chart with search filter and symptom highlight."""
 
@@ -1678,6 +1694,31 @@ class _ChassisGuide(QWidget):
                     item.setData(Qt.ItemDataRole.ForegroundRole, None)
 
 
+class _OilGuide(QWidget):
+    """Shock oil WT ↔ cSt conversion reference."""
+
+    def __init__(self):
+        super().__init__()
+        self.table = QTableWidget(len(_OIL_ROWS), 2)
+        self.table.setHorizontalHeaderLabels(("WT", "approx. cSt"))
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for row, texts in enumerate(_OIL_ROWS):
+            for col, text in enumerate(texts):
+                item = QTableWidgetItem(text)
+                item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.table.setItem(row, col, item)
+
+        note = QLabel("Approximate — scales differ by brand; check your oil maker's own chart.")
+        note.setWordWrap(True)
+        layout = QVBoxLayout(self)
+        layout.addWidget(note)
+        layout.addWidget(self.table)
+
+
 class TuningTab(QWidget):
     """Tuning references in sub-tabs: chassis chart, shock oil, gyro, my log."""
 
@@ -1686,6 +1727,8 @@ class TuningTab(QWidget):
         self.subtabs = QTabWidget()
         self.chassis = _ChassisGuide()
         self.subtabs.addTab(self.chassis, "Chassis")
+        self.oil = _OilGuide()
+        self.subtabs.addTab(self.oil, "Shock Oil")
         layout = QVBoxLayout(self)
         layout.addWidget(self.subtabs)
 
