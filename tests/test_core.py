@@ -1353,6 +1353,21 @@ def test_tuning_tab(monkeypatch):
     assert chart.table.item(0, 2).background().color() != accent
 
 
+def test_tuning_explainer_tooltips(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import main as app_main
+
+    # every chart row has a tip, and no tip is orphaned
+    assert set(app_main._TUNING_TIPS) == {r[0] for r in app_main._TUNING_ROWS}
+
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.TuningTab()  # keep a reference or Qt deletes the widget tree
+    table = tab.chassis.table
+    assert all(table.item(r, 0).toolTip() for r in range(table.rowCount()))
+
+
 def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
     # switching away and back (showEvent -> _reload_cars) must keep the picked car,
     # not silently reset to "— none —" and disable the save button

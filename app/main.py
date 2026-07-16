@@ -1541,6 +1541,74 @@ _TUNING_ROWS: list[tuple[str, str, str]] = [
 ]
 
 
+# What each chassis setting physically does — tooltips for the chart's Setting
+# column. Front/rear variants of one concept share a text via the _TIP_* locals.
+_TIP_RIDE = (
+    "Chassis height over the ground at that end. Lowering an end generally adds "
+    "grip and reduces body roll at that end; raising does the opposite."
+)
+_TIP_TRACK = (
+    "Distance between left/right contact patches at that end. Wider resists roll "
+    "and softens weight transfer at that end; effects differ with corner speed."
+)
+_TIP_LOWER_SHOCK = (
+    "Moving the shock's lower mount changes its lean. More laid-down = softer, "
+    "more progressive action at that end; more upright = firmer and more direct."
+)
+_TIP_SPRINGS = (
+    "Roll stiffness at that end. On low-grip drift surfaces the stiffer end "
+    "generally slides first."
+)
+_TIP_OIL = (
+    "How fast weight transfers onto that end. Thicker oil slows the transfer "
+    "(calmer transitions); thinner speeds it up (snappier response)."
+)
+_TUNING_TIPS: dict[str, str] = {
+    "Ride Height (front)": _TIP_RIDE,
+    "Ride Height (rear)": _TIP_RIDE,
+    "Ackerman": (
+        "How much more the inside wheel steers than the outside wheel in a turn. "
+        "More Ackerman sharpens low-speed turn-in; less keeps the wheels more "
+        "parallel for smoother high-angle steering."
+    ),
+    "Front Toe": (
+        "Angle of the front wheels vs. the chassis centerline. Toe-out sharpens "
+        "initial turn-in; toe-in calms it."
+    ),
+    "Rear Toe": (
+        "Rear toe-in adds rear stability and forward traction; reducing it frees "
+        "the rear to rotate."
+    ),
+    "Caster": (
+        "Backward lean of the steering axis. More caster adds straight-line "
+        "stability and camber gain while steering; less makes steering more direct."
+    ),
+    "Track Width (front)": _TIP_TRACK,
+    "Track Width (rear — low speed)": _TIP_TRACK,
+    "Track Width (rear — high speed)": _TIP_TRACK,
+    "Lower Shock Position (front)": _TIP_LOWER_SHOCK,
+    "Lower Shock Position (rear)": _TIP_LOWER_SHOCK,
+    "Upper Shock Position (rear)": (
+        "Same lever as the lower mount: vertical shocks act firmer and more "
+        "direct, laid-down shocks act softer initially."
+    ),
+    "Springs (front)": _TIP_SPRINGS,
+    "Springs (rear)": _TIP_SPRINGS,
+    "Shock Oil/Damping (front)": _TIP_OIL,
+    "Shock Oil/Damping (rear)": _TIP_OIL,
+    "Front Camber Link/Roll": (
+        "Link length and angle set the roll center and camber gain — how the tire "
+        "leans as the chassis rolls. Longer/more parallel links smooth the camber "
+        "change and add grip."
+    ),
+    "Rear Diff": (
+        "How tightly the rear wheels are coupled. Tighter (toward spool) drives "
+        "both rears equally for predictable rotation; looser lets them "
+        "differentiate for more forward bite."
+    ),
+}
+
+
 class _ChassisGuide(QWidget):
     """The understeer/oversteer chart with search filter and symptom highlight."""
 
@@ -1558,7 +1626,10 @@ class _ChassisGuide(QWidget):
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
         for row, texts in enumerate(_TUNING_ROWS):
             for col, text in enumerate(texts):
-                self.table.setItem(row, col, QTableWidgetItem(text))
+                item = QTableWidgetItem(text)
+                if col == 0:
+                    item.setToolTip(_TUNING_TIPS[text])
+                self.table.setItem(row, col, item)
         self.table.resizeRowsToContents()
 
         self.search = QLineEdit()
