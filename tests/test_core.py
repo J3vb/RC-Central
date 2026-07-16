@@ -1398,6 +1398,54 @@ def test_tuning_gyro_guide(monkeypatch):
     assert t.item(0, 1).text() == "Lower gain"
 
 
+def test_tuning_log(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app import main as app_main
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+
+    tab = app_main.TuningTab()
+    log = tab.mylog
+    names = [tab.subtabs.tabText(i) for i in range(tab.subtabs.count())]
+    assert names == ["Chassis", "Shock Oil", "Gyro", "My Log"]
+
+    # empty garage: entry controls disabled, hint shown
+    # (isHidden, not isVisible — the tab itself is never shown in offscreen tests)
+    assert not log.add_btn.isEnabled()
+    assert not log.note.isEnabled()
+    assert not log.hint.isHidden()
+
+    # a car with a pre-existing Run entry
+    car = garage.new_car("Drift Car")
+    car["log"].append(garage.new_log_entry("Run", "pack 1"))
+    garage.save_car(car)
+    log._reload_cars()
+    assert log.add_btn.isEnabled()
+    assert log.hint.isHidden()
+    assert log.table.rowCount() == 0  # the Run entry is not a tuning entry
+
+    # add a tuning note -> shows in the table and lands on disk as kind="Tuning"
+    log.note.setText("front springs softer → better turn-in")
+    log._add()
+    assert log.note.text() == ""  # input cleared for the next note
+    assert log.table.rowCount() == 1
+    assert log.table.item(0, 1).text() == "front springs softer → better turn-in"
+    saved = garage.load_car(car["id"])
+    assert [e["kind"] for e in saved["log"]].count("Tuning") == 1
+    assert any(e["kind"] == "Run" for e in saved["log"])
+
+    # delete removes the tuning entry from disk but keeps the Run entry
+    log.table.setCurrentCell(0, 1)
+    log._delete()
+    assert log.table.rowCount() == 0
+    saved = garage.load_car(car["id"])
+    assert [e["kind"] for e in saved["log"]] == ["Run"]
+
+
 def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
     # switching away and back (showEvent -> _reload_cars) must keep the picked car,
     # not silently reset to "— none —" and disable the save button

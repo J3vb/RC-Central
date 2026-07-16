@@ -1752,6 +1752,113 @@ class _GyroGuide(QWidget):
         layout.addWidget(self.table)
 
 
+class _TuningLog(QWidget):
+    """Per-car tuning notes, stored as kind="Tuning" entries in the car's garage log.
+
+    Reuses the Garage's log schema untouched, so entries also appear in the Garage
+    tab's log table and ride along with backup/restore/export for free. Add/Delete
+    load the car fresh from disk so edits made meanwhile in the Garage tab are
+    never clobbered by a stale dict held here.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._shown: list[dict] = []  # entries behind the table rows, newest first
+
+        self.car_combo = QComboBox()
+        self.hint = QLabel("Create a car in the Garage first.")
+        self.note = QLineEdit()
+        self.note.setPlaceholderText("e.g. front springs softer → better turn-in")
+        self.add_btn = QPushButton("Add")
+        self.delete_btn = QPushButton("Delete selected")
+
+        self.table = QTableWidget(0, 2)
+        self.table.setHorizontalHeaderLabels(("Date", "Note"))
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setStretchLastSection(True)
+
+        # connect only now that self.table exists (same trap as _CompareDialog)
+        self.car_combo.currentIndexChanged.connect(self._render)
+        self.add_btn.clicked.connect(self._add)
+        self.note.returnPressed.connect(self._add)
+        self.delete_btn.clicked.connect(self._delete)
+
+        entry_row = QHBoxLayout()
+        entry_row.addWidget(self.note, 1)
+        entry_row.addWidget(self.add_btn)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.car_combo)
+        layout.addWidget(self.hint)
+        layout.addLayout(entry_row)
+        layout.addWidget(self.table)
+        layout.addWidget(self.delete_btn)
+        self._reload_cars()
+
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        # cars are created/deleted on the Garage tab; refresh on every switch here
+        self._reload_cars()
+        super().showEvent(event)
+
+    def _reload_cars(self) -> None:
+        current = self.car_combo.currentData()
+        self.car_combo.blockSignals(True)
+        self.car_combo.clear()
+        for car in garage.list_cars():
+            self.car_combo.addItem(car.get("name", "Unnamed"), car["id"])
+        idx = self.car_combo.findData(current)
+        self.car_combo.setCurrentIndex(max(0, idx))  # keep pick; else first car
+        self.car_combo.blockSignals(False)
+        has_cars = self.car_combo.count() > 0
+        for widget in (self.car_combo, self.note, self.add_btn, self.delete_btn):
+            widget.setEnabled(has_cars)
+        self.hint.setVisible(not has_cars)
+        self._render()
+
+    def _render(self) -> None:
+        car = garage.load_car(self.car_combo.currentData() or "") or {}
+        self._shown = sorted(
+            (e for e in car.get("log", []) if e.get("kind") == "Tuning"),
+            key=lambda e: e.get("date", ""),
+            reverse=True,
+        )
+        self.table.setRowCount(len(self._shown))
+        for row, entry in enumerate(self._shown):
+            date = str(entry.get("date", ""))[:10]  # YYYY-MM-DD from the ISO stamp
+            self.table.setItem(row, 0, QTableWidgetItem(date))
+            self.table.setItem(row, 1, QTableWidgetItem(entry.get("note", "")))
+        self.table.resizeColumnsToContents()
+        self.table.horizontalHeader().setStretchLastSection(True)
+
+    def _add(self) -> None:
+        note = self.note.text().strip()
+        car_id = self.car_combo.currentData()
+        if not note or not car_id:
+            return
+        car = garage.load_car(car_id)
+        if car is None:  # deleted on the Garage tab since the picker was filled
+            self._reload_cars()
+            return
+        car.setdefault("log", []).append(garage.new_log_entry("Tuning", note))
+        garage.save_car(car)
+        self.note.clear()
+        self._render()
+
+    def _delete(self) -> None:
+        row = self.table.currentRow()
+        car_id = self.car_combo.currentData()
+        if row < 0 or row >= len(self._shown) or not car_id:
+            return
+        entry_id = self._shown[row].get("id")
+        car = garage.load_car(car_id)
+        if car is None:
+            self._reload_cars()
+            return
+        car["log"] = [e for e in car.get("log", []) if e.get("id") != entry_id]
+        garage.save_car(car)
+        self._render()
+
+
 class TuningTab(QWidget):
     """Tuning references in sub-tabs: chassis chart, shock oil, gyro, my log."""
 
@@ -1764,6 +1871,8 @@ class TuningTab(QWidget):
         self.subtabs.addTab(self.oil, "Shock Oil")
         self.gyro = _GyroGuide()
         self.subtabs.addTab(self.gyro, "Gyro")
+        self.mylog = _TuningLog()
+        self.subtabs.addTab(self.mylog, "My Log")
         layout = QVBoxLayout(self)
         layout.addWidget(self.subtabs)
 
