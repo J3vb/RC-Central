@@ -11,7 +11,7 @@ from PySide6.QtWidgets import QMainWindow, QProgressBar, QToolButton, QWidget
 
 def _asset_path(name: str) -> Path:
     # _MEIPASS is where PyInstaller unpacks --add-data at runtime; fall back to source tree.
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[1]))
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parents[2]))
     return base / "app" / "assets" / name
 
 
