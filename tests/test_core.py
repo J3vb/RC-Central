@@ -366,7 +366,7 @@ def test_download_manual_failure_caches_nothing(monkeypatch, tmp_path):
 
 
 def test_is_pdf_heuristic():
-    from app.main import _is_pdf
+    from app.ui.common import _is_pdf
 
     assert _is_pdf("https://x/a.pdf")
     assert _is_pdf("https://x/a.PDF")  # case-insensitive
@@ -454,13 +454,13 @@ def test_ui_smoke(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.window import MainWindow
 
     from PySide6.QtWidgets import QToolButton
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     _ = QApplication.instance() or QApplication([])
-    win = app_main.MainWindow()
+    win = MainWindow()
     assert win.table.rowCount() == 1
     button = win.table.cellWidget(0, 4)
     assert isinstance(button, QToolButton)
@@ -478,7 +478,7 @@ def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.window import MainWindow
 
     calls = {"n": 0}
 
@@ -489,7 +489,7 @@ def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
     monkeypatch.setattr(catalog, "load_catalog", counting_load)
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    app_main.MainWindow()
+    MainWindow()
     assert calls["n"] == 1
 
 
@@ -498,12 +498,12 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.window import MainWindow
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    win = app_main.MainWindow()
+    win = MainWindow()
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
     tools = ["Tools"] if sys.platform == "win32" else []
@@ -533,12 +533,12 @@ def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.window import MainWindow
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    win = app_main.MainWindow()
+    win = MainWindow()
 
     # hidden until a check reports a staged update (isHidden reflects the local
     # flag; isVisible would need the top-level window shown, which offscreen isn't)
@@ -568,7 +568,7 @@ def test_log_tab_preload_stream_and_filter(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import logsetup
-    from app import main as app_main
+    from app.ui.log import LogTab
 
     _ = QApplication.instance() or QApplication([])
 
@@ -576,7 +576,7 @@ def test_log_tab_preload_stream_and_filter(monkeypatch):
     logsetup._buffer.clear()
     logsetup._buffer.append("2026-01-01 00:00:00 · INFO · app.pre · preloaded line")
 
-    tab = app_main.LogTab()
+    tab = LogTab()
     try:
         assert "preloaded line" in tab.view.toPlainText()
 
@@ -603,12 +603,12 @@ def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.window import MainWindow
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    win = app_main.MainWindow()
+    win = MainWindow()
 
     tab = win.garage_tab
     tab.name.setText("Test Rig")
@@ -626,7 +626,7 @@ def test_tools_tab_search_and_category_filter(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.tools import ToolsTab
 
     tools = [
         _tool(id="a", name="Servo Prog", vendor="Reve D", category="servo"),
@@ -634,7 +634,7 @@ def test_tools_tab_search_and_category_filter(monkeypatch):
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+    tab = ToolsTab()  # constructed directly so the test runs off Windows too
 
     # text search matches name/vendor/category and hides the rest
     tab.search.setText("hobbywing")
@@ -663,7 +663,8 @@ def test_tools_tab_excludes_info_only_tools(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
+    from app.ui.tools import ToolsTab
 
     info = {  # a hardware device: no PC software, only a manual link
         "id": "gyd550", "name": "GYD550", "vendor": "Futaba", "version": "n/a",
@@ -675,13 +676,13 @@ def test_tools_tab_excludes_info_only_tools(monkeypatch):
     _ = QApplication.instance() or QApplication([])
 
     # the Tools tab shows only the installable tool; the info-only device is filtered out
-    tools = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+    tools = ToolsTab()  # constructed directly so the test runs off Windows too
     assert tools.table.rowCount() == 1
     assert tools.table.item(0, 0).text() == "USB Link"
     assert [t["id"] for t in tools.tools] == ["sw"]
 
     # but the info-only device's manual is still reachable on the Manuals tab
-    manuals = app_main.ManualsTab()
+    manuals = ManualsTab()
     names = [manuals.table.item(r, 0).text() for r in range(manuals.table.rowCount())]
     assert "Manual (PDF)" in names
 
@@ -691,19 +692,20 @@ def test_tools_tab_website_button_opens_homepage(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.tools import ToolsTab
+    from PySide6.QtGui import QDesktopServices
 
     monkeypatch.setattr(
         catalog, "load_catalog", lambda: [_tool(homepage="https://example.invalid/vendor")]
     )
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ToolsTab()
+    tab = ToolsTab()
 
     web = tab.table.cellWidget(0, 5)  # Website column, alongside the action button at col 4
     assert web.text() == "Website"
     opened = {}
     monkeypatch.setattr(
-        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
     )
     web.click()
     assert opened["u"].endswith("/vendor")
@@ -714,7 +716,8 @@ def test_manuals_tab_table_rows_and_actions(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtGui import QDesktopServices
 
     monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")  # cache stays in tmp
     tool = _tool(
@@ -727,7 +730,7 @@ def test_manuals_tab_table_rows_and_actions(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(catalog, "load_catalog", lambda: [tool])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()  # cross-platform: one row per link
+    tab = ManualsTab()  # cross-platform: one row per link
 
     assert tab.table.rowCount() == 2
     rows = {tab.table.item(r, 0).text(): r for r in range(2)}
@@ -742,7 +745,7 @@ def test_manuals_tab_table_rows_and_actions(monkeypatch, tmp_path):
 
     opened = {}
     monkeypatch.setattr(
-        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
     )
     tab.table.cellWidget(web, 4).click()  # web link -> its URL
     assert opened["u"].endswith("/support")
@@ -761,7 +764,8 @@ def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtGui import QDesktopServices
 
     monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
     url = "https://example.invalid/manual.pdf"
@@ -770,7 +774,7 @@ def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(links=[{"name": "M", "url": url}])])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
 
     assert tab.table.item(0, 3).text() == "Downloaded"
     button = tab.table.cellWidget(0, 4)
@@ -778,7 +782,7 @@ def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
 
     opened = {}
     monkeypatch.setattr(
-        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
     )
     button.click()
     # opens the local cached file (a file:// URL), never the remote http URL
@@ -792,7 +796,7 @@ def test_manuals_tab_parallel_downloads_and_dup_guard(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     same = "https://example.invalid/shared.pdf"
     tools = [
@@ -802,7 +806,7 @@ def test_manuals_tab_parallel_downloads_and_dup_guard(monkeypatch):
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
 
     started = []
     monkeypatch.setattr(tab, "_start_download", lambda r, u: started.append((r, u)))
@@ -825,14 +829,14 @@ def test_manuals_tab_click_cancels_active_download(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     url = "https://example.invalid/m.pdf"
     monkeypatch.setattr(
         catalog, "load_catalog", lambda: [_tool(links=[{"name": "M (PDF)", "url": url}])]
     )
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
 
     ev = threading.Event()
     tab._active[0] = ev  # simulate an in-flight download; its button shows "Cancel"
@@ -850,7 +854,7 @@ def test_manuals_tab_finished_success_refreshes_siblings(monkeypatch):
     from PySide6.QtWidgets import QApplication, QProgressBar
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     url = "https://example.invalid/shared.pdf"  # two rows link the SAME manual
     tools = [
@@ -859,7 +863,7 @@ def test_manuals_tab_finished_success_refreshes_siblings(monkeypatch):
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
 
     # simulate row 0 downloading with its inline bar, then completing (file now cached)
     tab._active[0] = threading.Event()
@@ -882,18 +886,19 @@ def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtWidgets import QMessageBox
 
     url = "https://example.invalid/m.pdf"
     monkeypatch.setattr(
         catalog, "load_catalog", lambda: [_tool(links=[{"name": "M (PDF)", "url": url}])]
     )
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
 
     warned = {"n": 0}
     monkeypatch.setattr(
-        app_main.QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1)
+        QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1)
     )
 
     # cancel: no error, nothing cached -> row resets to "Download", NO dialog
@@ -914,7 +919,9 @@ def test_manuals_tab_pdf_row_menu_open_and_delete(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtGui import QDesktopServices
+    from PySide6.QtWidgets import QMessageBox
 
     url = "https://example.invalid/shared.pdf"
     tools = [
@@ -926,7 +933,7 @@ def test_manuals_tab_pdf_row_menu_open_and_delete(monkeypatch):
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
     rows = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
 
     # a web-page row has no dropdown; PDF rows carry the two actions
@@ -943,21 +950,21 @@ def test_manuals_tab_pdf_row_menu_open_and_delete(monkeypatch):
     # Open containing folder -> the manuals cache dir
     opened = {}
     monkeypatch.setattr(
-        app_main.QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
     )
     tab._open_folder(rows["A (PDF)"])
     assert opened["u"].startswith("file:") and "manuals" in opened["u"].lower()
 
     # declining the delete confirmation keeps the file
     monkeypatch.setattr(
-        app_main.QMessageBox, "question", lambda *a, **k: app_main.QMessageBox.StandardButton.No
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No
     )
     tab._delete_pdf(rows["A (PDF)"])
     assert installer.manual_is_cached(url)
 
     # confirming deletes it and resets BOTH rows sharing the URL back to "Download"
     monkeypatch.setattr(
-        app_main.QMessageBox, "question", lambda *a, **k: app_main.QMessageBox.StandardButton.Yes
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
     )
     tab._delete_pdf(rows["A (PDF)"])
     assert not installer.manual_is_cached(url)
@@ -971,7 +978,7 @@ def test_manuals_tab_refresh_all_updates_sibling_row(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
     url = "https://example.invalid/shared.pdf"  # two tools link the SAME manual
@@ -981,7 +988,7 @@ def test_manuals_tab_refresh_all_updates_sibling_row(monkeypatch, tmp_path):
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
     assert [tab.table.cellWidget(r, 4).text() for r in range(2)] == ["Download", "Download"]
 
     # simulate row 0's download completing: the file is now cached and _download_finished runs
@@ -999,7 +1006,7 @@ def test_manuals_tab_skips_link_without_name(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
     # an unvalidated remote catalog link missing "name" must be skipped, not crash the build
@@ -1009,7 +1016,7 @@ def test_manuals_tab_skips_link_without_name(monkeypatch, tmp_path):
     ])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [tool])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()  # would raise KeyError on link["name"] before the guard
+    tab = ManualsTab()  # would raise KeyError on link["name"] before the guard
     assert tab.table.rowCount() == 1
     assert tab.table.item(0, 0).text() == "Good (PDF)"
 
@@ -1019,7 +1026,7 @@ def test_manuals_tab_search_and_category_filter(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
     tools = [
@@ -1030,7 +1037,7 @@ def test_manuals_tab_search_and_category_filter(monkeypatch, tmp_path):
     ]
     monkeypatch.setattr(catalog, "load_catalog", lambda: tools)
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
     assert tab.table.rowCount() == 2
     esc_row = next(r for r in range(2) if "ESC" in tab.table.item(r, 0).text())
     servo_row = 1 - esc_row
@@ -1056,12 +1063,12 @@ def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.window import MainWindow
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    win = app_main.MainWindow()
+    win = MainWindow()
     tab = win.garage_tab
 
     # two cars, distinguished by chassis
@@ -1106,12 +1113,12 @@ def test_garage_tab_duplicate(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     # a saved car with a log entry, then selected
     tab.name.setText("Original")
@@ -1137,12 +1144,13 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QFileDialog
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     # fill a car and export it to JSON (dialog stubbed to a .json path)
     tab.name.setText("Exported Rig")
@@ -1150,7 +1158,7 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     tab.pinion.setValue(28)
     out = tmp_path / "rig.json"
     monkeypatch.setattr(
-        app_main.QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "JSON (*.json)")
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "JSON (*.json)")
     )
     tab._on_export()
     dumped = json.loads(out.read_text(encoding="utf-8"))  # a valid, re-importable car dict
@@ -1158,7 +1166,7 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
 
     # import it back: a fresh car appears with a new id but the same fields
     monkeypatch.setattr(
-        app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(out), "Car spec (*.json)")
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(out), "Car spec (*.json)")
     )
     tab._on_import()
     cars = garage.list_cars()
@@ -1175,17 +1183,18 @@ def test_garage_tab_export_txt_writes_spec_sheet(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QFileDialog
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     tab.name.setText("Sheet Rig")
     out = tmp_path / "rig.txt"  # non-.json path -> the readable spec-sheet branch
     monkeypatch.setattr(
-        app_main.QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "Text files (*.txt)")
+        QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "Text files (*.txt)")
     )
     tab._on_export()
     assert out.read_text(encoding="utf-8") == garage.format_spec_sheet(tab._form_to_car())
@@ -1196,21 +1205,22 @@ def test_garage_tab_import_bad_json_warns(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     bad = tmp_path / "not-a-car.json"
     bad.write_text("[1, 2, 3]", encoding="utf-8")  # valid JSON, but not a car object
     monkeypatch.setattr(
-        app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
     )
     warned = {}
     monkeypatch.setattr(
-        app_main.QMessageBox, "warning", lambda *a, **k: warned.update(shown=True)
+        QMessageBox, "warning", lambda *a, **k: warned.update(shown=True)
     )
     tab._on_import()  # must warn, never raise
     assert warned.get("shown")
@@ -1222,23 +1232,24 @@ def test_garage_tab_import_malformed_car_warns(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     # a JSON object (passes the "is a dict" check) but with a junk field type that only
     # blows up when rendered into the form - must warn, never crash the GUI, never save.
     bad = tmp_path / "bad-types.json"
     bad.write_text('{"name": "X", "gearing": {"pinion": "not a number"}}', encoding="utf-8")
     monkeypatch.setattr(
-        app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
+        QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
     )
     warned = {}
     monkeypatch.setattr(
-        app_main.QMessageBox, "warning", lambda *a, **k: warned.update(shown=True)
+        QMessageBox, "warning", lambda *a, **k: warned.update(shown=True)
     )
     tab._on_import()
     assert warned.get("shown")
@@ -1250,12 +1261,12 @@ def test_gear_tab_whatif_table(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage, gearing
-    from app import main as app_main
+    from app.ui.gear import GearTab
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GearTab()
+    tab = GearTab()
 
     tab.pinion.setValue(20)  # triggers _recompute; span=3 -> pinions 17..23 = 7 rows
     assert tab.sweep_table.rowCount() == 7
@@ -1281,10 +1292,10 @@ def test_gear_chart_dialog(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import main as app_main
+    from app.ui.gear import _GearChartDialog
 
     _ = QApplication.instance() or QApplication([])
-    dlg = app_main._GearChartDialog(22, 87, 1.9)
+    dlg = _GearChartDialog(22, 87, 1.9)
 
     # first run: ranges center on the current setup -> pinion 14..30, spur 77..97
     assert dlg.table.columnCount() == 17
@@ -1306,7 +1317,7 @@ def test_gear_chart_dialog(monkeypatch):
 
     # closing persists the ranges; a fresh dialog restores them over its defaults
     dlg.done(0)
-    dlg2 = app_main._GearChartDialog(22, 87, 1.9)
+    dlg2 = _GearChartDialog(22, 87, 1.9)
     assert dlg2.pinion_min.value() == 40
     assert dlg2.spur_max.value() == 97
 
@@ -1316,16 +1327,17 @@ def test_tuning_tab(monkeypatch):
     from PySide6.QtGui import QColor
     from PySide6.QtWidgets import QApplication
 
-    from app import main as app_main
+    from app.ui.common import _ACCENT
+    from app.ui.tuning import TuningTab, _TUNING_ROWS
 
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.TuningTab()
+    tab = TuningTab()
 
     assert tab.subtabs.tabText(0) == "Chassis"
     assert tab.subtabs.widget(0) is tab.chassis
     chart = tab.chassis
 
-    assert chart.table.rowCount() == len(app_main._TUNING_ROWS) == 18
+    assert chart.table.rowCount() == len(_TUNING_ROWS) == 18
     assert chart.table.columnCount() == 3
     assert chart.table.horizontalHeaderItem(1).text() == "If understeering"
     assert chart.table.item(0, 0).text() == "▸ Ride Height (front)"  # arrow = click affordance
@@ -1340,7 +1352,7 @@ def test_tuning_tab(monkeypatch):
     assert not any(chart.table.isRowHidden(r) for r in range(chart.table.rowCount()))
 
     # a symptom radio highlights only its column; Both clears the highlight
-    accent = QColor(app_main._ACCENT)
+    accent = QColor(_ACCENT)
     chart.radio_under.setChecked(True)
     assert chart.table.item(0, 1).background().color() == accent
     assert chart.table.item(0, 2).background().color() != accent
@@ -1356,13 +1368,13 @@ def test_tuning_explainer_tooltips(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import main as app_main
+    from app.ui.tuning import TuningTab, _TUNING_ROWS, _TUNING_TIPS
 
     # every chart row has a tip, and no tip is orphaned
-    assert set(app_main._TUNING_TIPS) == {r[0] for r in app_main._TUNING_ROWS}
+    assert set(_TUNING_TIPS) == {r[0] for r in _TUNING_ROWS}
 
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.TuningTab()  # keep a reference or Qt deletes the widget tree
+    tab = TuningTab()  # keep a reference or Qt deletes the widget tree
     table = tab.chassis.table
     assert all(table.item(r, 0).toolTip() for r in range(table.rowCount()))
 
@@ -1371,13 +1383,13 @@ def test_tuning_accordion(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import main as app_main
+    from app.ui.tuning import TuningTab, _TUNING_ROWS, _TUNING_TIPS
 
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.TuningTab()
+    tab = TuningTab()
     chart = tab.chassis
     t = chart.table
-    base = len(app_main._TUNING_ROWS)
+    base = len(_TUNING_ROWS)
     assert t.rowCount() == base
 
     # opening: a spanned italic explanation row appears under the clicked setting
@@ -1385,7 +1397,7 @@ def test_tuning_accordion(monkeypatch):
     assert t.rowCount() == base + 1
     assert t.item(0, 0).text().startswith("▾")
     exp = t.item(1, 0)
-    assert exp.text() == app_main._TUNING_TIPS["Ride Height (front)"]
+    assert exp.text() == _TUNING_TIPS["Ride Height (front)"]
     assert exp.font().italic()
     assert t.columnSpan(1, 0) == 3
 
@@ -1394,7 +1406,7 @@ def test_tuning_accordion(monkeypatch):
     assert t.rowCount() == base + 1
     assert t.item(0, 0).text().startswith("▸")
     assert t.item(5, 0).text().startswith("▾")  # Caster back at index 5 after the removal
-    assert t.item(6, 0).text() == app_main._TUNING_TIPS["Caster"]
+    assert t.item(6, 0).text() == _TUNING_TIPS["Caster"]
 
     # clicking the open setting closes it
     chart._toggle_row(5)
@@ -1418,13 +1430,13 @@ def test_tuning_oil_guide(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import main as app_main
+    from app.ui.tuning import TuningTab, _OIL_ROWS
 
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.TuningTab()
+    tab = TuningTab()
     assert tab.subtabs.tabText(1) == "Shock Oil"
     t = tab.oil.table
-    assert t.rowCount() == len(app_main._OIL_ROWS) == 10
+    assert t.rowCount() == len(_OIL_ROWS) == 10
     assert t.columnCount() == 2
     assert (t.item(4, 0).text(), t.item(4, 1).text()) == ("30", "350")
 
@@ -1433,13 +1445,13 @@ def test_tuning_gyro_guide(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import main as app_main
+    from app.ui.tuning import TuningTab, _GYRO_ROWS
 
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.TuningTab()
+    tab = TuningTab()
     assert tab.subtabs.tabText(2) == "Gyro"
     t = tab.gyro.table
-    assert t.rowCount() == len(app_main._GYRO_ROWS) == 6
+    assert t.rowCount() == len(_GYRO_ROWS) == 6
     assert t.item(0, 0).text() == "Tail wags / oscillates on straights"
     assert t.item(0, 1).text() == "Lower gain"
 
@@ -1449,12 +1461,12 @@ def test_tuning_log(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import garage
-    from app import main as app_main
+    from app.ui.tuning import TuningTab
 
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
 
-    tab = app_main.TuningTab()
+    tab = TuningTab()
     log = tab.mylog
     names = [tab.subtabs.tabText(i) for i in range(tab.subtabs.count())]
     assert names == ["Chassis", "Shock Oil", "Gyro", "My Log"]
@@ -1499,12 +1511,12 @@ def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.gear import GearTab
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GearTab()
+    tab = GearTab()
 
     a = garage.save_car(garage.new_car("Car A"))
     garage.save_car(garage.new_car("Car B"))
@@ -1529,11 +1541,12 @@ def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.tools import ToolsTab
+    from PySide6.QtWidgets import QMessageBox
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+    tab = ToolsTab()  # constructed directly so the test runs off Windows too
 
     # before install, both install-only menu actions are disabled
     open_action, uninstall_action = tab._install_actions[0]
@@ -1546,9 +1559,9 @@ def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):
 
     # uninstall (confirmation auto-accepted) removes the install and refreshes the row
     monkeypatch.setattr(
-        app_main.QMessageBox,
+        QMessageBox,
         "question",
-        lambda *a, **k: app_main.QMessageBox.StandardButton.Yes,
+        lambda *a, **k: QMessageBox.StandardButton.Yes,
     )
     tab._uninstall(0)
     assert installer.get_state("fake-tool") is None
@@ -1562,11 +1575,11 @@ def test_tools_tab_update_summary_badge(monkeypatch, sandbox):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.tools import ToolsTab
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(version="2.0")])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ToolsTab()  # constructed directly so the test runs off Windows too
+    tab = ToolsTab()  # constructed directly so the test runs off Windows too
 
     assert tab.update_summary.text() == ""  # nothing installed -> no badge
 
@@ -1584,7 +1597,7 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.window import MainWindow
     import app.ui.common
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
@@ -1602,7 +1615,7 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
     seed.sync()
 
     _ = QApplication.instance() or QApplication([])
-    win = app_main.MainWindow()
+    win = MainWindow()
     assert win.tabs.currentIndex() == win.tabs.count() - 1  # clamped, not 99
 
     win.close()  # closeEvent persists geometry + tab and must not raise
@@ -1615,12 +1628,13 @@ def test_garage_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QInputDialog
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     # a car whose computed gearing was filled by the Gear Calculator
     car = garage.new_car("Computed")
@@ -1631,7 +1645,7 @@ def test_garage_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     tab._fill_form(garage.load_car(car["id"]))
 
     # saving a preset must not null the computed gearing on disk...
-    monkeypatch.setattr(app_main.QInputDialog, "getText", lambda *a, **k: ("carpet", True))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("carpet", True))
     tab._on_save_preset()
 
     reloaded = garage.load_car(car["id"])
@@ -1647,12 +1661,13 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import backup, catalog, garage
-    from app import main as app_main
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.GarageTab()
+    tab = GarageTab()
 
     # save Alpha (pinion 22) and open it, back it up, then make an unsaved local edit
     tab.name.setText("Alpha")
@@ -1661,10 +1676,10 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
     zip_path = backup.make_backup(tmp_path / "b.zip")
     tab.pinion.setValue(40)  # stale edit that would clobber the restore on next Save
 
-    monkeypatch.setattr(app_main.QFileDialog, "getOpenFileName", lambda *a, **k: (str(zip_path), ""))
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(zip_path), ""))
     monkeypatch.setattr(
-        app_main.QMessageBox, "question",
-        lambda *a, **k: app_main.QMessageBox.StandardButton.Yes,
+        QMessageBox, "question",
+        lambda *a, **k: QMessageBox.StandardButton.Yes,
     )
     tab._on_restore()
 
@@ -1677,7 +1692,7 @@ def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import garage
-    from app import main as app_main
+    from app.ui.garage_tab import _CompareDialog
 
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
@@ -1685,7 +1700,7 @@ def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):
     garage.save_car(garage.new_car("Beta"))
 
     # constructing must fully render the table (no _render before self.table exists)
-    dlg = app_main._CompareDialog(garage.list_cars(), a["id"])
+    dlg = _CompareDialog(garage.list_cars(), a["id"])
     assert dlg.table.rowCount() > 0
     assert dlg.combo_a.currentData() != dlg.combo_b.currentData()  # two distinct cars
 
@@ -1695,7 +1710,7 @@ def test_manuals_tab_shows_homepage_only_info_device(monkeypatch):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
-    from app import main as app_main
+    from app.ui.manuals import ManualsTab
 
     # an info-only device with a homepage but no links: reachable via a Manuals row
     device = {
@@ -1704,5 +1719,5 @@ def test_manuals_tab_shows_homepage_only_info_device(monkeypatch):
     }
     monkeypatch.setattr(catalog, "load_catalog", lambda: [device])
     _ = QApplication.instance() or QApplication([])
-    tab = app_main.ManualsTab()
+    tab = ManualsTab()
     assert tab.table.rowCount() == 1
