@@ -1383,6 +1383,21 @@ def test_tuning_oil_guide(monkeypatch):
     assert (t.item(4, 0).text(), t.item(4, 1).text()) == ("30", "350")
 
 
+def test_tuning_gyro_guide(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import main as app_main
+
+    _ = QApplication.instance() or QApplication([])
+    tab = app_main.TuningTab()
+    assert tab.subtabs.tabText(2) == "Gyro"
+    t = tab.gyro.table
+    assert t.rowCount() == len(app_main._GYRO_ROWS) == 6
+    assert t.item(0, 0).text() == "Tail wags / oscillates on straights"
+    assert t.item(0, 1).text() == "Lower gain"
+
+
 def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
     # switching away and back (showEvent -> _reload_cars) must keep the picked car,
     # not silently reset to "— none —" and disable the save button

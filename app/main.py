@@ -1625,6 +1625,17 @@ _OIL_ROWS: list[tuple[str, str]] = [
 ]
 
 
+# (symptom, gyro adjustment) for drift gyros.
+_GYRO_ROWS: list[tuple[str, str]] = [
+    ("Tail wags / oscillates on straights", "Lower gain"),
+    ("Snap-spins on throttle transitions", "Increase gain"),
+    ("Counter-steer too slow, spins before catching", "Increase gain (or faster servo response)"),
+    ("Steering fights your inputs, feels robotic", "Lower gain"),
+    ("Won't hold deep angle, self-straightens", "Lower gain"),
+    ("Wanders at speed, needs constant correction", "Raise gain slightly"),
+]
+
+
 class _ChassisGuide(QWidget):
     """The understeer/oversteer chart with search filter and symptom highlight."""
 
@@ -1719,6 +1730,28 @@ class _OilGuide(QWidget):
         layout.addWidget(self.table)
 
 
+class _GyroGuide(QWidget):
+    """Drift gyro symptom → gain adjustment reference."""
+
+    def __init__(self):
+        super().__init__()
+        self.table = QTableWidget(len(_GYRO_ROWS), 2)
+        self.table.setHorizontalHeaderLabels(("Symptom", "Adjustment"))
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setWordWrap(True)
+        header = self.table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        for row, texts in enumerate(_GYRO_ROWS):
+            for col, text in enumerate(texts):
+                self.table.setItem(row, col, QTableWidgetItem(text))
+        self.table.resizeRowsToContents()
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table)
+
+
 class TuningTab(QWidget):
     """Tuning references in sub-tabs: chassis chart, shock oil, gyro, my log."""
 
@@ -1729,6 +1762,8 @@ class TuningTab(QWidget):
         self.subtabs.addTab(self.chassis, "Chassis")
         self.oil = _OilGuide()
         self.subtabs.addTab(self.oil, "Shock Oil")
+        self.gyro = _GyroGuide()
+        self.subtabs.addTab(self.gyro, "Gyro")
         layout = QVBoxLayout(self)
         layout.addWidget(self.subtabs)
 
