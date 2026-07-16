@@ -1,4 +1,4 @@
-"""Main application window: tab assembly, update banner, and app entry glue."""
+"""Main application window: tab assembly and update banner."""
 
 import sys
 
