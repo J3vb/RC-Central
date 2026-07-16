@@ -1,0 +1,65 @@
+# Roadmap
+
+Where RC Central is headed, phase by phase. The ordering logic: **trust before
+growth before launch** — code signing and hash verification protect exactly the
+users a README refresh and community push would bring in.
+
+Executable plans live in `docs/superpowers/plans/`; this file is the big
+picture. Items marked **(human)** need a maintainer action that can't be
+automated.
+
+## Now — v0.6.x wrap-up
+
+- [x] Tuning page additions — landed on `dev` 2026-07-16
+      (plan: `docs/superpowers/plans/2026-07-15-tuning-page-additions.md`)
+- [ ] Refresh README — stale since v0.5.0: still says "first supported tool:
+      Rêve D" while the catalog has 12 entries
+- [ ] Bump GitHub Actions off deprecated Node 20 majors
+
+## v0.7 — "Trust" (security & robustness, before promoting the app anywhere)
+
+The code-side work is fully planned in
+`docs/superpowers/plans/2026-07-16-v0.7-trust-hardening.md` (which also folds
+in the two README/CI items above).
+
+- [ ] Publish a `.sha256` per release asset; verify it in
+      `updater.fetch_update` before staging PENDING
+- [ ] Pin vendor `download.sha256` for the high-blast-radius catalog entries
+      (bare-exe downloads + admin installers: AGFRC, FlySky, Hobbywing, EdgeTX)
+- [ ] Traversal guard on `exe_relative_path`/`setup_relative_path` in
+      `installer._find_exe`
+- [ ] Sanity-check the fetched remote catalog's shape before trusting or
+      caching it
+- [ ] Add ruff (dev-only) and a CI lint step
+- [ ] **(human)** Apply for SignPath OSS code signing, then wire the signing
+      step into `build.yml` — unsigned exes trip SmartScreen, the single
+      biggest blocker to community adoption
+- [ ] **(human)** EdgeTX elevated-install UAC smoke test on a real machine
+
+## v0.8 — "Growth" (catalog & community)
+
+- [ ] Populate `drivers[]` for tools that need USB drivers (SkyRC, Hobbywing,
+      Rêve D programmers) — the per-row driver menu shipped in v0.4.0 but no
+      catalog entry uses it yet
+- [ ] `CONTRIBUTING.md` plus a catalog-entry PR template — catalog PRs are the
+      project's growth engine and there is no on-ramp for outsiders today
+- [ ] Extend `check-versions.yml` to auto-open an issue when a vendor link
+      dies, instead of just failing red
+
+## v1.0 — community launch
+
+- [ ] Signed, documented, hardened → announce to the RC drift community
+      (forums, Discord, r/rcdrift)
+- [ ] Publish RC Central itself to winget/Scoop, so the launcher is
+      installable the way it installs others
+- [ ] Split `catalog/` into its own repo at the first outside PR (settled
+      decision, 2026-07-10)
+
+## Backlog / experimental
+
+- Window-embedding spike on the real Rêve D exe (`spike/embed_spike.py` —
+  never run). Phase 2 embedding stays opt-in per tool, and only if the spike
+  proves solid.
+- Split `app/main.py` (~2,100 lines) into an `app/ui/` package, one file per
+  tab. Deliberately deferred — trigger: the next time a tab-level change costs
+  more scrolling than thinking.
