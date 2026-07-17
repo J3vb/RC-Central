@@ -29,8 +29,8 @@ jobs:
       run:
         shell: bash # Git Bash on Windows, so mv/pytest run the same everywhere
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
       - run: uv sync
       # PySide6 links libEGL even under the offscreen QPA plugin the tests use,
       # and headless Ubuntu runners don't ship it.
@@ -41,11 +41,11 @@ jobs:
         run: uv run pytest
       - run: uv run pyinstaller RCCentral.spec
       - run: mv "${{ matrix.out }}" "${{ matrix.artifact }}"
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
           path: ${{ matrix.artifact }}
-      - uses: softprops/action-gh-release@v2
+      - uses: softprops/action-gh-release@v3
         if: startsWith(github.ref, 'refs/tags/')
         with:
           files: ${{ matrix.artifact }}

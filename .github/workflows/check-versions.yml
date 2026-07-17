@@ -18,8 +18,8 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v8
       - name: Probe vendor pages
         run: uv run --no-project --with requests python scripts/check_versions.py --json findings.json
       - name: File an issue per outdated tool
