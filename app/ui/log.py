@@ -1,7 +1,6 @@
 """Live log tab: level parsing helpers, the Qt logging bridge, and the Log tab."""
 
 import logging
-import threading
 
 from PySide6.QtCore import QObject, QUrl, Signal
 from PySide6.QtGui import QDesktopServices, QFontDatabase
@@ -17,7 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app import logsetup, updater
+from app import logsetup
 
 
 _LEVEL_NAMES = {
@@ -80,8 +79,6 @@ class LogTab(QWidget):
         ("Warnings+", logging.WARNING),
     )
 
-    _check_done = Signal()
-
     def __init__(self):
         super().__init__()
         self._records: list[str] = []
@@ -93,8 +90,6 @@ class LogTab(QWidget):
         self.view.setMaximumBlockCount(self._MAX_RECORDS)
         self.view.setFont(QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont))
 
-        self.check_btn = QPushButton("Check for updates now")
-        self.check_btn.clicked.connect(self._check_updates)
         open_btn = QPushButton("Open log file")
         open_btn.clicked.connect(self._open_log_file)
         copy_btn = QPushButton("Copy")
@@ -108,7 +103,6 @@ class LogTab(QWidget):
         self.level_filter.currentIndexChanged.connect(self._on_filter_changed)
 
         controls = QHBoxLayout()
-        controls.addWidget(self.check_btn)
         controls.addWidget(open_btn)
         controls.addWidget(copy_btn)
         controls.addWidget(clear_btn)
@@ -119,8 +113,6 @@ class LogTab(QWidget):
         layout = QVBoxLayout(self)
         layout.addLayout(controls)
         layout.addWidget(self.view)
-
-        self._check_done.connect(lambda: self.check_btn.setEnabled(True))
 
         # Bridge live records onto the GUI thread. Parent the bridge so it dies
         # with this widget, and drop the root handler when we're destroyed so a
@@ -165,20 +157,6 @@ class LogTab(QWidget):
         if self._passes(line):
             self.view.appendPlainText(line)
             self._scroll_to_end()
-
-    def _check_updates(self) -> None:
-        self.check_btn.setEnabled(False)
-        updater.log.info("manual update check requested from the Log tab")
-        win = self.window()  # grab on the GUI thread; the worker only emits its signal
-
-        def work():
-            try:
-                if updater.fetch_update(force=True) and hasattr(win, "update_ready"):
-                    win.update_ready.emit(updater.staged_version() or "")
-            finally:
-                self._check_done.emit()  # re-enable the button on the GUI thread
-
-        threading.Thread(target=work, daemon=True).start()
 
     def _open_log_file(self) -> None:
         if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(logsetup.LOG_FILE))):
