@@ -37,7 +37,9 @@ in the two README/CI items above).
 - [x] Add ruff (dev-only) and a CI lint step — landed on `dev` 2026-07-17
 - [ ] **(human)** Apply for SignPath OSS code signing, then wire the signing
       step into `build.yml` — unsigned exes trip SmartScreen, the single
-      biggest blocker to community adoption
+      biggest blocker to community adoption. *Deferred 2026-07-17 until the
+      project is more widely used; prepared application + wiring steps live
+      in `docs/SIGNING.md`.*
 - [ ] **(human)** EdgeTX elevated-install UAC smoke test on a real machine
 
 ## v0.8 — "Growth" (catalog & community)
