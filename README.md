@@ -4,8 +4,11 @@ One app to install and launch all your RC drift setup tools — servo programmer
 ESC config software, and friends. Pick a tool from the catalog, click Install,
 click Launch. No hunting through vendor download pages.
 
-**Status: early development.** First supported tool: Rêve D RS-ST / RS-ST PRO
-servo software (needs the RS-PGCB/RS-PGCA USB programmer).
+**Status: beta.** The catalog covers 12 entries: 7 installable tools — servo
+programmers (Rêve D, AGFRC), ESC suites (Hobbywing, SkyRC, Acuvance), and
+radio tools (FlySky Noble, EdgeTX Companion) — plus 5 info cards for drift
+gear that has no PC software (Sanwa PGS, Futaba GYD550, Yokomo RPX, Rêve D
+REVOX, Onisiki).
 
 ## How it works
 
@@ -18,6 +21,21 @@ on Linux), and launches the tool — the same model as Ninite and Scoop.
 Already have a tool downloaded? Use the action button's dropdown →
 **Locate existing install…**, point it at the exe, and enter the version — RC
 Central tracks and launches your copy without re-downloading it.
+
+## Beyond the launcher
+
+- **Manuals** — official manual and support links for every catalog tool,
+  cross-platform.
+- **Garage** — car profiles with specs, gearing, and a setup log; compare two
+  cars side by side, named gearing presets, JSON import/export, one-click
+  backup/restore.
+- **Gear Calculator** — rollout/ratio math, reverse solve (target rollout →
+  pinion), and a pinion what-if table.
+- **Tuning** — drift chassis tuning chart with per-setting explainers, a
+  shock-oil conversion table, a gyro guide, and a per-car tuning log.
+- **Self-update** — checks GitHub Releases on startup (toggle in Settings)
+  and swaps in the new build on exit.
+- **Dark & light themes** (Settings tab).
 
 ## Supported platforms
 
