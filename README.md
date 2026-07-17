@@ -48,7 +48,7 @@ and RC Central is the gearing calculator and garage.
 
 ## Run from source
 
-```
+```sh
 uv sync
 uv run python -m app.main
 ```
@@ -66,6 +66,26 @@ Tests: `uv run pytest`
 
 We only link to your official downloads and send users to your site. If you'd
 like an entry changed or removed, open an issue and we'll handle it promptly.
+
+## Code signing policy
+
+Free code signing for Windows binaries provided by
+[SignPath.io](https://signpath.io), certificate by the
+[SignPath Foundation](https://signpath.org).
+
+Team roles: [J3vb](https://github.com/J3vb) (maintainer) acts as committer,
+reviewer, and release approver.
+
+### Privacy policy
+
+RC Central does not transfer any information to other networked systems
+unless requested by the user or the person operating it. Its only network
+activity is:
+
+- checking GitHub Releases for app updates on startup (can be disabled in
+  Settings),
+- fetching the community tool catalog from this repository on GitHub,
+- downloading tools from official vendor URLs when you click Install.
 
 ## License
 
