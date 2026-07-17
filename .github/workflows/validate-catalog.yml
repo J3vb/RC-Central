@@ -7,6 +7,10 @@ on:
     - cron: "17 4 * * *" # nightly link-rot check
   workflow_dispatch:
 
+permissions:
+  contents: read
+  issues: write
+
 jobs:
   validate:
     runs-on: ubuntu-latest
@@ -14,3 +18,32 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - run: uv run --no-project --with jsonschema --with requests python scripts/validate_catalog.py --check-urls
+      # a dead vendor link on the nightly run should page the maintainer via
+      # an issue, not just fail red in a tab nobody watches
+      - name: File an issue when the nightly link check fails
+        if: failure() && github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh label create catalog-link-rot \
+            --description "Nightly catalog URL health check is failing" \
+            --color D93F0B --force
+          open=$(gh issue list --state open --label catalog-link-rot --limit 1 --json number --jq length)
+          if [ "$open" != "0" ]; then
+            echo "issue already open; skipping"
+            exit 0
+          fi
+          body=$(printf '%s\n' \
+            "The scheduled catalog validation failed its URL health check." \
+            "" \
+            "Run log: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "" \
+            "Usual cause: a vendor rotated or removed a download URL. Refresh the" \
+            "affected manifest (\`url\` + \`version\` + \`sha256\` + exe path), then run" \
+            "\`uv run python scripts/validate_catalog.py --write\` to regenerate the bundle." \
+            "" \
+            "_Filed automatically by validate-catalog.yml._")
+          gh issue create --label catalog-link-rot \
+            --title "Nightly catalog link check is failing" \
+            --body "$body"
