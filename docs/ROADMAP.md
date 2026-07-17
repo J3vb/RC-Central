@@ -24,8 +24,10 @@ in the two README/CI items above).
 
 - [x] Publish a `.sha256` per release asset; verify it in
       `updater.fetch_update` before staging PENDING — landed on `dev`
-      2026-07-17 (release-time proof pending: tag → 6 assets, v0.6→v0.7
-      upgrade logs the hash check)
+      2026-07-17; release-time proof done at v0.7.0: 6 assets published,
+      `.sha256` files match GitHub's asset digests, and a live v0.6→v0.7
+      self-update swapped in a binary matching the release hash. The new
+      updater's own hash-check log line first fires on the next release.
 - [x] Pin vendor `download.sha256` for the high-blast-radius catalog entries
       (AGFRC, FlySky, Hobbywing, EdgeTX) — landed on `dev` 2026-07-17
 - [x] Traversal guard on `exe_relative_path`/`setup_relative_path` — landed on
