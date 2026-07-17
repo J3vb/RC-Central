@@ -16,6 +16,7 @@ dev = [
     "pytest>=8",
     "jsonschema>=4.23",
     "pyinstaller>=6.10",
+    "ruff>=0.15.22",
 ]
 
 [tool.uv]

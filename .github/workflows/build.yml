@@ -32,6 +32,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
       - run: uv sync
+      - run: uv run ruff check .
       # PySide6 links libEGL even under the offscreen QPA plugin the tests use,
       # and headless Ubuntu runners don't ship it.
       - if: runner.os == 'Linux'
