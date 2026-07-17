@@ -35,6 +35,11 @@ def _check_url(url: str, attempts: int = 3, expect_file: bool = True) -> str | N
             # stream + close: headers only, no multi-MB body. HEAD is useless here:
             # vendors serve "file not found" HTML pages with HTTP 200.
             with requests.get(url, stream=True, timeout=60) as resp:
+                if resp.status_code == 403:
+                    # bot-blocking, not link rot: vendors (Onisiki) 403 CI
+                    # datacenter IPs while serving the same URL fine elsewhere;
+                    # real removals show up as 404
+                    return None
                 if resp.status_code >= 400:
                     return f"HTTP {resp.status_code}"
                 if expect_file and "text/html" in resp.headers.get("content-type", ""):
