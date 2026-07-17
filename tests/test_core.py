@@ -495,21 +495,38 @@ def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
 
 def test_tabs_smoke(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
     from app.ui.window import MainWindow
+    import app.ui.common
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    # scope QSettings to a temp INI: the header combo writes the active-car key
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
     tools = ["Tools"] if sys.platform == "win32" else []
-    expected = tools + ["Manuals", "Garage", "Gear Calculator", "Tuning", "Log", "Settings"]
+    expected = tools + ["Manuals", "Workshop", "Settings"]
     assert win.tabs.count() == len(expected)
     assert [win.tabs.tabText(i) for i in range(win.tabs.count())] == expected
+    workshop = win.workshop_tab
+    assert [workshop.subtabs.tabText(i) for i in range(workshop.subtabs.count())] == [
+        "Garage", "Gearing", "Tuning",
+    ]
+    settings_tab = win.settings_tab
+    assert [settings_tab.subtabs.tabText(i) for i in range(settings_tab.subtabs.count())] == [
+        "Preferences", "Log",
+    ]
     if sys.platform == "win32":
         assert win.tools_tab.table.rowCount() == 1  # existing table still wired
         assert win.table is win.tools_tab.table  # back-compat alias holds
@@ -519,6 +536,16 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     win.gear_tab._recompute()
     assert win.gear_tab.fdr_out.text() not in ("", "—")
     assert win.garage_tab.list.count() == 0  # empty garage dir
+
+    # picking a car in the Workshop header seeds the calculator and persists the id
+    car = garage.new_car("Linked")
+    car["gearing"]["pinion"] = 30
+    garage.save_car(car)
+    workshop._refresh_combo()  # showEvent doesn't fire offscreen; refresh by hand
+    workshop.car_combo.setCurrentIndex(workshop.car_combo.findData(car["id"]))
+    assert win.gear_tab.pinion.value() == 30
+    assert app.ui.common._settings().value(app.ui.common._ACTIVE_CAR_KEY) == car["id"]
+    assert win.garage_tab.name.text() == "Linked"
 
 
 def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
@@ -1563,6 +1590,53 @@ def test_gear_tab_follows_active_car_and_preserves_tweaks(monkeypatch, tmp_path)
     tab._load_active_car()
     assert not tab.save_btn.isEnabled()
     assert not tab.save_preset_btn.isEnabled()
+
+
+def test_workshop_active_car_sync(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.workshop import WorkshopTab
+    import app.ui.common
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
+    _ = QApplication.instance() or QApplication([])
+
+    a = garage.save_car(garage.new_car("Car A"))
+    garage.save_car(garage.new_car("Car B"))
+    tab = WorkshopTab()
+
+    # header pick -> Garage form follows, key persisted, gear save enabled
+    tab.car_combo.setCurrentIndex(tab.car_combo.findData(a["id"]))
+    assert tab.garage.name.text() == "Car A"
+    assert app.ui.common._settings().value(app.ui.common._ACTIVE_CAR_KEY) == a["id"]
+    assert tab.gear.save_btn.isEnabled()
+
+    # a combo rebuild (showEvent / garage changes) keeps the active selection
+    tab._refresh_combo()
+    assert tab.car_combo.currentData() == a["id"]
+
+    # Garage-side selection flows back into the header without looping
+    b_id = next(c["id"] for c in garage.list_cars() if c["name"] == "Car B")
+    tab.garage.open_car(b_id)  # silent path first: header must NOT move…
+    assert tab.car_combo.currentData() == a["id"]
+    tab.garage.car_selected.emit(b_id)  # …the user-action signal is what moves it
+    assert tab.car_combo.currentData() == b_id
+
+    # deleting the active car in the Garage falls back to "— no car —"
+    tab.garage._on_delete()
+    assert tab.car_combo.currentData() is None
+    assert (app.ui.common._settings().value(app.ui.common._ACTIVE_CAR_KEY) or "") == ""
+    tab.gear._load_active_car()
+    assert not tab.gear.save_btn.isEnabled()
 
 
 def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):

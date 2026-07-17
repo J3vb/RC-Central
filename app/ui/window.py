@@ -17,13 +17,10 @@ from PySide6.QtWidgets import (
 from app import __version__, catalog
 
 from app.ui.common import _ACCENT, _settings, app_icon
-from app.ui.garage_tab import GarageTab
-from app.ui.gear import GearTab
-from app.ui.log import LogTab
 from app.ui.manuals import ManualsTab
 from app.ui.settings import SettingsTab
 from app.ui.tools import ToolsTab
-from app.ui.tuning import TuningTab
+from app.ui.workshop import WorkshopTab
 
 
 class MainWindow(QMainWindow):
@@ -47,11 +44,13 @@ class MainWindow(QMainWindow):
         tools = catalog.load_catalog()
 
         self.tabs = QTabWidget()
-        self.gear_tab = GearTab()
-        self.garage_tab = GarageTab()
-        self.tuning_tab = TuningTab()
-        self.log_tab = LogTab()
+        self.workshop_tab = WorkshopTab()
         self.manuals_tab = ManualsTab(tools)
+        self.settings_tab = SettingsTab()
+        # aliases into the Workshop's sub-tabs, for tests and external callers
+        self.garage_tab = self.workshop_tab.garage
+        self.gear_tab = self.workshop_tab.gear
+        self.tuning_tab = self.workshop_tab.tuning
 
         tabs: list[tuple[QWidget, str]] = []
         # The Tools tab installs and launches Windows-only vendor programmers, so
@@ -63,14 +62,11 @@ class MainWindow(QMainWindow):
             tabs.append((self.tools_tab, "Tools"))
         tabs += [
             (self.manuals_tab, "Manuals"),
-            (self.garage_tab, "Garage"),
-            (self.gear_tab, "Gear Calculator"),
-            (self.tuning_tab, "Tuning"),
-            (self.log_tab, "Log"),
+            (self.workshop_tab, "Workshop"),
             # Settings is appended LAST so every existing tab keeps its index — the
             # saved-tab restore below clamps but doesn't remap, so inserting mid-list
             # would restore the wrong tab.
-            (SettingsTab(), "Settings"),
+            (self.settings_tab, "Settings"),
         ]
         for widget, label in tabs:
             self.tabs.addTab(widget, label)
