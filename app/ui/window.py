@@ -48,7 +48,7 @@ class MainWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         self.gear_tab = GearTab()
-        self.garage_tab = GarageTab(on_open_in_calc=self._open_in_calc)
+        self.garage_tab = GarageTab()
         self.tuning_tab = TuningTab()
         self.log_tab = LogTab()
         self.manuals_tab = ManualsTab(tools)
@@ -146,7 +146,3 @@ class MainWindow(QMainWindow):
         # End the event loop; main() then applies the update and relaunches. quit()
         # (rather than close()) leaves the window object intact for main() to read.
         QApplication.quit()
-
-    def _open_in_calc(self, car: dict) -> None:
-        self.gear_tab.load_from_car(car)
-        self.tabs.setCurrentWidget(self.gear_tab)

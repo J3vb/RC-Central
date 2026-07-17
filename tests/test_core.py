@@ -520,13 +520,6 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     assert win.gear_tab.fdr_out.text() not in ("", "—")
     assert win.garage_tab.list.count() == 0  # empty garage dir
 
-    # the garage -> calculator link switches tabs without error
-    car = garage.new_car("Linked")
-    car["gearing"]["pinion"] = 30
-    win._open_in_calc(car)
-    assert win.tabs.currentWidget() is win.gear_tab
-    assert win.gear_tab.pinion.value() == 30
-
 
 def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
@@ -612,13 +605,13 @@ def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
 
     tab = win.garage_tab
     tab.name.setText("Test Rig")
-    tab.pinion.setValue(25)
     tab._on_save()
 
     assert tab.list.count() == 1
     cars = garage.list_cars()
     assert len(cars) == 1 and cars[0]["name"] == "Test Rig"
-    assert cars[0]["gearing"]["pinion"] == 25
+    # the form no longer edits gearing; Save must leave the default block intact
+    assert cars[0]["gearing"]["pinion"] == 22
 
 
 def test_tools_tab_search_and_category_filter(monkeypatch):
@@ -1155,14 +1148,13 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     # fill a car and export it to JSON (dialog stubbed to a .json path)
     tab.name.setText("Exported Rig")
     tab.chassis.setText("Yokomo")
-    tab.pinion.setValue(28)
     out = tmp_path / "rig.json"
     monkeypatch.setattr(
         QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "JSON (*.json)")
     )
     tab._on_export()
     dumped = json.loads(out.read_text(encoding="utf-8"))  # a valid, re-importable car dict
-    assert dumped["name"] == "Exported Rig" and dumped["gearing"]["pinion"] == 28
+    assert dumped["name"] == "Exported Rig" and dumped["gearing"]["pinion"] == 22
 
     # import it back: a fresh car appears with a new id but the same fields
     monkeypatch.setattr(
@@ -1174,7 +1166,7 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     imported = cars[0]
     assert imported["name"] == "Exported Rig"
     assert imported["chassis"] == "Yokomo"
-    assert imported["gearing"]["pinion"] == 28
+    assert imported["gearing"]["pinion"] == 22  # default gearing block round-trips
     assert imported["id"] != dumped["id"]  # a fresh id, so import can't clobber
 
 
@@ -1242,8 +1234,10 @@ def test_garage_tab_import_malformed_car_warns(monkeypatch, tmp_path):
 
     # a JSON object (passes the "is a dict" check) but with a junk field type that only
     # blows up when rendered into the form - must warn, never crash the GUI, never save.
+    # (name, not gearing: the form no longer renders gearing, so a junk name is the
+    # field that trips setText during _fill_form)
     bad = tmp_path / "bad-types.json"
-    bad.write_text('{"name": "X", "gearing": {"pinion": "not a number"}}', encoding="utf-8")
+    bad.write_text('{"name": 123}', encoding="utf-8")
     monkeypatch.setattr(
         QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
     )
@@ -1470,12 +1464,21 @@ def test_tuning_gyro_guide(monkeypatch):
 
 def test_tuning_log(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
     from app import garage
     from app.ui.tuning import TuningTab
+    import app.ui.common
 
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    # scope QSettings to a temp INI: the active-car key must not touch the registry
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
     _ = QApplication.instance() or QApplication([])
 
     tab = TuningTab()
@@ -1483,17 +1486,20 @@ def test_tuning_log(monkeypatch, tmp_path):
     names = [tab.subtabs.tabText(i) for i in range(tab.subtabs.count())]
     assert names == ["Chassis", "Shock Oil", "Gyro", "My Log"]
 
-    # empty garage: entry controls disabled, hint shown
+    # no active car: entry controls disabled, hint shown
     # (isHidden, not isVisible — the tab itself is never shown in offscreen tests)
     assert not log.add_btn.isEnabled()
     assert not log.note.isEnabled()
     assert not log.hint.isHidden()
 
-    # a car with a pre-existing Run entry
+    # a car with a pre-existing Run entry, made the Workshop's active car
     car = garage.new_car("Drift Car")
     car["log"].append(garage.new_log_entry("Run", "pack 1"))
     garage.save_car(car)
-    log._reload_cars()
+    settings = app.ui.common._settings()
+    settings.setValue(app.ui.common._ACTIVE_CAR_KEY, car["id"])
+    settings.sync()
+    log._reload()
     assert log.add_btn.isEnabled()
     assert log.hint.isHidden()
     assert log.table.rowCount() == 0  # the Run entry is not a tuning entry
@@ -1516,36 +1522,47 @@ def test_tuning_log(monkeypatch, tmp_path):
     assert [e["kind"] for e in saved["log"]] == ["Run"]
 
 
-def test_gear_tab_reload_preserves_car_selection(monkeypatch, tmp_path):
-    # switching away and back (showEvent -> _reload_cars) must keep the picked car,
-    # not silently reset to "— none —" and disable the save button
+def test_gear_tab_follows_active_car_and_preserves_tweaks(monkeypatch, tmp_path):
+    # switching away and back (showEvent -> _load_active_car) must keep the user's
+    # in-progress spinbox tweaks: only an actual active-car CHANGE re-seeds them
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
     from app.ui.gear import GearTab
+    import app.ui.common
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
     _ = QApplication.instance() or QApplication([])
+
+    a = garage.new_car("Car A")
+    a["gearing"]["pinion"] = 30
+    garage.save_car(a)
+    settings = app.ui.common._settings()
+    settings.setValue(app.ui.common._ACTIVE_CAR_KEY, a["id"])
+    settings.sync()
+
     tab = GearTab()
-
-    a = garage.save_car(garage.new_car("Car A"))
-    garage.save_car(garage.new_car("Car B"))
-    tab._reload_cars()  # picks up the two saved cars
-
-    tab.car_picker.setCurrentIndex(tab.car_picker.findData(a["id"]))
-    assert tab.car_picker.currentData() == a["id"]
-
-    tab._reload_cars()  # simulates returning to the tab
-    assert tab.car_picker.currentData() == a["id"]  # selection survived
+    assert tab.pinion.value() == 30  # seeded from the active car at construction
     assert tab.save_btn.isEnabled()
 
-    # a car deleted elsewhere falls back to "— none —" without error
+    tab.pinion.setValue(33)  # a what-if tweak
+    tab._load_active_car()  # simulates returning to the sub-tab
+    assert tab.pinion.value() == 33  # same active car: tweak survives, no re-seed
+
+    # the active car deleted elsewhere falls back to no-car without error
     garage.delete_car(a["id"])
-    tab._reload_cars()
-    assert tab.car_picker.currentData() is None
+    tab._load_active_car()
     assert not tab.save_btn.isEnabled()
+    assert not tab.save_preset_btn.isEnabled()
 
 
 def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):
@@ -1635,26 +1652,34 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
     assert int(written.value("tab")) == win.tabs.count() - 1
 
 
-def test_garage_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
+def test_gear_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage
-    from app.ui.garage_tab import GarageTab
+    from app.ui.gear import GearTab
     from PySide6.QtWidgets import QInputDialog
+    import app.ui.common
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
     _ = QApplication.instance() or QApplication([])
-    tab = GarageTab()
 
-    # a car whose computed gearing was filled by the Gear Calculator
+    # a car whose computed gearing was filled by the calculator, set active
     car = garage.new_car("Computed")
     car["gearing"].update({"fdr": 7.5, "rollout_mm": 28.5, "top_speed_kmh": 42.1})
     garage.save_car(car)
-    tab._reload_list()
-    tab.current_id = car["id"]
-    tab._fill_form(garage.load_car(car["id"]))
+    settings = app.ui.common._settings()
+    settings.setValue(app.ui.common._ACTIVE_CAR_KEY, car["id"])
+    settings.sync()
+    tab = GearTab()
 
     # saving a preset must not null the computed gearing on disk...
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("carpet", True))
@@ -1666,6 +1691,8 @@ def test_garage_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     assert reloaded["gearing"]["top_speed_kmh"] == 42.1
     # ...and the snapshot captures the computed values, not None
     assert reloaded["presets"][0]["gearing"]["fdr"] == 7.5
+    # the dropdown now lists the preset after its placeholder row
+    assert tab.preset_combo.count() == 2 and tab.preset_combo.itemText(1) == "carpet"
 
 
 def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
@@ -1681,12 +1708,12 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
 
-    # save Alpha (pinion 22) and open it, back it up, then make an unsaved local edit
+    # save Alpha and open it, back it up, then make an unsaved local edit
     tab.name.setText("Alpha")
-    tab.pinion.setValue(22)
+    tab.chassis.setText("Yokomo")
     tab._on_save()
     zip_path = backup.make_backup(tmp_path / "b.zip")
-    tab.pinion.setValue(40)  # stale edit that would clobber the restore on next Save
+    tab.chassis.setText("stale")  # edit that would clobber the restore on next Save
 
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(zip_path), ""))
     monkeypatch.setattr(
@@ -1695,8 +1722,8 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
     )
     tab._on_restore()
 
-    # the form was re-filled from disk (22), not left showing the stale 40
-    assert tab.pinion.value() == 22
+    # the form was re-filled from disk, not left showing the stale edit
+    assert tab.chassis.text() == "Yokomo"
 
 
 def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):

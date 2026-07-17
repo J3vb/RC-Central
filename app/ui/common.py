@@ -58,6 +58,9 @@ _SETTINGS_ORG = "RCCentral"
 _SETTINGS_APP = "RCCentral"
 _DARK_MODE_KEY, _DARK_MODE_DEFAULT = "dark_mode", False
 _STARTUP_CHECK_KEY, _STARTUP_CHECK_DEFAULT = "check_updates_on_startup", True
+# The Workshop's shared "active car" (a car id; empty string = none). Written only
+# by WorkshopTab; the Gearing and Tuning sub-tabs read it on showEvent.
+_ACTIVE_CAR_KEY = "workshop/active_car"
 
 
 def _settings() -> QSettings:

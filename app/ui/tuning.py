@@ -3,7 +3,6 @@
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor, QFontMetrics
 from PySide6.QtWidgets import (
-    QComboBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -18,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage
-from app.ui.common import _ACCENT
+from app.ui.common import _ACCENT, _ACTIVE_CAR_KEY, _settings
 
 
 # (setting, action if understeering, action if oversteering) — transcribed from the
@@ -382,9 +381,9 @@ class _TuningLog(QWidget):
     def __init__(self):
         super().__init__()
         self._shown: list[dict] = []  # entries behind the table rows, newest first
+        self._car_id: str | None = None  # the Workshop's active car
 
-        self.car_combo = QComboBox()
-        self.hint = QLabel("Create a car in the Garage first.")
+        self.hint = QLabel("Create or select a car in the Garage first.")
         self.note = QLineEdit()
         self.note.setPlaceholderText("e.g. front springs softer → better turn-in")
         self.add_btn = QPushButton("Add")
@@ -397,7 +396,6 @@ class _TuningLog(QWidget):
         self.table.horizontalHeader().setStretchLastSection(True)
 
         # connect only now that self.table exists (same trap as _CompareDialog)
-        self.car_combo.currentIndexChanged.connect(self._render)
         self.add_btn.clicked.connect(self._add)
         self.note.returnPressed.connect(self._add)
         self.delete_btn.clicked.connect(self._delete)
@@ -406,35 +404,29 @@ class _TuningLog(QWidget):
         entry_row.addWidget(self.note, 1)
         entry_row.addWidget(self.add_btn)
         layout = QVBoxLayout(self)
-        layout.addWidget(self.car_combo)
         layout.addWidget(self.hint)
         layout.addLayout(entry_row)
         layout.addWidget(self.table)
         layout.addWidget(self.delete_btn)
-        self._reload_cars()
+        self._reload()
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        # cars are created/deleted on the Garage tab; refresh on every switch here
-        self._reload_cars()
+        # the active car may have changed on the Garage sub-tab; refresh on switch
+        self._reload()
         super().showEvent(event)
 
-    def _reload_cars(self) -> None:
-        current = self.car_combo.currentData()
-        self.car_combo.blockSignals(True)
-        self.car_combo.clear()
-        for car in garage.list_cars():
-            self.car_combo.addItem(car.get("name", "Unnamed"), car["id"])
-        idx = self.car_combo.findData(current)
-        self.car_combo.setCurrentIndex(max(0, idx))  # keep pick; else first car
-        self.car_combo.blockSignals(False)
-        has_cars = self.car_combo.count() > 0
-        for widget in (self.car_combo, self.note, self.add_btn, self.delete_btn):
-            widget.setEnabled(has_cars)
-        self.hint.setVisible(not has_cars)
+    def _reload(self) -> None:
+        car_id = _settings().value(_ACTIVE_CAR_KEY, "") or None
+        car = garage.load_car(car_id) if car_id else None
+        self._car_id = car["id"] if car else None
+        has_car = self._car_id is not None
+        for widget in (self.note, self.add_btn, self.delete_btn):
+            widget.setEnabled(has_car)
+        self.hint.setVisible(not has_car)
         self._render()
 
     def _render(self) -> None:
-        car = garage.load_car(self.car_combo.currentData() or "") or {}
+        car = garage.load_car(self._car_id or "") or {}
         self._shown = sorted(
             (e for e in car.get("log", []) if e.get("kind") == "Tuning"),
             key=lambda e: e.get("date", ""),
@@ -450,12 +442,11 @@ class _TuningLog(QWidget):
 
     def _add(self) -> None:
         note = self.note.text().strip()
-        car_id = self.car_combo.currentData()
-        if not note or not car_id:
+        if not note or not self._car_id:
             return
-        car = garage.load_car(car_id)
-        if car is None:  # deleted on the Garage tab since the picker was filled
-            self._reload_cars()
+        car = garage.load_car(self._car_id)
+        if car is None:  # deleted on the Garage tab since we last synced
+            self._reload()
             return
         car.setdefault("log", []).append(garage.new_log_entry("Tuning", note))
         garage.save_car(car)
@@ -464,13 +455,12 @@ class _TuningLog(QWidget):
 
     def _delete(self) -> None:
         row = self.table.currentRow()
-        car_id = self.car_combo.currentData()
-        if row < 0 or row >= len(self._shown) or not car_id:
+        if row < 0 or row >= len(self._shown) or not self._car_id:
             return
         entry_id = self._shown[row].get("id")
-        car = garage.load_car(car_id)
+        car = garage.load_car(self._car_id)
         if car is None:
-            self._reload_cars()
+            self._reload()
             return
         car["log"] = [e for e in car.get("log", []) if e.get("id") != entry_id]
         garage.save_car(car)

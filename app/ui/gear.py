@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPushButton,
@@ -19,7 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage, gearing
-from app.ui.common import _ACCENT, _settings, _show_status
+from app.ui.common import _ACCENT, _ACTIVE_CAR_KEY, _settings, _show_status
 
 
 class GearTab(QWidget):
@@ -28,8 +29,9 @@ class GearTab(QWidget):
     def __init__(self):
         super().__init__()
 
-        self.car_picker = QComboBox()  # links a saved car's gearing into the inputs
-        self.car_picker.currentIndexChanged.connect(self._on_pick_car)
+        # The Workshop's active car: gearing is seeded from it and saved back to it.
+        self._active_id: str | None = None
+        self._seeded_id: str | None = None  # last car seeded into the spinboxes
 
         self.pinion = QSpinBox()
         self.pinion.setRange(1, 99)
@@ -82,7 +84,6 @@ class GearTab(QWidget):
         solve_widget.setLayout(solve_row)
 
         form = QFormLayout()
-        form.addRow("Load from car", self.car_picker)
         form.addRow("Pinion (teeth)", self.pinion)
         form.addRow("Spur (teeth)", self.spur)
         form.addRow("Internal ratio", self.internal_ratio)
@@ -96,7 +97,22 @@ class GearTab(QWidget):
         form.addRow("Top speed (km/h)", self.kmh_out)
         form.addRow("Top speed (mph)", self.mph_out)
 
-        self.save_btn = QPushButton("Save results to selected car")
+        # Named gearing presets for the active car (moved here from the Garage form
+        # with the gearing dedupe). activated fires only on user picks, never on
+        # programmatic repopulation in _refresh_presets.
+        self.preset_combo = QComboBox()
+        self.preset_combo.activated.connect(self._on_apply_preset)
+        self.save_preset_btn = QPushButton("Save as preset…")
+        self.save_preset_btn.clicked.connect(self._on_save_preset)
+        self.del_preset_btn = QPushButton("Delete preset")
+        self.del_preset_btn.clicked.connect(self._on_delete_preset)
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Preset"))
+        preset_row.addWidget(self.preset_combo, 1)
+        preset_row.addWidget(self.save_preset_btn)
+        preset_row.addWidget(self.del_preset_btn)
+
+        self.save_btn = QPushButton("Save results to car")
         self.save_btn.clicked.connect(self._save_to_car)
         self.save_btn.setEnabled(False)
         chart_btn = QPushButton("Gear ratio chart…")
@@ -115,47 +131,34 @@ class GearTab(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addLayout(preset_row)
         layout.addLayout(btn_row)
         layout.addWidget(self.sweep_table)
         layout.addStretch(1)
 
-        self._reload_cars()
+        self._load_active_car()
         self._recompute()
 
-    def _reload_cars(self) -> None:
-        """Refresh the car picker from the garage, keeping the current selection.
+    def _load_active_car(self) -> None:
+        """Sync to the Workshop's active car: seed inputs and enable the save/preset row.
 
-        Blocks signals so the rebuild doesn't fire a spurious _on_pick_car. showEvent
-        calls this on every switch back to this tab, so it must re-select the car the
-        user had chosen — a bare clear()+addItem auto-selects "— none —" and would
-        otherwise silently drop the selection (and disable "Save results to car").
+        Re-seeds the spinboxes only when the active car actually changed — showEvent
+        calls this on every switch back to this sub-tab, and re-seeding on the same
+        car would clobber the user's in-progress what-if tweaks.
         """
-        current = self.car_picker.currentData()
-        self.car_picker.blockSignals(True)
-        self.car_picker.clear()
-        self.car_picker.addItem("— none —", None)
-        for car in garage.list_cars():
-            self.car_picker.addItem(car.get("name", "Unnamed"), car["id"])
-        if current is not None:
-            idx = self.car_picker.findData(current)
-            if idx != -1:  # the selected car may have been deleted on the Garage tab
-                self.car_picker.setCurrentIndex(idx)
-        self.car_picker.blockSignals(False)
-        self.save_btn.setEnabled(self.car_picker.currentData() is not None)
+        car_id = _settings().value(_ACTIVE_CAR_KEY, "") or None
+        car = garage.load_car(car_id) if car_id else None
+        self._active_id = car["id"] if car else None
+        self.save_btn.setEnabled(self._active_id is not None)
+        if car and self._active_id != self._seeded_id:
+            self.load_from_car(car)
+        self._seeded_id = self._active_id
+        self._refresh_presets(car)
 
     def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        # a car may have been added/renamed on the Garage tab since we last looked
-        self._reload_cars()
+        # the active car may have changed on the Garage sub-tab since we last looked
+        self._load_active_car()
         super().showEvent(event)
-
-    def _on_pick_car(self) -> None:
-        car_id = self.car_picker.currentData()
-        self.save_btn.setEnabled(car_id is not None)
-        if car_id is None:
-            return
-        car = garage.load_car(car_id)
-        if car:
-            self.load_from_car(car)
 
     def load_from_car(self, car: dict) -> None:
         """Prefill the inputs from a car's gearing block, then recompute."""
@@ -171,13 +174,6 @@ class GearTab(QWidget):
             widget.blockSignals(True)
             widget.setValue(g.get(key, default))
             widget.blockSignals(False)
-        # select this car in the picker so "save results" targets it
-        idx = self.car_picker.findData(car.get("id"))
-        if idx != -1:
-            self.car_picker.blockSignals(True)
-            self.car_picker.setCurrentIndex(idx)
-            self.car_picker.blockSignals(False)
-            self.save_btn.setEnabled(True)
         self._recompute()
 
     def _current(self) -> dict:
@@ -256,13 +252,12 @@ class GearTab(QWidget):
         ).exec()
 
     def _save_to_car(self) -> None:
-        car_id = self.car_picker.currentData()
-        if car_id is None:
+        if self._active_id is None:
             return
-        car = garage.load_car(car_id)
+        car = garage.load_car(self._active_id)
         if car is None:
             QMessageBox.warning(self, "Save failed", "That car no longer exists.")
-            self._reload_cars()
+            self._load_active_car()
             return
         try:
             r = self._current()
@@ -284,6 +279,66 @@ class GearTab(QWidget):
         )
         garage.save_car(car)
         _show_status(self, f"Saved gearing to {car['name']}", 5000)
+
+    def _refresh_presets(self, car: dict | None) -> None:
+        """Repopulate the preset dropdown from the car; disable the row without one."""
+        has_car = car is not None
+        for w in (self.preset_combo, self.save_preset_btn, self.del_preset_btn):
+            w.setEnabled(has_car)
+        self.preset_combo.clear()
+        self.preset_combo.addItem("— preset —", None)
+        for p in (car or {}).get("presets", []):
+            self.preset_combo.addItem(p.get("name", "preset"), p.get("name"))
+
+    def _spinbox_gearing(self) -> dict:
+        return {
+            "pinion": self.pinion.value(),
+            "spur": self.spur.value(),
+            "internal_ratio": self.internal_ratio.value(),
+            "tire_diameter_mm": self.tire.value(),
+            "kv": self.kv.value(),
+            "cells": self.cells.value(),
+        }
+
+    def _active_car(self) -> dict | None:
+        """The active car, fresh from disk; resync (and warn never) when it's gone."""
+        car = garage.load_car(self._active_id) if self._active_id else None
+        if car is None:
+            self._load_active_car()  # deleted meanwhile: fall back to no-car state
+        return car
+
+    def _on_save_preset(self) -> None:
+        car = self._active_car()
+        if car is None:
+            return
+        name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        # update (not replace) the gearing block so computed fdr/rollout/top-speed
+        # saved earlier ride into the snapshot instead of being dropped
+        car.setdefault("gearing", {}).update(self._spinbox_gearing())
+        car = garage.save_car(garage.add_preset(car, name.strip()))
+        self._refresh_presets(car)
+
+    def _on_apply_preset(self) -> None:
+        name = self.preset_combo.currentData()  # None for the "— preset —" placeholder
+        if not name:
+            return
+        car = self._active_car()
+        if car is None:
+            return
+        car = garage.save_car(garage.apply_preset(car, name))
+        self.load_from_car(car)  # reflect the applied gearing in the inputs
+
+    def _on_delete_preset(self) -> None:
+        name = self.preset_combo.currentData()
+        if not name:
+            return
+        car = self._active_car()
+        if car is None:
+            return
+        car = garage.save_car(garage.delete_preset(car, name))
+        self._refresh_presets(car)
 
 
 class _GearChartDialog(QDialog):

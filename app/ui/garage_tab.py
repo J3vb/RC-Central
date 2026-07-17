@@ -3,18 +3,15 @@
 import json
 import zipfile
 from pathlib import Path
-from typing import Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
     QDialog,
-    QDoubleSpinBox,
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -22,7 +19,6 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -95,9 +91,13 @@ class _CompareDialog(QDialog):
 class GarageTab(QWidget):
     """Create/edit/delete RC car spec sheets."""
 
-    def __init__(self, on_open_in_calc: Callable[[dict], None] | None = None):
+    # The car the user is working on (its id, or None) — emitted from user-driven
+    # actions only. Programmatic selection goes through open_car(), which never
+    # emits, so the Workshop header and this tab can sync without loops.
+    car_selected = Signal(object)
+
+    def __init__(self):
         super().__init__()
-        self._on_open_in_calc = on_open_in_calc
         self.current_id: str | None = None
 
         self._cars: list[dict] = []  # cache behind the list, for live filtering
@@ -145,28 +145,10 @@ class GarageTab(QWidget):
         self.esc = QLineEdit()
         self.servo = QLineEdit()
         self.tires = QLineEdit()
-        self.pinion = QSpinBox()
-        self.pinion.setRange(1, 99)
-        self.pinion.setValue(22)
-        self.spur = QSpinBox()
-        self.spur.setRange(1, 200)
-        self.spur.setValue(87)
-        self.internal_ratio = QDoubleSpinBox()
-        self.internal_ratio.setRange(1.0, 5.0)
-        self.internal_ratio.setSingleStep(0.1)
-        self.internal_ratio.setValue(1.9)
-        self.tire = QDoubleSpinBox()
-        self.tire.setRange(40.0, 120.0)
-        self.tire.setSingleStep(0.5)
-        self.tire.setValue(60.0)
-        self.kv = QSpinBox()
-        self.kv.setRange(0, 20000)
-        self.kv.setValue(3000)
-        self.cells = QSpinBox()
-        self.cells.setRange(1, 8)
-        self.cells.setValue(2)
         self.notes = QPlainTextEdit()
 
+        # Gearing (pinion/spur/…) is edited on the Gearing sub-tab, not here; the
+        # form only overlays spec fields, so a car's gearing block rides through Save.
         form = QFormLayout()
         form.addRow("Name", self.name)
         form.addRow("Chassis", self.chassis)
@@ -174,43 +156,18 @@ class GarageTab(QWidget):
         form.addRow("ESC", self.esc)
         form.addRow("Servo", self.servo)
         form.addRow("Tires", self.tires)
-        form.addRow("Pinion (teeth)", self.pinion)
-        form.addRow("Spur (teeth)", self.spur)
-        form.addRow("Internal ratio", self.internal_ratio)
-        form.addRow("Tire diameter (mm)", self.tire)
-        form.addRow("Motor Kv", self.kv)
-        form.addRow("Battery cells (S)", self.cells)
         form.addRow("Notes", self.notes)
 
         save_btn = QPushButton("Save")
         save_btn.clicked.connect(self._on_save)
-        self.open_calc_btn = QPushButton("Open in Gear Calculator")
-        self.open_calc_btn.clicked.connect(self._on_open_calc)
         export_btn = QPushButton("Export…")
         export_btn.clicked.connect(self._on_export)
         copy_btn = QPushButton("Copy")
         copy_btn.clicked.connect(self._on_copy)
         form_buttons = QHBoxLayout()
         form_buttons.addWidget(save_btn)
-        form_buttons.addWidget(self.open_calc_btn)
         form_buttons.addWidget(export_btn)
         form_buttons.addWidget(copy_btn)
-
-        # Named gearing presets (e.g. "indoor carpet", "outdoor asphalt"): snapshot the
-        # current gearing, or switch the form to a saved one. activated fires only on
-        # user picks, never on programmatic repopulation in _fill_form.
-        self._current_presets: list[dict] = []
-        self.preset_combo = QComboBox()
-        self.preset_combo.activated.connect(self._on_apply_preset)
-        save_preset_btn = QPushButton("Save as preset…")
-        save_preset_btn.clicked.connect(self._on_save_preset)
-        del_preset_btn = QPushButton("Delete preset")
-        del_preset_btn.clicked.connect(self._on_delete_preset)
-        preset_row = QHBoxLayout()
-        preset_row.addWidget(QLabel("Preset"))
-        preset_row.addWidget(self.preset_combo, 1)
-        preset_row.addWidget(save_preset_btn)
-        preset_row.addWidget(del_preset_btn)
 
         # Run / maintenance log for the selected car.
         self._current_log: list[dict] = []
@@ -237,7 +194,6 @@ class GarageTab(QWidget):
 
         right = QVBoxLayout()
         right.addLayout(form)
-        right.addLayout(preset_row)
         right.addLayout(form_buttons)
         right.addWidget(QLabel("<b>Run / maintenance log</b>"))
         right.addWidget(self.log_table)
@@ -286,21 +242,9 @@ class GarageTab(QWidget):
         self.esc.setText(car.get("esc", ""))
         self.servo.setText(car.get("servo", ""))
         self.tires.setText(car.get("tires", ""))
-        g = car.get("gearing", {})
-        self.pinion.setValue(g.get("pinion", 22))
-        self.spur.setValue(g.get("spur", 87))
-        self.internal_ratio.setValue(g.get("internal_ratio", 1.9))
-        self.tire.setValue(g.get("tire_diameter_mm", 60.0))
-        self.kv.setValue(g.get("kv", 3000))
-        self.cells.setValue(g.get("cells", 2))
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
-        self._current_presets = list(car.get("presets", []))
-        self.preset_combo.clear()
-        self.preset_combo.addItem("— preset —", None)
-        for p in self._current_presets:
-            self.preset_combo.addItem(p.get("name", "preset"), p.get("name"))
 
     def _fill_log_table(self) -> None:
         self.log_table.setRowCount(len(self._current_log))
@@ -314,8 +258,8 @@ class GarageTab(QWidget):
 
     def _form_to_car(self) -> dict:
         # Start from the stored car (not new_car()) and overlay only the fields the
-        # form edits, so values with no widget — computed gearing (fdr/rollout/top
-        # speed the calculator saved) and any field added later — survive a Save
+        # form edits, so values with no widget — the whole gearing block and presets
+        # (owned by the Gearing sub-tab) and any field added later — survive a Save
         # instead of being reset to their new_car() defaults.
         car = (self.current_id and garage.load_car(self.current_id)) or garage.new_car()
         if self.current_id:
@@ -330,17 +274,6 @@ class GarageTab(QWidget):
                 "tires": self.tires.text().strip(),
                 "notes": self.notes.toPlainText(),
                 "log": self._current_log,  # the log is edited in-form before Save
-                "presets": self._current_presets,
-            }
-        )
-        car.setdefault("gearing", {}).update(
-            {
-                "pinion": self.pinion.value(),
-                "spur": self.spur.value(),
-                "internal_ratio": self.internal_ratio.value(),
-                "tire_diameter_mm": self.tire.value(),
-                "kv": self.kv.value(),
-                "cells": self.cells.value(),
             }
         )
         return car
@@ -353,6 +286,22 @@ class GarageTab(QWidget):
             return
         self.current_id = car["id"]
         self._fill_form(car)
+        self.car_selected.emit(car["id"])
+
+    def open_car(self, car_id: str | None) -> None:
+        """Programmatically open a car (or blank the form). Never emits car_selected —
+        this is the Workshop header's entry point, and emitting back would loop."""
+        car = garage.load_car(car_id) if car_id else None
+        if car:
+            self.current_id = car["id"]
+            self._fill_form(car)
+            self._select_id(car["id"])
+        else:
+            self.list.blockSignals(True)
+            self.list.clearSelection()
+            self.list.setCurrentItem(None)
+            self.list.blockSignals(False)
+            self._blank_form()
 
     def _on_new(self) -> None:
         self.list.blockSignals(True)
@@ -377,6 +326,7 @@ class GarageTab(QWidget):
         self._reload_list()
         self._select_id(saved["id"])
         _show_status(self, f"Saved {saved['name']}", 5000)
+        self.car_selected.emit(saved["id"])  # covers create and rename alike
 
     def _on_duplicate(self) -> None:
         if not self.current_id:  # nothing open to clone
@@ -387,6 +337,7 @@ class GarageTab(QWidget):
         self._reload_list()
         self._select_id(dup["id"])
         _show_status(self, f"Duplicated to {dup['name']}", 5000)
+        self.car_selected.emit(dup["id"])
 
     def _on_import(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -406,6 +357,7 @@ class GarageTab(QWidget):
         self._reload_list()
         self._select_id(saved["id"])
         _show_status(self, f"Imported {saved['name']}", 5000)
+        self.car_selected.emit(saved["id"])
 
     def _on_delete(self) -> None:
         if not self.current_id:
@@ -413,38 +365,11 @@ class GarageTab(QWidget):
         garage.delete_car(self.current_id)
         self._blank_form()
         self._reload_list()
-
-    def _on_open_calc(self) -> None:
-        if self._on_open_in_calc:
-            self._on_open_in_calc(self._form_to_car())
+        self.car_selected.emit(None)
 
     def _on_compare(self) -> None:
         if len(self._cars) >= 2:
             _CompareDialog(self._cars, self.current_id, self).exec()
-
-    def _on_save_preset(self) -> None:
-        name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
-        if not ok or not name.strip():
-            return
-        car = garage.save_car(garage.add_preset(self._form_to_car(), name.strip()))
-        self.current_id = car["id"]
-        self._reload_list()
-        self._select_id(car["id"])
-        self._fill_form(car)  # refresh the preset dropdown with the new snapshot
-
-    def _on_apply_preset(self) -> None:
-        name = self.preset_combo.currentData()  # None for the "— preset —" placeholder
-        if not name:
-            return
-        car = garage.save_car(garage.apply_preset(self._form_to_car(), name))
-        self._fill_form(car)  # reflect the applied gearing in the form
-
-    def _on_delete_preset(self) -> None:
-        name = self.preset_combo.currentData()
-        if not name:
-            return
-        car = garage.save_car(garage.delete_preset(self._form_to_car(), name))
-        self._fill_form(car)
 
     def _on_backup(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -476,7 +401,7 @@ class GarageTab(QWidget):
         except (OSError, zipfile.BadZipFile) as e:  # bad/corrupt zip must reach the user
             QMessageBox.warning(self, "Restore failed", str(e))
             return
-        self._reload_list()  # Gear tab's picker self-refreshes on its showEvent
+        self._reload_list()
         # An open existing car may now be stale (the restore could have overwritten
         # its file); re-fill from disk so the next Save doesn't clobber the restore.
         # A blank form (unsaved new car, current_id None) is left alone — it saves
@@ -489,6 +414,7 @@ class GarageTab(QWidget):
             else:
                 self._blank_form()
         _show_status(self, f"Restored {n} car(s)", 5000)
+        self.car_selected.emit(self.current_id or None)  # combo re-reads restored names
 
     def _on_export(self) -> None:
         car = self._form_to_car()  # already carries computed gearing from disk
