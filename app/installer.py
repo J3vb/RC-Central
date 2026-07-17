@@ -312,8 +312,11 @@ def _extract(archive: Path, dest: Path) -> None:
 
 def _find_exe(root: Path, relative: str | None) -> Path:
     """Resolve the tool's exe: catalog hint first, else the single plausible exe."""
-    if relative and (root / relative).exists():
-        return root / relative
+    if relative:
+        candidate = (root / relative).resolve()
+        # the hint comes from the remote catalog: never let it escape the tool dir
+        if candidate.is_relative_to(root.resolve()) and candidate.exists():
+            return candidate
     candidates = [
         p
         for p in sorted(root.rglob("*.exe"))

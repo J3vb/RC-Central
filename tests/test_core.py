@@ -1705,3 +1705,17 @@ def test_manuals_tab_shows_homepage_only_info_device(monkeypatch):
     _ = QApplication.instance() or QApplication([])
     tab = app_main.ManualsTab()
     assert tab.table.rowCount() == 1
+
+
+def test_find_exe_rejects_traversal(tmp_path):
+    from app import installer
+
+    (tmp_path / "evil.exe").write_bytes(b"MZ")
+    root = tmp_path / "tool"
+    root.mkdir()
+    real = root / "servo.exe"
+    real.write_bytes(b"MZ")
+
+    # a hostile catalog hint must not escape the tool dir: the guard ignores it
+    # and the single-candidate scan finds the real exe instead
+    assert installer._find_exe(root, "../evil.exe") == real
