@@ -20,7 +20,7 @@ from pathlib import Path
 import requests
 
 from app import __version__
-from app.installer import DATA_DIR
+from app.installer import DATA_DIR, _sha256
 from app.versions import is_newer
 
 log = logging.getLogger(__name__)
@@ -50,6 +50,17 @@ def _platform_asset() -> tuple[str, bytes]:
     if sys.platform.startswith("linux"):
         return f"RCCentral-linux-{_arch()}", b"\x7fELF"  # ELF
     return "", b""
+
+
+def _release_sha256(assets: list[dict], asset_name: str) -> str | None:
+    """Published hex digest for an asset (its '<name>.sha256' release file), if any."""
+    meta = next((a for a in assets if a.get("name") == asset_name + ".sha256"), None)
+    if meta is None:
+        return None
+    resp = requests.get(meta["browser_download_url"], timeout=10)
+    resp.raise_for_status()
+    parts = resp.text.split()  # "<hex>  <filename>" (sha256sum format)
+    return parts[0].lower() if parts else None
 
 
 # Downloaded-but-not-yet-applied build. The name mirrors the running binary's
@@ -138,6 +149,14 @@ def fetch_update(force: bool = False) -> bool:
             expected_size,
             url,
         )
+        expected_sha = _release_sha256(assets, asset_name)
+        if expected_sha is None:
+            # releases published before hashes shipped; enforced for all newer ones
+            log.warning(
+                "release %r publishes no %s.sha256; proceeding without hash check",
+                tag,
+                asset_name,
+            )
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         tmp = PENDING.with_suffix(".part")
         written = 0
@@ -170,6 +189,17 @@ def fetch_update(force: bool = False) -> bool:
             )
             tmp.unlink(missing_ok=True)
             return False
+
+        if expected_sha:
+            actual = _sha256(tmp)
+            if actual != expected_sha:
+                log.warning(
+                    "update download sha256 mismatch (expected %s, got %s); discarding",
+                    expected_sha,
+                    actual,
+                )
+                tmp.unlink(missing_ok=True)
+                return False
 
         tmp.replace(PENDING)
         global _staged_version

@@ -36,6 +36,10 @@ class FakeResp:
     def iter_content(self, chunk_size=1):
         yield self._content
 
+    @property
+    def text(self):
+        return self._content.decode()
+
     def __enter__(self):
         return self
 
@@ -257,3 +261,58 @@ def test_non_json_response(sandbox, monkeypatch, caplog):
 
     assert result is False
     assert "failed" in caplog.text.lower()
+
+
+def _sha_assets(payload):
+    return [
+        {
+            "name": "RCCentral-windows-x64.exe",
+            "browser_download_url": "https://dl/exe",
+            "size": len(payload),
+        },
+        {
+            "name": "RCCentral-windows-x64.exe.sha256",
+            "browser_download_url": "https://dl/sha",
+        },
+    ]
+
+
+def _patch_sha_flow(monkeypatch, tmp_path, payload, sha_line):
+    api = FakeResp(json_data={"tag_name": "v99.0.0", "assets": _sha_assets(payload)})
+    responses = {
+        "https://dl/exe": FakeResp(content=payload),
+        "https://dl/sha": FakeResp(content=sha_line),
+    }
+    monkeypatch.setattr(
+        updater.requests, "get", lambda url, **kw: responses.get(url, api)
+    )
+    monkeypatch.setattr(
+        updater, "_platform_asset", lambda: ("RCCentral-windows-x64.exe", b"MZ")
+    )
+    pending = tmp_path / updater.PENDING.name
+    monkeypatch.setattr(updater, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(updater, "PENDING", pending)
+    monkeypatch.setattr(updater, "_staged_version", None)
+    return pending
+
+
+def test_fetch_update_rejects_sha256_mismatch(monkeypatch, tmp_path):
+    payload = b"MZ" + b"x" * 64
+    wrong = b"0" * 64 + b"  RCCentral-windows-x64.exe\n"
+    pending = _patch_sha_flow(monkeypatch, tmp_path, payload, wrong)
+
+    assert updater.fetch_update(force=True) is False
+    assert not pending.exists()
+    assert list(tmp_path.glob("*.part")) == []
+
+
+def test_fetch_update_accepts_matching_sha256(monkeypatch, tmp_path):
+    import hashlib
+
+    payload = b"MZ" + b"x" * 64
+    digest = hashlib.sha256(payload).hexdigest().encode()
+    good = digest + b"  RCCentral-windows-x64.exe\n"
+    pending = _patch_sha_flow(monkeypatch, tmp_path, payload, good)
+
+    assert updater.fetch_update(force=True) is True
+    assert pending.read_bytes() == payload
