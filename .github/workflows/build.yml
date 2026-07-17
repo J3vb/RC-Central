@@ -30,7 +30,7 @@ jobs:
         shell: bash # Git Bash on Windows, so mv/pytest run the same everywhere
     steps:
       - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v8
+      - uses: astral-sh/setup-uv@v7
       - run: uv sync
       # PySide6 links libEGL even under the offscreen QPA plugin the tests use,
       # and headless Ubuntu runners don't ship it.
