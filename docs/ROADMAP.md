@@ -22,15 +22,19 @@ The code-side work is fully planned in
 `docs/superpowers/plans/2026-07-16-v0.7-trust-hardening.md` (which also folds
 in the two README/CI items above).
 
-- [ ] Publish a `.sha256` per release asset; verify it in
-      `updater.fetch_update` before staging PENDING
-- [ ] Pin vendor `download.sha256` for the high-blast-radius catalog entries
-      (bare-exe downloads + admin installers: AGFRC, FlySky, Hobbywing, EdgeTX)
-- [ ] Traversal guard on `exe_relative_path`/`setup_relative_path` in
-      `installer._find_exe`
-- [ ] Sanity-check the fetched remote catalog's shape before trusting or
-      caching it
-- [ ] Add ruff (dev-only) and a CI lint step
+- [x] Publish a `.sha256` per release asset; verify it in
+      `updater.fetch_update` before staging PENDING — landed on `dev`
+      2026-07-17 (release-time proof pending: tag → 6 assets, v0.6→v0.7
+      upgrade logs the hash check)
+- [x] Pin vendor `download.sha256` for the high-blast-radius catalog entries
+      (AGFRC, FlySky, Hobbywing, EdgeTX) — landed on `dev` 2026-07-17
+- [x] Traversal guard on `exe_relative_path`/`setup_relative_path` — landed on
+      `dev` 2026-07-17, covering both `installer._find_exe` and the
+      `archive=="exe"` copy site review found unguarded
+- [x] Sanity-check the fetched remote catalog's shape before trusting or
+      caching it — landed on `dev` 2026-07-17, including a strict id slug
+      check (id feeds `TOOLS_DIR / id` and `shutil.rmtree`)
+- [x] Add ruff (dev-only) and a CI lint step — landed on `dev` 2026-07-17
 - [ ] **(human)** Apply for SignPath OSS code signing, then wire the signing
       step into `build.yml` — unsigned exes trip SmartScreen, the single
       biggest blocker to community adoption
