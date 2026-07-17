@@ -58,6 +58,9 @@ def install(tool: dict, progress=None) -> Path:
                 or inst.get("exe_relative_path")
                 or "installer.exe"
             )
+            # the hint comes from the remote catalog: never let it write outside the tool dir
+            if not target.resolve().is_relative_to(dest.resolve()):
+                target = dest / "installer.exe"
             target.parent.mkdir(parents=True, exist_ok=True)  # covers a nested relative path
             shutil.copy2(archive, target)
         else:

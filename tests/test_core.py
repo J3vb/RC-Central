@@ -1719,3 +1719,21 @@ def test_find_exe_rejects_traversal(tmp_path):
     # a hostile catalog hint must not escape the tool dir: the guard ignores it
     # and the single-candidate scan finds the real exe instead
     assert installer._find_exe(root, "../evil.exe") == real
+
+
+def test_install_exe_download_rejects_traversal(sandbox, monkeypatch):
+    # archive:"exe" with a hostile setup_relative_path must not write outside the tool dir
+    monkeypatch.setattr(
+        installer, "_download", lambda url, d, progress: d.write_bytes(b"MZ payload")
+    )
+    tool = _tool()
+    tool["download"] = {"url": "https://x/app.exe", "archive": "exe", "sha256": None}
+    # exe_relative_path is legit (matches the safe fallback name) so the install can
+    # still resolve the exe end-to-end once the hostile setup hint is rejected
+    tool["install"] = {"setup_relative_path": "../evil.exe", "exe_relative_path": "installer.exe"}
+    exe = installer.install(tool)
+
+    dest = installer.TOOLS_DIR / "fake-tool"
+    assert exe == dest / "installer.exe"  # fell back to the safe default
+    assert exe.exists()
+    assert not (installer.TOOLS_DIR / "evil.exe").exists()  # nothing escaped the tool dir
