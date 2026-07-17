@@ -9,6 +9,7 @@ the updater selects the asset matching the running OS/arch, validates it against
 that platform's executable magic, and swaps it into place on exit.
 """
 
+import base64
 import logging
 import os
 import platform
@@ -18,6 +19,8 @@ import sys
 from pathlib import Path
 
 import requests
+from nacl.exceptions import BadSignatureError
+from nacl.signing import VerifyKey
 
 from app import __version__
 from app.installer import DATA_DIR, _sha256
@@ -27,6 +30,13 @@ log = logging.getLogger(__name__)
 
 REPO = "J3vb/RC-Central"
 API_URL = f"https://api.github.com/repos/{REPO}/releases/latest"
+
+# Ed25519 public key (base64) whose private half lives ONLY in CI (the
+# UPDATE_SIGNING_KEY secret; see scripts/sign_release.py). fetch_update verifies
+# each release binary's detached ".sig" against this before staging it, so a
+# compromised release or CI token can't ship a trojaned build - it can't forge a
+# signature. This is the self-update provenance gate; no CA is involved.
+_UPDATE_PUBLIC_KEY = "m/DJAivTLTZQyIrFeovo4n9CZ8p3Ytbccv6sFN3G3Yk="
 
 
 def _arch() -> str:
@@ -63,6 +73,16 @@ def _release_sha256(assets: list[dict], asset_name: str) -> str | None:
     return parts[0].lower() if parts else None
 
 
+def _release_signature(assets: list[dict], asset_name: str) -> bytes | None:
+    """The detached Ed25519 signature for an asset (its '<name>.sig' file), if any."""
+    meta = next((a for a in assets if a.get("name") == asset_name + ".sig"), None)
+    if meta is None:
+        return None
+    resp = requests.get(meta["browser_download_url"], timeout=10)
+    resp.raise_for_status()
+    return resp.content  # raw 64-byte signature
+
+
 # Downloaded-but-not-yet-applied build. The name mirrors the running binary's
 # shape (a suffixless ELF on Linux, an .exe on Windows) purely for clarity.
 PENDING = DATA_DIR / ("update-pending.exe" if sys.platform == "win32" else "update-pending")
@@ -87,10 +107,6 @@ def _sidelined(exe: Path) -> Path:
     if sys.platform == "win32":
         return exe.with_suffix(".old.exe")
     return exe.with_name(exe.name + ".old")
-
-
-def _newer(tag: str, current: str) -> bool:
-    return is_newer(tag, current)
 
 
 def fetch_update(force: bool = False) -> bool:
@@ -122,7 +138,7 @@ def fetch_update(force: bool = False) -> bool:
         log.info("latest release tag=%r", tag)
         log.debug("release assets: %s", [a.get("name") for a in assets])
 
-        if not _newer(tag, __version__):
+        if not is_newer(tag, __version__):
             log.info(
                 "no newer version available (latest=%r, current=v%s)",
                 tag,
@@ -201,6 +217,25 @@ def fetch_update(force: bool = False) -> bool:
                 tmp.unlink(missing_ok=True)
                 return False
 
+        # The Ed25519 signature is the real provenance gate: the .sig is produced in CI
+        # with a private key the release/token can't reach, so a tampered-but-well-formed
+        # binary (right size, right magic, even a matching co-published sha256) still
+        # fails here. Fail closed - a missing or bad signature must NOT be staged. (Any
+        # app new enough to run this check only ever updates to a release new enough to
+        # ship a .sig, so there is no legitimate unsigned-newer-release case.)
+        signature = _release_signature(assets, asset_name)
+        if signature is None:
+            log.warning("release %r has no %s.sig; refusing to stage an unsigned update", tag, asset_name)
+            tmp.unlink(missing_ok=True)
+            return False
+        try:
+            VerifyKey(base64.b64decode(_UPDATE_PUBLIC_KEY)).verify(tmp.read_bytes(), signature)
+        except (BadSignatureError, ValueError):
+            log.warning("update signature verification failed for %r; discarding", asset_name)
+            tmp.unlink(missing_ok=True)
+            return False
+        log.info("update signature verified against the pinned key")
+
         tmp.replace(PENDING)
         global _staged_version
         _staged_version = tag
@@ -277,12 +312,21 @@ def relaunch() -> None:
 
 
 def cleanup() -> None:
-    """Remove the leftover sidelined binary from a previous update. Call on startup."""
-    if getattr(sys, "frozen", False):
-        old = _sidelined(Path(sys.executable))
-        try:
-            old.unlink(missing_ok=True)
+    """On startup, clear the leftover sidelined binary from a past update - or, if an
+    update swap was interrupted (the running exe was renamed aside but the new one was
+    never moved in), restore that sidelined binary so a half-applied update can't brick
+    the app by leaving nothing at sys.executable."""
+    if not getattr(sys, "frozen", False):
+        return
+    exe = Path(sys.executable)
+    old = _sidelined(exe)
+    try:
+        if old.exists() and not exe.exists():
+            old.rename(exe)  # recover: swap died between rename-aside and move-in
+            log.info("startup recovery: restored %s after an interrupted update", exe.name)
+        else:
+            old.unlink(missing_ok=True)  # normal case: drop last update's leftover
             log.info("startup cleanup: cleared leftover %s (if any)", old.name)
-        except OSError:
-            # e.g. old instance still exiting; retry next start
-            log.warning("startup cleanup: could not remove %s", old, exc_info=True)
+    except OSError:
+        # e.g. old instance still exiting; retry next start
+        log.warning("startup cleanup: could not touch %s", old, exc_info=True)

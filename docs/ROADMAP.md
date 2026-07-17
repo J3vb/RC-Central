@@ -8,7 +8,17 @@ Executable plans live in `docs/superpowers/plans/`; this file is the big
 picture. Items marked **(human)** need a maintainer action that can't be
 automated.
 
-## Now — v0.6.x wrap-up
+## Now — UI consolidation (post-0.7.0)
+
+- [x] Merge Garage, Gearing, and Tuning into one **Workshop** tab with a shared
+      active-car header (tab bar 7 → 4), and fold the log viewer into Settings as
+      a Preferences|Log pair — landed on `dev` 2026-07-17
+      (spec: `docs/superpowers/specs/2026-07-17-workshop-merge-design.md`)
+- [x] Inline the gear-ratio chart into Gearing and move the pinion sweep to a
+      dialog — landed on `dev` 2026-07-17
+- [ ] Editable FDR reverse-solve (target FDR → nearest whole tooth) — in progress
+
+### Earlier — v0.6.x wrap-up
 
 - [x] Tuning page additions — landed on `dev` 2026-07-16
       (plan: `docs/superpowers/plans/2026-07-15-tuning-page-additions.md`)
@@ -37,12 +47,19 @@ in the two README/CI items above).
       caching it — landed on `dev` 2026-07-17, including a strict id slug
       check (id feeds `TOOLS_DIR / id` and `shutil.rmtree`)
 - [x] Add ruff (dev-only) and a CI lint step — landed on `dev` 2026-07-17
-- [ ] **(human)** Apply for SignPath OSS code signing, then wire the signing
-      step into `build.yml` — unsigned exes trip SmartScreen, the single
-      biggest blocker to community adoption. *Deferred 2026-07-17 until the
-      project is more widely used; prepared application + wiring steps live
-      in `docs/SIGNING.md`.*
+- [ ] Sign each release binary with a self-managed **Ed25519** key (private key
+      in a GitHub Actions secret, public key pinned in the app); verify the
+      `.sig` in `updater.fetch_update` before staging PENDING, failing closed.
+      Closes the self-update provenance gap — a compromised release or CI token
+      can't forge a signature — without a CA, form, or cost. Same model as
+      Sparkle/WinSparkle.
 - [ ] **(human)** EdgeTX elevated-install UAC smoke test on a real machine
+
+*Out of scope: public-trust (Authenticode / SmartScreen) code signing. It needs
+a CA identity check (SignPath's form, Azure's US/Canada-only validation, or a
+paid cert) for a marginal fresh-install-warning benefit, while the self-managed
+update signing above already protects existing users from a malicious update.
+Dropped 2026-07-17; `docs/SIGNING.md` is now orphaned.*
 
 ## v0.8 — "Growth" (catalog & community)
 
@@ -59,7 +76,7 @@ in the two README/CI items above).
 
 ## v1.0 — community launch
 
-- [ ] Signed, documented, hardened → announce to the RC drift community
+- [ ] Update-signed, documented, hardened → announce to the RC drift community
       (forums, Discord, r/rcdrift)
 - [ ] Publish RC Central itself to winget/Scoop, so the launcher is
       installable the way it installs others

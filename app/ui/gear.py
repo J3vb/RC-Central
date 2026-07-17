@@ -70,18 +70,25 @@ class GearTab(QWidget):
         self.kmh_out = QLabel()
         self.mph_out = QLabel()
 
-        # Reverse-solve: enter a target rollout, get the nearest whole-tooth pinion.
+        # Reverse-solve: enter a target rollout or FDR, get the nearest whole-tooth
+        # pinion. FDR is how setups are usually shared, rollout how tire wear is chased.
         self.target_rollout = QDoubleSpinBox()
         self.target_rollout.setRange(1.0, 999.0)
         self.target_rollout.setSingleStep(0.5)
         self.target_rollout.setValue(30.0)
-        solve_btn = QPushButton("Solve → pinion")
-        solve_btn.clicked.connect(self._solve_pinion)
-        solve_row = QHBoxLayout()
-        solve_row.addWidget(self.target_rollout, 1)
-        solve_row.addWidget(solve_btn)
-        solve_widget = QWidget()
-        solve_widget.setLayout(solve_row)
+        self.target_rollout.setAccessibleName("Target rollout (mm)")
+        rollout_row = self._solve_row(
+            self.target_rollout, "Solve pinion for target rollout", self._solve_pinion
+        )
+
+        self.target_fdr = QDoubleSpinBox()
+        self.target_fdr.setRange(0.1, 99.0)
+        self.target_fdr.setSingleStep(0.1)
+        self.target_fdr.setValue(7.5)
+        self.target_fdr.setAccessibleName("Target FDR")
+        fdr_row = self._solve_row(
+            self.target_fdr, "Solve pinion for target FDR", self._solve_pinion_fdr
+        )
 
         form = QFormLayout()
         form.addRow("Pinion (teeth)", self.pinion)
@@ -90,7 +97,8 @@ class GearTab(QWidget):
         form.addRow("Tire diameter (mm)", self.tire)
         form.addRow("Motor Kv", self.kv)
         form.addRow("Battery cells (S)", self.cells)
-        form.addRow("Target rollout (mm)", solve_widget)
+        form.addRow("Target rollout (mm)", rollout_row)
+        form.addRow("Target FDR", fdr_row)
         form.addRow(QLabel("<b>Results</b>"))
         form.addRow("Final drive ratio", self.fdr_out)
         form.addRow("Rollout (mm)", self.rollout_out)
@@ -135,18 +143,20 @@ class GearTab(QWidget):
         self._load_active_car()
         self._recompute()
 
-    def _load_active_car(self) -> None:
+    def _load_active_car(self, force: bool = False) -> None:
         """Sync to the Workshop's active car: seed inputs and enable the save/preset row.
 
         Re-seeds the spinboxes only when the active car actually changed — showEvent
         calls this on every switch back to this sub-tab, and re-seeding on the same
-        car would clobber the user's in-progress what-if tweaks.
+        car would clobber the user's in-progress what-if tweaks. ``force`` overrides
+        that guard for when the active car's data changed on disk under the same id
+        (a garage "Restore all"), which the id check alone can't detect.
         """
         car_id = _settings().value(_ACTIVE_CAR_KEY, "") or None
         car = garage.load_car(car_id) if car_id else None
         self._active_id = car["id"] if car else None
         self.save_btn.setEnabled(self._active_id is not None)
-        if car and self._active_id != self._seeded_id:
+        if car and (force or self._active_id != self._seeded_id):
             self.load_from_car(car)
         self._seeded_id = self._active_id
         self._refresh_presets(car)
@@ -197,24 +207,52 @@ class GearTab(QWidget):
         self.kmh_out.setText(f"{r['top_speed_kmh']:.1f}")
         self.mph_out.setText(f"{r['top_speed_mph']:.1f}")
 
-    def _solve_pinion(self) -> None:
-        """Fill the pinion spinbox with the nearest tooth for the target rollout.
+    def _solve_row(self, spinbox, button_name: str, on_click):
+        """A [target spinbox | 'Solve → pinion' button] row for form.addRow.
+
+        Both solve buttons share the visible label 'Solve → pinion', so each needs a
+        distinct accessible name or a screen reader announces the two identically.
+        """
+        button = QPushButton("Solve → pinion")
+        button.setAccessibleName(button_name)
+        button.clicked.connect(on_click)
+        row = QHBoxLayout()
+        row.addWidget(spinbox, 1)
+        row.addWidget(button)
+        return row
+
+    def _apply_solved_pinion(self, solve_fn, **kwargs) -> None:
+        """Run a reverse-solver and mirror its whole-tooth pinion into the spinbox.
 
         setValue fires the existing valueChanged -> _recompute, so results and the
-        sweep table refresh for free. QSpinBox clamps to its 1..99 range; integer
-        teeth mean the achieved rollout may differ slightly from target, and
-        _recompute shows that honest resulting value.
+        sweep table refresh for free, and _recompute shows the honest achieved value
+        (integer teeth rarely hit the target exactly). Bad inputs (ValueError) leave
+        the current pinion untouched.
         """
         try:
-            p = gearing.solve_pinion_for_rollout(
-                target_rollout_mm=self.target_rollout.value(),
-                spur=self.spur.value(),
-                internal_ratio=self.internal_ratio.value(),
-                tire_diameter_mm=self.tire.value(),
-            )
+            p = solve_fn(**kwargs)
         except ValueError:
             return
         self.pinion.setValue(p)
+
+    def _solve_pinion(self) -> None:
+        """Fill the pinion with the rollout-closest whole tooth for the target rollout."""
+        self._apply_solved_pinion(
+            gearing.solve_pinion_for_rollout,
+            target_rollout_mm=self.target_rollout.value(),
+            spur=self.spur.value(),
+            internal_ratio=self.internal_ratio.value(),
+            tire_diameter_mm=self.tire.value(),
+        )
+
+    def _solve_pinion_fdr(self) -> None:
+        """Fill the pinion with the FDR-closest whole tooth for the target FDR."""
+        self._apply_solved_pinion(
+            gearing.solve_pinion_for_fdr,
+            target_fdr=self.target_fdr.value(),
+            spur=self.spur.value(),
+            internal_ratio=self.internal_ratio.value(),
+        )
 
     def _open_sweep(self) -> None:
         # snapshot of the current setup; the modal sweep doesn't live-track the tab
@@ -230,7 +268,9 @@ class GearTab(QWidget):
             )
         except ValueError:
             return
-        _SweepDialog(rows, self).exec()
+        dlg = _SweepDialog(rows, self)
+        dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)  # else it lingers per open
+        dlg.exec()
 
     def _save_to_car(self) -> None:
         if self._active_id is None:
@@ -247,12 +287,7 @@ class GearTab(QWidget):
         g = car.setdefault("gearing", {})
         g.update(
             {
-                "pinion": self.pinion.value(),
-                "spur": self.spur.value(),
-                "internal_ratio": self.internal_ratio.value(),
-                "tire_diameter_mm": self.tire.value(),
-                "kv": self.kv.value(),
-                "cells": self.cells.value(),
+                **self._spinbox_gearing(),
                 "fdr": round(r["fdr"], 3),
                 "rollout_mm": round(r["rollout_mm"], 2),
                 "top_speed_kmh": round(r["top_speed_kmh"], 1),
@@ -268,7 +303,7 @@ class GearTab(QWidget):
             w.setEnabled(has_car)
         self.preset_combo.clear()
         self.preset_combo.addItem("— preset —", None)
-        for p in (car or {}).get("presets", []):
+        for p in garage.list_presets(car or {}):
             self.preset_combo.addItem(p.get("name", "preset"), p.get("name"))
 
     def _spinbox_gearing(self) -> dict:
@@ -368,6 +403,12 @@ class _GearChartPanel(QWidget):
 
         self.pinion_min, self.pinion_max = QSpinBox(), QSpinBox()
         self.spur_min, self.spur_max = QSpinBox(), QSpinBox()
+        # the "Pinion"/"Spur" QLabels aren't buddies of these four boxes, so give
+        # screen readers a name (same gap as the tab's composite target rows)
+        self.pinion_min.setAccessibleName("Chart pinion min")
+        self.pinion_max.setAccessibleName("Chart pinion max")
+        self.spur_min.setAccessibleName("Chart spur min")
+        self.spur_max.setAccessibleName("Chart spur max")
         # (box, settings key, first-run default centered on the current setup);
         # _rebuild persists through this same tuple so keys can't drift apart
         self._persist = (
@@ -402,7 +443,7 @@ class _GearChartPanel(QWidget):
         # connect only now that self.table exists (same trap as _CompareDialog:
         # the setValue calls above would otherwise rebuild into a missing table)
         for box, _key, _default in self._persist:
-            box.valueChanged.connect(self._rebuild)
+            box.valueChanged.connect(self._on_range_changed)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -412,7 +453,17 @@ class _GearChartPanel(QWidget):
 
     def set_setup(self, pinion: int, spur: int, internal_ratio: float) -> None:
         """Re-highlight (and re-price) the matrix for the tab's current inputs."""
+        if (pinion, spur, internal_ratio) == (self._pinion, self._spur, self._ratio):
+            return  # tire/kv/cells changed too, but the chart depends only on these three
         self._pinion, self._spur, self._ratio = pinion, spur, internal_ratio
+        self._rebuild()
+
+    def _on_range_changed(self) -> None:
+        """A chart range spinbox changed: persist the four ranges, then rebuild. Keeps the
+        QSettings writes off the _rebuild path, which set_setup fires on every tab input."""
+        settings = _settings()
+        for box, key, _default in self._persist:
+            settings.setValue(key, box.value())
         self._rebuild()
 
     def _rebuild(self) -> None:
@@ -435,6 +486,3 @@ class _GearChartPanel(QWidget):
                     item.setBackground(QColor(_ACCENT))
                     item.setForeground(QColor("white"))  # readable on accent in both themes
                 self.table.setItem(row, col, item)
-        settings = _settings()  # persist on every change; there's no close to hook inline
-        for box, key, _default in self._persist:
-            settings.setValue(key, box.value())

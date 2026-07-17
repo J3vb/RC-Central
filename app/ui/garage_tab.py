@@ -95,6 +95,9 @@ class GarageTab(QWidget):
     # actions only. Programmatic selection goes through open_car(), which never
     # emits, so the Workshop header and this tab can sync without loops.
     car_selected = Signal(object)
+    # Emitted after a "Restore all": car files on disk changed under possibly-unchanged
+    # ids, so the Gearing/Tuning sub-tabs must force-reload past their same-id guards.
+    garage_restored = Signal()
 
     def __init__(self):
         super().__init__()
@@ -369,7 +372,9 @@ class GarageTab(QWidget):
 
     def _on_compare(self) -> None:
         if len(self._cars) >= 2:
-            _CompareDialog(self._cars, self.current_id, self).exec()
+            dlg = _CompareDialog(self._cars, self.current_id, self)
+            dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)  # else it lingers per open
+            dlg.exec()
 
     def _on_backup(self) -> None:
         path, _ = QFileDialog.getSaveFileName(
@@ -415,6 +420,7 @@ class GarageTab(QWidget):
                 self._blank_form()
         _show_status(self, f"Restored {n} car(s)", 5000)
         self.car_selected.emit(self.current_id or None)  # combo re-reads restored names
+        self.garage_restored.emit()  # force Gearing/Tuning to reseed from the new on-disk data
 
     def _on_export(self) -> None:
         car = self._form_to_car()  # already carries computed gearing from disk

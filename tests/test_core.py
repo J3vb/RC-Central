@@ -159,7 +159,8 @@ def test_uninstall_keeps_existing_users_files(sandbox, tmp_path):
     assert installer.get_state("fake-tool") is None
 
 
-def test_uninstall_missing_is_noop():
+def test_uninstall_missing_is_noop(sandbox):
+    # sandbox so this can never touch the real per-user TOOLS_DIR
     installer.uninstall("never-installed-xyz")  # must not raise
 
 
@@ -298,14 +299,154 @@ def test_launch_needs_admin_uses_shellexecute(monkeypatch):
     assert called["cwd"].endswith("fake")
 
 
-def test_updater_version_compare():
+def test_launch_non_admin_tracks_process_and_is_idempotent(monkeypatch):
+    # the common (non-admin) path starts a QProcess, records it, and is a no-op when
+    # the tool is already running. QProcess methods are stubbed so no real exe spawns.
+    from app import launcher
+    from PySide6.QtCore import QProcess
+
+    launcher._procs.clear()
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    starts = []
+    monkeypatch.setattr(QProcess, "start", lambda self: starts.append(True))
+    monkeypatch.setattr(QProcess, "waitForStarted", lambda self, ms: True)
+    monkeypatch.setattr(QProcess, "state", lambda self: QProcess.ProcessState.Running)
+
+    assert not launcher.is_running("t1")  # unknown id -> not running
+    launcher.launch("t1", "C:/x/Tool.exe")
+    assert launcher.is_running("t1")  # recorded in _procs, state Running
+    launcher.launch("t1", "C:/x/Tool.exe")  # already running -> must not start twice
+    assert len(starts) == 1
+
+
+def test_launch_falls_back_to_shellexecute_when_start_fails(monkeypatch):
+    # an exe whose manifest demands elevation fails CreateProcess even with
+    # needs_admin=false; launch must retry via ShellExecute and NOT track it.
+    from app import launcher
+    from PySide6.QtCore import QProcess
+
+    launcher._procs.clear()
+    monkeypatch.setattr(launcher.sys, "platform", "win32")
+    monkeypatch.setattr(QProcess, "start", lambda self: None)
+    monkeypatch.setattr(QProcess, "waitForStarted", lambda self, ms: False)  # CreateProcess fails
+    called = {}
+    monkeypatch.setattr(
+        launcher.os,
+        "startfile",
+        lambda p, cwd=None: called.update(p=p, cwd=cwd),
+        raising=False,  # os.startfile only exists on Windows
+    )
+
+    launcher.launch("t2", "C:/x/Tool.exe")
+    assert called["p"].endswith("Tool.exe")  # elevated fallback taken
+    assert "t2" not in launcher._procs and not launcher.is_running("t2")  # untracked
+
+
+def test_launch_rejects_non_windows(monkeypatch):
+    from app import launcher
+
+    monkeypatch.setattr(launcher.sys, "platform", "linux")
+    with pytest.raises(OSError):
+        launcher.launch("t3", "/x/Tool")
+
+
+def test_fetch_update_is_noop_from_source():
     from app import updater
 
-    assert updater._newer("v0.2.0", "0.1.0")
-    assert updater._newer("0.1.10", "0.1.9")
-    assert not updater._newer("v0.1.0", "0.1.0")
-    assert not updater._newer("garbage", "0.1.0")
-    assert not updater.fetch_update()  # not frozen -> no-op
+    # running from source (not frozen) with force=False must be a no-op, never a raise;
+    # version-comparison itself is covered in test_versions.py
+    assert not updater.fetch_update()
+
+
+def test_load_catalog_uses_remote_and_caches(monkeypatch, tmp_path):
+    from app import catalog
+
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+    tools = [_tool()]
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return tools
+
+    monkeypatch.setattr(catalog.requests, "get", lambda *a, **k: _Resp())
+    assert catalog.load_catalog() == tools  # normal 200 returned as-is
+    cached = json.loads((tmp_path / "catalog.json").read_text(encoding="utf-8"))
+    assert cached == tools  # and written to the cache for offline use
+
+
+def test_load_catalog_falls_back_to_valid_cache_when_offline(monkeypatch, tmp_path):
+    from app import catalog
+
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    cache = tmp_path / "catalog.json"
+    monkeypatch.setattr(catalog, "CACHE_FILE", cache)
+    seeded = [_tool(id="cached", name="Cached")]
+    cache.write_text(json.dumps(seeded), encoding="utf-8")
+
+    def offline(*a, **k):
+        raise catalog.requests.RequestException("offline")
+
+    monkeypatch.setattr(catalog.requests, "get", offline)
+    assert catalog.load_catalog() == seeded  # valid cache used when the fetch fails
+
+
+def test_catalog_valid_rejects_hostile_download_shape():
+    from app import catalog
+
+    # a hostile "archive" would become a filename suffix at install time -> traversal
+    assert not catalog._valid([_tool(download={"url": "https://x/y", "archive": "../../evil"})])
+    assert not catalog._valid([_tool(download={"url": "http://x/y", "archive": "zip"})])  # not https
+    assert not catalog._valid([_tool(download="not-a-dict")])
+    assert catalog._valid([_tool()])  # the well-formed fixture still passes
+
+
+def test_install_exe_download_defaults_to_resolvable_name(monkeypatch, sandbox):
+    # a bare-exe download with no relative-path hint must land under a name _find_exe
+    # won't skip - "installer.exe" contains "install" and would fail to auto-resolve
+    exe_bytes = b"MZ portable tool"
+    monkeypatch.setattr(
+        installer, "_download", lambda url, dest, progress: dest.write_bytes(exe_bytes)
+    )
+    tool = _tool(
+        download={"url": "https://x/y.exe", "archive": "exe", "sha256": None},
+        install={"portable": True},  # no exe_relative_path / setup_relative_path
+    )
+    exe = installer.install(tool)
+    assert exe.exists() and exe.read_bytes() == exe_bytes
+    assert "install" not in exe.name.lower()  # not filtered out by _EXE_SKIP
+
+
+def test_updater_cleanup_recovers_interrupted_swap(monkeypatch, tmp_path):
+    from app import updater
+
+    exe = tmp_path / "RCCentral.exe"
+    old = updater._sidelined(exe)
+    old.write_bytes(b"MZ previous binary")  # swap died: exe missing, .old present
+    monkeypatch.setattr(updater.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(updater.sys, "executable", str(exe))
+
+    updater.cleanup()
+    assert exe.exists() and exe.read_bytes() == b"MZ previous binary"  # restored
+    assert not old.exists()
+
+
+def test_updater_cleanup_clears_leftover_when_exe_present(monkeypatch, tmp_path):
+    from app import updater
+
+    exe = tmp_path / "RCCentral.exe"
+    exe.write_bytes(b"MZ current")
+    old = updater._sidelined(exe)
+    old.write_bytes(b"MZ stale leftover")  # normal post-update leftover
+    monkeypatch.setattr(updater.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(updater.sys, "executable", str(exe))
+
+    updater.cleanup()
+    assert exe.read_bytes() == b"MZ current"  # the running binary is untouched
+    assert not old.exists()  # and the leftover is cleared
 
 
 def test_download_rejects_html_page(tmp_path, monkeypatch):
@@ -1603,6 +1744,114 @@ def test_gear_tab_follows_active_car_and_preserves_tweaks(monkeypatch, tmp_path)
     assert not tab.save_preset_btn.isEnabled()
 
 
+def test_gear_tab_solve_buttons_fill_pinion(monkeypatch, tmp_path):
+    # both reverse-solve buttons must mirror the pure solver's whole-tooth answer into
+    # the pinion spinbox, and the setValue must refresh the results row (the wiring the
+    # pure-function tests in test_gearing.py cannot reach).
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage, gearing
+    from app.ui.gear import GearTab
+    import app.ui.common
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
+    _ = QApplication.instance() or QApplication([])
+
+    tab = GearTab()
+    tab.spur.setValue(87)
+    tab.internal_ratio.setValue(1.9)
+    tab.tire.setValue(60.0)
+
+    # Target FDR -> FDR-closest whole tooth (nonlinear: not merely target rounding)
+    tab.target_fdr.setValue(6.0)
+    tab._solve_pinion_fdr()
+    expected = gearing.solve_pinion_for_fdr(target_fdr=6.0, spur=87, internal_ratio=1.9)
+    assert tab.pinion.value() == expected
+    # setValue fired _recompute, so the results row shows the achieved FDR for that pinion
+    assert tab.fdr_out.text() == f"{gearing.final_drive_ratio(expected, 87, 1.9):.2f}"
+
+    # the target-rollout button (also untested at the UI layer) drives the pinion too
+    tab.target_rollout.setValue(28.0)
+    tab._solve_pinion()
+    assert tab.pinion.value() == gearing.solve_pinion_for_rollout(
+        target_rollout_mm=28.0, spur=87, internal_ratio=1.9, tire_diameter_mm=60.0
+    )
+
+
+def test_gear_tab_force_reseed_after_restore(monkeypatch, tmp_path):
+    # a garage "Restore all" rewrites the active car's data under the SAME id; the
+    # id-equality guard suppresses a normal reload, so force=True must override it
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app.ui.gear import GearTab
+    import app.ui.common
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
+    _ = QApplication.instance() or QApplication([])
+
+    car = garage.new_car("Car A")
+    car["gearing"]["pinion"] = 30
+    garage.save_car(car)
+    settings = app.ui.common._settings()
+    settings.setValue(app.ui.common._ACTIVE_CAR_KEY, car["id"])
+    settings.sync()
+
+    tab = GearTab()
+    assert tab.pinion.value() == 30  # seeded from the active car
+
+    # the restore overwrites the same-id car with different gearing on disk
+    car["gearing"]["pinion"] = 15
+    garage.save_car(car)
+    tab._load_active_car()  # same id -> guard suppresses reload, stale value persists
+    assert tab.pinion.value() == 30
+    tab._load_active_car(force=True)  # the restore path forces the reseed
+    assert tab.pinion.value() == 15
+
+
+def test_settings_tab_toggles_persist_and_apply(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtGui import QPalette
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui.common import _DARK_MODE_KEY, _STARTUP_CHECK_KEY, _settings
+    from app.ui.settings import SettingsTab
+
+    app = QApplication.instance() or QApplication([])
+    tab = SettingsTab()
+
+    tab.dark_toggle.setChecked(True)  # fires _on_dark_toggled -> apply_theme + persist
+    assert _settings().value(_DARK_MODE_KEY, type=bool) is True
+    assert app.palette().color(QPalette.ColorRole.Window).lightness() < 128  # dark applied
+
+    tab.dark_toggle.setChecked(False)  # back to light (leaves other tests in light too)
+    assert _settings().value(_DARK_MODE_KEY, type=bool) is False
+    assert app.palette().color(QPalette.ColorRole.Window).lightness() > 128
+
+    tab.update_toggle.setChecked(False)  # fires _on_update_toggled -> persist
+    assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is False
+    tab.update_toggle.setChecked(True)
+    assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is True
+
+
 def test_workshop_active_car_sync(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings
@@ -1703,6 +1952,122 @@ def test_tools_tab_update_summary_badge(monkeypatch, sandbox):
     tab._refresh_summary()
     assert tab.table.cellWidget(0, 4).text() == "Update"
     assert tab.update_summary.text() == "1 update available"
+
+
+def test_tools_tab_install_flow_installs_and_reenables(monkeypatch, sandbox):
+    # the Install click disables the button, dispatches a background download, and on
+    # completion _install_finished re-enables the button and flips the row to Launch.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app.ui.tools import ToolsTab
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    _ = QApplication.instance() or QApplication([])
+    tab = ToolsTab()  # constructed directly so the test runs off Windows too
+
+    captured = {}
+    monkeypatch.setattr(
+        tab, "_run_download", lambda work, on_finished: captured.update(work=work, cb=on_finished)
+    )
+    tab._on_action(0)  # row 0 is not installed -> routes to _install
+    assert not tab.table.cellWidget(0, 4).isEnabled()  # disabled while downloading
+    assert "work" in captured  # a background download was dispatched
+
+    captured["work"](lambda *a: None)  # run the download (sandbox fixture zip) + install
+    captured["cb"](None)  # signal success back on the GUI thread
+    assert installer.get_state("fake-tool") is not None
+    assert tab.table.cellWidget(0, 4).isEnabled()
+    assert tab.table.cellWidget(0, 4).text() == "Launch"
+
+
+def test_tools_tab_install_finished_error_warns(monkeypatch, sandbox):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import catalog
+    from app.ui.tools import ToolsTab
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    _ = QApplication.instance() or QApplication([])
+    tab = ToolsTab()
+
+    warned = {"n": 0}
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1))
+    tab.table.cellWidget(0, 4).setEnabled(False)  # _install disabled it before the thread
+    tab._install_finished(0, "network boom")
+    assert warned["n"] == 1  # the failure reaches the user, not a silent swallow
+    assert tab.table.cellWidget(0, 4).isEnabled()  # button restored so they can retry
+
+
+def test_tools_tab_action_launches_installed_tool(monkeypatch, sandbox):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import catalog, launcher
+    from app.ui.tools import ToolsTab
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    _ = QApplication.instance() or QApplication([])
+    tab = ToolsTab()
+
+    installer.install(_tool())
+    tab._refresh_row(0)
+    assert tab.table.cellWidget(0, 4).text() == "Launch"
+
+    launched = {}
+    monkeypatch.setattr(
+        launcher,
+        "launch",
+        lambda tool_id, exe_path, needs_admin=False: launched.update(
+            id=tool_id, exe=exe_path, admin=needs_admin
+        ),
+    )
+    tab._on_action(0)  # installed & current -> launch, not re-install
+    assert launched["id"] == "fake-tool"
+    assert launched["exe"].endswith("FakeTool.exe")
+    assert launched["admin"] is False
+
+    # a declined UAC prompt (OSError) surfaces as a warning dialog, not a traceback
+    def boom(*a, **k):
+        raise OSError("UAC declined")
+
+    warned = {"n": 0}
+    monkeypatch.setattr(launcher, "launch", boom)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1))
+    tab._on_action(0)
+    assert warned["n"] == 1
+
+
+def test_tools_tab_locate_existing_registers_and_refreshes(monkeypatch, sandbox, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QFileDialog, QInputDialog
+
+    from app import catalog
+    from app.ui.tools import ToolsTab
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    _ = QApplication.instance() or QApplication([])
+    tab = ToolsTab()
+
+    exe = tmp_path / "external" / "Real.exe"
+    exe.parent.mkdir(parents=True)
+    exe.write_bytes(b"MZ real")
+    monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(exe), ""))
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("2.5", True))
+
+    open_action, uninstall_action = tab._install_actions[0]
+    assert not uninstall_action.isEnabled()  # nothing linked yet
+    tab._locate_existing(0)
+
+    state = installer.get_state("fake-tool")
+    assert state["version"] == "2.5" and state["source"] == "existing"
+    assert state["exe_path"] == str(exe)
+    # v2.5 differs from the catalog's v1.0, so the row offers Update and the
+    # install-only menu actions light up
+    assert tab.table.cellWidget(0, 4).text() == "Update"
+    assert uninstall_action.isEnabled()
 
 
 def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
@@ -1868,13 +2233,14 @@ def test_install_exe_download_rejects_traversal(sandbox, monkeypatch):
     )
     tool = _tool()
     tool["download"] = {"url": "https://x/app.exe", "archive": "exe", "sha256": None}
-    # exe_relative_path is legit (matches the safe fallback name) so the install can
-    # still resolve the exe end-to-end once the hostile setup hint is rejected
-    tool["install"] = {"setup_relative_path": "../evil.exe", "exe_relative_path": "installer.exe"}
+    # the hostile setup hint is rejected; the copy falls back to the safe default name
+    # ("tool.exe" - NOT "installer.exe", which _find_exe's skip-list would drop), which
+    # then resolves end-to-end
+    tool["install"] = {"setup_relative_path": "../evil.exe"}
     exe = installer.install(tool)
 
     dest = installer.TOOLS_DIR / "fake-tool"
-    assert exe == dest / "installer.exe"  # fell back to the safe default
+    assert exe == dest / "tool.exe"  # fell back to the safe default
     assert exe.exists()
     assert not (installer.TOOLS_DIR / "evil.exe").exists()  # nothing escaped the tool dir
 

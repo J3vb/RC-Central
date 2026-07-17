@@ -43,6 +43,13 @@ jobs:
       - run: uv run pyinstaller RCCentral.spec
       - run: mv "${{ matrix.out }}" "${{ matrix.artifact }}"
       - run: sha256sum "${{ matrix.artifact }}" > "${{ matrix.artifact }}.sha256"
+      # Sign the release binary with the Ed25519 update key so the app can verify its
+      # provenance before self-updating. Tag builds only: the secret isn't exposed to
+      # PR builds, and PR artifacts aren't distributed via the updater anyway.
+      - if: startsWith(github.ref, 'refs/tags/')
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: uv run python scripts/sign_release.py "${{ matrix.artifact }}"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.artifact }}
@@ -55,3 +62,4 @@ jobs:
           files: |
             ${{ matrix.artifact }}
             ${{ matrix.artifact }}.sha256
+            ${{ matrix.artifact }}.sig

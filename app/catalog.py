@@ -21,21 +21,37 @@ def _bundled_tools_dir() -> Path:
     return base / "catalog" / "tools"
 
 
+_ARCHIVES = ("zip", "7z", "exe")
+
+
+def _valid_tool(t) -> bool:
+    if not (
+        isinstance(t, dict)
+        and isinstance(t.get("name"), str)
+        and isinstance(t.get("id"), str)
+        # id becomes a filesystem path component (TOOLS_DIR / tool["id"]) in
+        # installer.py, so it must stay a strict slug - never "../.."
+        and re.fullmatch(r"[a-z0-9][a-z0-9-]*", t["id"])
+    ):
+        return False
+    dl = t.get("download")
+    if dl is not None:
+        # install() builds the download path from download.archive and fetches
+        # download.url; the JSON schema pins both but runs only in CI, so re-check
+        # here - a hostile "archive" like "../../x" would otherwise escape the temp dir.
+        if not (
+            isinstance(dl, dict)
+            and isinstance(dl.get("url"), str)
+            and dl["url"].startswith("https://")
+            and dl.get("archive") in _ARCHIVES
+        ):
+            return False
+    return True
+
+
 def _valid(tools) -> bool:
     """Minimal shape check before trusting or caching a fetched catalog."""
-    return (
-        isinstance(tools, list)
-        and bool(tools)
-        and all(
-            isinstance(t, dict)
-            and isinstance(t.get("name"), str)
-            and isinstance(t.get("id"), str)
-            # id becomes a filesystem path component (TOOLS_DIR / tool["id"]) in
-            # installer.py, so it must stay a strict slug - never "../.."
-            and re.fullmatch(r"[a-z0-9][a-z0-9-]*", t["id"])
-            for t in tools
-        )
-    )
+    return isinstance(tools, list) and bool(tools) and all(_valid_tool(t) for t in tools)
 
 
 def load_catalog() -> list[dict]:

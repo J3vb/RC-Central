@@ -224,7 +224,7 @@ class _AccordionTable(QWidget):
     def _row_name(self, row: int) -> str:
         return self.table.item(row, 0).text()[2:]  # strip the "▸ "/"▾ " prefix
 
-    def _toggle_row(self, row: int, column: int = 0) -> None:
+    def _toggle_row(self, row: int) -> None:
         if self._open_row is not None and row == self._open_row + 1:
             return  # clicks on the explanation row itself do nothing
         reopen = None if row == self._open_row else row

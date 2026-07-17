@@ -51,6 +51,22 @@ def test_list_empty_when_no_dir(garage_sandbox):
     assert garage.list_cars() == []
 
 
+def test_list_cars_skips_corrupt_and_non_object_files(garage_sandbox):
+    # one truncated/corrupt/hand-mangled file must not take down listing for every car
+    garage.save_car(garage.new_car("Good"))
+    (garage.GARAGE_DIR / "broken.json").write_text("{not valid json", encoding="utf-8")
+    (garage.GARAGE_DIR / "notacar.json").write_text("[1, 2, 3]", encoding="utf-8")
+    assert [c["name"] for c in garage.list_cars()] == ["Good"]
+
+
+def test_save_car_is_atomic_and_leaves_no_temp(garage_sandbox):
+    car = garage.save_car(garage.new_car("Atomic"))
+    # write-then-rename: the real file exists and no ".tmp" is left behind (and a
+    # ".json.tmp" would not be picked up by list_cars' *.json glob anyway)
+    assert (garage.GARAGE_DIR / f"{car['id']}.json").exists()
+    assert list(garage.GARAGE_DIR.glob("*.tmp")) == []
+
+
 def test_delete_removes_car_and_is_idempotent(garage_sandbox):
     car = garage.save_car(garage.new_car("Doomed"))
     garage.delete_car(car["id"])

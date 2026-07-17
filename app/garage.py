@@ -188,7 +188,13 @@ def save_car(car: dict) -> dict:
     car.setdefault("id", uuid.uuid4().hex)
     car["updated_at"] = datetime.now(timezone.utc).isoformat()
     GARAGE_DIR.mkdir(parents=True, exist_ok=True)
-    _car_file(car["id"]).write_text(json.dumps(car, indent=2), encoding="utf-8")
+    # Write to a temp file then atomically rename, so a crash mid-write can't leave a
+    # truncated/0-byte spec sheet on disk (which would also break list_cars for every
+    # other car). glob("*.json") ignores the ".json.tmp" temp.
+    target = _car_file(car["id"])
+    tmp = target.with_name(target.name + ".tmp")
+    tmp.write_text(json.dumps(car, indent=2), encoding="utf-8")
+    tmp.replace(target)
     return car
 
 
@@ -201,10 +207,22 @@ def load_car(car_id: str) -> dict | None:
 
 
 def list_cars() -> list[dict]:
-    """Every saved spec sheet, sorted by name (case-insensitive)."""
+    """Every saved spec sheet, sorted by name (case-insensitive).
+
+    A corrupt, truncated, or non-object JSON file is skipped rather than fatal: one
+    bad file (an interrupted save, a hand-edit gone wrong) must not take down listing
+    for every other car.
+    """
     if not GARAGE_DIR.exists():
         return []
-    cars = [json.loads(f.read_text(encoding="utf-8")) for f in GARAGE_DIR.glob("*.json")]
+    cars = []
+    for f in GARAGE_DIR.glob("*.json"):
+        try:
+            car = json.loads(f.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            continue
+        if isinstance(car, dict):
+            cars.append(car)
     return sorted(cars, key=lambda c: c.get("name", "").lower())
 
 

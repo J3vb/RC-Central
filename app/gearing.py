@@ -134,3 +134,21 @@ def solve_pinion_for_rollout(
         raise ValueError("spur and internal_ratio must be > 0")
     pinion = round(target_rollout_mm * internal_ratio * spur / (tire_diameter_mm * math.pi))
     return max(1, pinion)
+
+
+def solve_pinion_for_fdr(*, target_fdr: float, spur: int, internal_ratio: float) -> int:
+    """Whole-tooth pinion whose FDR is closest to target_fdr.
+
+    Inverts fdr = internal_ratio * spur / pinion. Unlike rollout (linear in
+    pinion), fdr is hyperbolic in pinion, so rounding the exact solution can
+    pick the tooth whose FDR is *farther* from the target — compare the two
+    neighbouring whole teeth by FDR error instead. Clamped to >= 1. Raises
+    ValueError on any non-positive input (same contract as the rest of this
+    module).
+    """
+    if target_fdr <= 0:
+        raise ValueError("target_fdr must be > 0")
+    if spur <= 0 or internal_ratio <= 0:
+        raise ValueError("spur and internal_ratio must be > 0")
+    lo = max(1, math.floor(internal_ratio * spur / target_fdr))
+    return min((lo, lo + 1), key=lambda p: abs(internal_ratio * spur / p - target_fdr))

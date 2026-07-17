@@ -55,6 +55,7 @@ class WorkshopTab(QWidget):
         # the setCurrentIndex during _refresh_combo would otherwise fire handlers)
         self.car_combo.currentIndexChanged.connect(self._on_combo_changed)
         self.garage.car_selected.connect(self._on_garage_selected)
+        self.garage.garage_restored.connect(self._on_garage_restored)
 
     def _refresh_combo(self) -> None:
         """Rebuild the switcher from the garage, re-selecting the persisted car.
@@ -85,3 +86,9 @@ class WorkshopTab(QWidget):
         # pick the new key up on their next showEvent.
         _settings().setValue(_ACTIVE_CAR_KEY, car_id or "")
         self._refresh_combo()  # re-reads names, so saves/renames relabel the combo
+
+    def _on_garage_restored(self) -> None:
+        # A restore overwrote car files on disk; the active id is unchanged but its
+        # data may differ, so force Gearing/Tuning past their same-id guards.
+        self.gear._load_active_car(force=True)
+        self.tuning.mylog._reload()

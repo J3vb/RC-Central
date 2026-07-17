@@ -128,3 +128,36 @@ def test_solve_pinion_rejects_nonpositive_inputs(bad):
     # silently-clamped bogus pinion (the sole UI caller catches only ValueError)
     with pytest.raises(ValueError):
         gearing.solve_pinion_for_rollout(**bad)
+
+
+def test_solve_pinion_for_fdr_round_trips_with_compute():
+    # The FDR produced by pinion 24 must solve back to 24.
+    r = gearing.compute(
+        pinion=24, spur=87, internal_ratio=1.9, tire_diameter_mm=60, kv=3000, voltage=7.4
+    )
+    assert gearing.solve_pinion_for_fdr(target_fdr=r["fdr"], spur=87, internal_ratio=1.9) == 24
+
+
+def test_solve_pinion_for_fdr_picks_fdr_closest_tooth():
+    # fdr = k/p is nonlinear: exact solution 22.5 rounds to pinion 22, but 23's
+    # FDR (7.187) sits closer to the target (7.347) than 22's (7.514)
+    target = 1.9 * 87 / 22.5
+    assert gearing.solve_pinion_for_fdr(target_fdr=target, spur=87, internal_ratio=1.9) == 23
+
+
+def test_solve_pinion_for_fdr_clamps_to_one():
+    # a target above the biggest achievable FDR still yields a real pinion
+    assert gearing.solve_pinion_for_fdr(target_fdr=999.0, spur=87, internal_ratio=1.9) == 1
+
+
+@pytest.mark.parametrize(
+    "bad",
+    [
+        {"target_fdr": 0, "spur": 87, "internal_ratio": 1.9},
+        {"target_fdr": 7.5, "spur": 0, "internal_ratio": 1.9},
+        {"target_fdr": 7.5, "spur": 87, "internal_ratio": 0},
+    ],
+)
+def test_solve_pinion_for_fdr_rejects_nonpositive_inputs(bad):
+    with pytest.raises(ValueError):
+        gearing.solve_pinion_for_fdr(**bad)

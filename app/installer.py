@@ -56,11 +56,13 @@ def install(tool: dict, progress=None) -> Path:
             target = dest / (
                 inst.get("setup_relative_path")
                 or inst.get("exe_relative_path")
-                or "installer.exe"
+                # NOT "installer.exe": _find_exe's skip-list drops names containing
+                # "install", so a default-named bare exe would fail to auto-resolve
+                or "tool.exe"
             )
             # the hint comes from the remote catalog: never let it write outside the tool dir
             if not target.resolve().is_relative_to(dest.resolve()):
-                target = dest / "installer.exe"
+                target = dest / "tool.exe"
             target.parent.mkdir(parents=True, exist_ok=True)  # covers a nested relative path
             shutil.copy2(archive, target)
         else:

@@ -9,6 +9,7 @@ dependencies = [
     "pyside6>=6.7",
     "requests>=2.32",
     "py7zr>=0.22",
+    "pynacl>=1.6.2",
 ]
 
 [dependency-groups]

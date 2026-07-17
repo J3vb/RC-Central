@@ -1,8 +1,11 @@
+import base64
+import hashlib
 import logging
 import sys
 
 import pytest
 import requests
+from nacl.signing import SigningKey
 
 from app import updater
 
@@ -10,6 +13,16 @@ from app import updater
 # platform (PE "MZ" on Windows, ELF "\x7fELF" on Linux). Deriving the fixtures
 # from these keeps the tests meaningful on whichever OS CI runs them.
 ASSET_NAME, MAGIC = updater._platform_asset()
+
+# fetch_update now requires a valid Ed25519 signature, so the fixtures sign their
+# payloads with a throwaway key and pin the matching public key onto the updater.
+_SIGNING_KEY = SigningKey.generate()
+_PUBKEY_B64 = base64.b64encode(bytes(_SIGNING_KEY.verify_key)).decode()
+_SIGNED_NAME = "RCCentral-windows-x64.exe"
+
+
+def _sign(payload: bytes) -> bytes:
+    return _SIGNING_KEY.sign(payload).signature
 
 
 class FakeResp:
@@ -37,6 +50,10 @@ class FakeResp:
         yield self._content
 
     @property
+    def content(self):
+        return self._content
+
+    @property
     def text(self):
         return self._content.decode()
 
@@ -52,6 +69,35 @@ def _patch_requests(monkeypatch, api_resp, download_resp=None):
         return download_resp if kwargs.get("stream") else api_resp
 
     monkeypatch.setattr(updater.requests, "get", fake_get)
+
+
+def _patch_signed_flow(monkeypatch, tmp_path, payload, *, signature=..., sha_line=...):
+    """Wire a fully-signed release (exe + .sha256 + .sig assets, URL-routed responses)
+    with the test public key pinned. ``signature`` / ``sha_line`` default to correct
+    values; pass an override to forge them, or None to omit that sidecar asset."""
+    monkeypatch.setattr(updater, "_platform_asset", lambda: (_SIGNED_NAME, b"MZ"))
+    monkeypatch.setattr(updater, "_UPDATE_PUBLIC_KEY", _PUBKEY_B64)
+    if signature is ...:
+        signature = _sign(payload)
+    if sha_line is ...:
+        sha_line = hashlib.sha256(payload).hexdigest().encode() + b"  " + _SIGNED_NAME.encode() + b"\n"
+
+    assets = [{"name": _SIGNED_NAME, "browser_download_url": "https://dl/exe", "size": len(payload)}]
+    responses = {"https://dl/exe": FakeResp(content=payload)}
+    if sha_line is not None:
+        assets.append({"name": _SIGNED_NAME + ".sha256", "browser_download_url": "https://dl/sha"})
+        responses["https://dl/sha"] = FakeResp(content=sha_line)
+    if signature is not None:
+        assets.append({"name": _SIGNED_NAME + ".sig", "browser_download_url": "https://dl/sig"})
+        responses["https://dl/sig"] = FakeResp(content=signature)
+    api = FakeResp(json_data={"tag_name": "v99.0.0", "assets": assets})
+    monkeypatch.setattr(updater.requests, "get", lambda url, **kw: responses.get(url, api))
+
+    pending = tmp_path / updater.PENDING.name
+    monkeypatch.setattr(updater, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(updater, "PENDING", pending)
+    monkeypatch.setattr(updater, "_staged_version", None)
+    return pending
 
 
 @pytest.fixture
@@ -82,31 +128,18 @@ def test_no_newer_version(sandbox, monkeypatch, caplog):
     assert not updater.PENDING.exists()
 
 
-def test_newer_with_matching_asset(sandbox, monkeypatch, caplog):
-    payload = MAGIC + b"fake exe body"
-    api = FakeResp(
-        json_data={
-            "tag_name": "v99.0.0",
-            "assets": [
-                {"name": "notes.txt", "browser_download_url": "https://x/notes.txt"},
-                {
-                    "name": ASSET_NAME,
-                    "browser_download_url": f"https://x/{ASSET_NAME}",
-                    "size": len(payload),
-                },
-            ],
-        }
-    )
-    download = FakeResp(content=payload)
-    _patch_requests(monkeypatch, api, download)
+def test_newer_with_matching_asset(monkeypatch, tmp_path, caplog):
+    payload = b"MZ" + b"fake exe body"
+    pending = _patch_signed_flow(monkeypatch, tmp_path, payload)
 
     with caplog.at_level(logging.INFO, logger="app.updater"):
         result = updater.fetch_update(force=True)
 
     assert result is True
-    assert updater.PENDING.exists() and updater.PENDING.read_bytes() == payload
+    assert pending.exists() and pending.read_bytes() == payload
     assert updater.staged_version() == "v99.0.0"  # exposed for the UI banner
     assert "newer version available" in caplog.text
+    assert "signature verified" in caplog.text
     assert "downloaded and verified" in caplog.text
 
 
@@ -263,56 +296,81 @@ def test_non_json_response(sandbox, monkeypatch, caplog):
     assert "failed" in caplog.text.lower()
 
 
-def _sha_assets(payload):
-    return [
-        {
-            "name": "RCCentral-windows-x64.exe",
-            "browser_download_url": "https://dl/exe",
-            "size": len(payload),
-        },
-        {
-            "name": "RCCentral-windows-x64.exe.sha256",
-            "browser_download_url": "https://dl/sha",
-        },
-    ]
-
-
-def _patch_sha_flow(monkeypatch, tmp_path, payload, sha_line):
-    api = FakeResp(json_data={"tag_name": "v99.0.0", "assets": _sha_assets(payload)})
-    responses = {
-        "https://dl/exe": FakeResp(content=payload),
-        "https://dl/sha": FakeResp(content=sha_line),
-    }
-    monkeypatch.setattr(
-        updater.requests, "get", lambda url, **kw: responses.get(url, api)
-    )
-    monkeypatch.setattr(
-        updater, "_platform_asset", lambda: ("RCCentral-windows-x64.exe", b"MZ")
-    )
-    pending = tmp_path / updater.PENDING.name
-    monkeypatch.setattr(updater, "DATA_DIR", tmp_path)
-    monkeypatch.setattr(updater, "PENDING", pending)
-    monkeypatch.setattr(updater, "_staged_version", None)
-    return pending
-
-
 def test_fetch_update_rejects_sha256_mismatch(monkeypatch, tmp_path):
     payload = b"MZ" + b"x" * 64
-    wrong = b"0" * 64 + b"  RCCentral-windows-x64.exe\n"
-    pending = _patch_sha_flow(monkeypatch, tmp_path, payload, wrong)
+    wrong = b"0" * 64 + b"  " + _SIGNED_NAME.encode() + b"\n"
+    pending = _patch_signed_flow(monkeypatch, tmp_path, payload, sha_line=wrong)
 
-    assert updater.fetch_update(force=True) is False
+    assert updater.fetch_update(force=True) is False  # fails at the sha gate, before sig
     assert not pending.exists()
     assert list(tmp_path.glob("*.part")) == []
 
 
-def test_fetch_update_accepts_matching_sha256(monkeypatch, tmp_path):
-    import hashlib
-
+def test_fetch_update_rejects_missing_signature(monkeypatch, tmp_path, caplog):
+    # fail closed: a newer release with no .sig is refused, never staged unsigned
     payload = b"MZ" + b"x" * 64
-    digest = hashlib.sha256(payload).hexdigest().encode()
-    good = digest + b"  RCCentral-windows-x64.exe\n"
-    pending = _patch_sha_flow(monkeypatch, tmp_path, payload, good)
+    pending = _patch_signed_flow(monkeypatch, tmp_path, payload, signature=None)
+
+    with caplog.at_level(logging.INFO, logger="app.updater"):
+        assert updater.fetch_update(force=True) is False
+    assert not pending.exists()
+    assert "refusing to stage an unsigned update" in caplog.text
+
+
+def test_fetch_update_rejects_tampered_binary(monkeypatch, tmp_path, caplog):
+    # the exact review threat: the attacker swaps the binary AND recomputes its sha256,
+    # but can't forge the signature - the delivered bytes fail against the real one
+    real = b"MZ" + b"the genuine build"
+    evil = b"MZ" + b"trojaned build!!"
+    pending = _patch_signed_flow(monkeypatch, tmp_path, evil, signature=_sign(real))
+
+    with caplog.at_level(logging.INFO, logger="app.updater"):
+        assert updater.fetch_update(force=True) is False
+    assert not pending.exists()
+    assert "signature verification failed" in caplog.text
+
+
+def test_fetch_update_rejects_bad_signature(monkeypatch, tmp_path):
+    payload = b"MZ" + b"x" * 64
+    pending = _patch_signed_flow(monkeypatch, tmp_path, payload, signature=b"not a real signature")
+
+    assert updater.fetch_update(force=True) is False
+    assert not pending.exists()
+
+
+def test_fetch_update_rejects_signature_from_wrong_key(monkeypatch, tmp_path):
+    # a signature from a DIFFERENT key (a forger's) must not verify against the pin
+    payload = b"MZ" + b"x" * 64
+    forged = SigningKey.generate().sign(payload).signature
+    pending = _patch_signed_flow(monkeypatch, tmp_path, payload, signature=forged)
+
+    assert updater.fetch_update(force=True) is False
+    assert not pending.exists()
+
+
+def test_fetch_update_accepts_signed_release(monkeypatch, tmp_path):
+    # the good path: correct size, magic, sha256, and a genuine signature -> staged
+    payload = b"MZ" + b"x" * 64
+    pending = _patch_signed_flow(monkeypatch, tmp_path, payload)
 
     assert updater.fetch_update(force=True) is True
     assert pending.read_bytes() == payload
+
+
+def test_sign_release_produces_verifiable_signature(monkeypatch, tmp_path):
+    from pathlib import Path as _Path
+
+    from nacl.signing import VerifyKey
+
+    sys.path.insert(0, str(_Path(__file__).resolve().parents[1] / "scripts"))
+    import sign_release
+
+    key = SigningKey.generate()
+    binary = tmp_path / "RCCentral.exe"
+    binary.write_bytes(b"MZ hello world")
+    monkeypatch.setenv("UPDATE_SIGNING_KEY", base64.b64encode(bytes(key)).decode())
+    monkeypatch.setattr(sys, "argv", ["sign_release.py", str(binary)])
+
+    assert sign_release.main() == 0
+    sig = (tmp_path / "RCCentral.exe.sig").read_bytes()
+    VerifyKey(bytes(key.verify_key)).verify(binary.read_bytes(), sig)  # raises if bad

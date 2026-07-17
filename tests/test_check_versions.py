@@ -70,6 +70,20 @@ def test_pattern_no_match_is_tolerated(monkeypatch):
     assert check_versions.check_tools([_tool()]) == []
 
 
+def test_bad_regex_pattern_is_tolerated(monkeypatch):
+    # a malformed catalog regex (re.error) or one with no capture group (IndexError on
+    # group(1)) must not fail the "always exit 0" nightly - caught like a network hiccup
+    _patch_get(monkeypatch, FakeResp(text="Demo 1.2.0"))
+
+    unbalanced = _tool()
+    unbalanced["version_check"]["pattern"] = r"V(\d+"  # unclosed group -> re.error
+    assert check_versions.check_tools([unbalanced]) == []
+
+    no_group = _tool()
+    no_group["version_check"]["pattern"] = r"\d+\.\d+"  # matches but has no group(1)
+    assert check_versions.check_tools([no_group]) == []
+
+
 def test_json_output_written(monkeypatch, tmp_path):
     # stub the probing so main() only loads the real manifests (no network) and
     # writes whatever findings it's handed to the --json path

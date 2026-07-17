@@ -26,25 +26,27 @@ Central tracks and launches your copy without re-downloading it.
 
 - **Manuals** — official manual and support links for every catalog tool,
   cross-platform.
-- **Garage** — car profiles with specs, gearing, and a setup log; compare two
-  cars side by side, named gearing presets, JSON import/export, one-click
-  backup/restore.
-- **Gear Calculator** — rollout/ratio math, reverse solve (target rollout →
-  pinion), and a pinion what-if table.
-- **Tuning** — drift chassis tuning chart with per-setting explainers, a
-  shock-oil conversion table, a gyro guide, and a per-car tuning log.
+- **Workshop** — Garage, Gearing, and Tuning in one tab, all sharing the active
+  car picked in its header:
+  - **Garage** — car profiles with specs, gearing, and a setup log; compare two
+    cars side by side, named gearing presets, JSON import/export, one-click
+    backup/restore.
+  - **Gearing** — rollout/ratio math, reverse solve (target rollout or target
+    FDR → pinion), an inline gear-ratio chart, and a pinion what-if table.
+  - **Tuning** — drift chassis tuning chart with per-setting explainers, a
+    shock-oil conversion table, a gyro guide, and a per-car tuning log.
 - **Self-update** — checks GitHub Releases on startup (toggle in Settings)
   and swaps in the new build on exit.
-- **Dark & light themes** (Settings tab).
+- **Dark & light themes** and a built-in log viewer, under the **Settings** tab.
 
 ## Supported platforms
 
 Prebuilt binaries are released for **Windows x64**, **Windows ARM64**, and
-**Linux x64**. The Gear Calculator and Garage are fully cross-platform; the
-**Tools** tab (which installs and launches vendor programmer software) is
-Windows-only, since that software ships as Windows executables — on Windows on
-ARM they run under the OS's x86/x64 emulation. On Linux the Tools tab is hidden
-and RC Central is the gearing calculator and garage.
+**Linux x64**. The Workshop (Garage, Gearing, Tuning) and Manuals are fully
+cross-platform; the **Tools** tab (which installs and launches vendor programmer
+software) is Windows-only, since that software ships as Windows executables — on
+Windows on ARM they run under the OS's x86/x64 emulation. On Linux the Tools tab
+is hidden and RC Central is the Workshop and Manuals.
 
 ## Run from source
 

@@ -48,8 +48,10 @@ def check_tools(tools: list[dict]) -> list[dict]:
         current = tool["version"]
         try:
             latest = _latest_upstream(check)
-        except requests.RequestException as e:
-            # a flaky/blocked vendor page must not fail the run - report and move on
+        except (requests.RequestException, re.error, IndexError) as e:
+            # a flaky/blocked vendor page (RequestException), a bad catalog regex
+            # (re.error), or a pattern with no capture group (IndexError on group(1))
+            # must not fail the "always exit 0" nightly - report and move on
             print(f"warn: {tool['id']}: {check['url']} -> {e}", file=sys.stderr)
             continue
         if latest is None:
