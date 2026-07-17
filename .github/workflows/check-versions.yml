@@ -53,22 +53,22 @@ jobs:
               continue
             fi
 
-            body=$(cat <<EOF
-$marker
-The vendor page for **$name** advertises **v$latest**, but the catalog lists **v$current**.
-
-Refresh \`catalog/tools/$id.json\`:
-- bump \`version\` to the new release
-- update \`download.url\` (vendor URLs rot per release) and re-pin \`sha256\`
-- fix \`install.exe_relative_path\` if it embeds the version
-- run \`uv run python scripts/validate_catalog.py --write\` to regenerate the bundle
-
-Vendor page: $homepage
-Checked: $checked
-
-_Filed automatically by check-versions.yml._
-EOF
-)
+            # printf, not a heredoc: heredoc bodies must start at column 0,
+            # which terminates the YAML block scalar and breaks the workflow
+            body=$(printf '%s\n' \
+              "$marker" \
+              "The vendor page for **$name** advertises **v$latest**, but the catalog lists **v$current**." \
+              "" \
+              "Refresh \`catalog/tools/$id.json\`:" \
+              "- bump \`version\` to the new release" \
+              "- update \`download.url\` (vendor URLs rot per release) and re-pin \`sha256\`" \
+              "- fix \`install.exe_relative_path\` if it embeds the version" \
+              "- run \`uv run python scripts/validate_catalog.py --write\` to regenerate the bundle" \
+              "" \
+              "Vendor page: $homepage" \
+              "Checked: $checked" \
+              "" \
+              "_Filed automatically by check-versions.yml._")
             gh issue create --label catalog-update \
               --title "Catalog: $name may be outdated (v$current → v$latest)" \
               --body "$body"
