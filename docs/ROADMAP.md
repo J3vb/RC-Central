@@ -47,12 +47,16 @@ in the two README/CI items above).
       caching it — landed on `dev` 2026-07-17, including a strict id slug
       check (id feeds `TOOLS_DIR / id` and `shutil.rmtree`)
 - [x] Add ruff (dev-only) and a CI lint step — landed on `dev` 2026-07-17
-- [ ] Sign each release binary with a self-managed **Ed25519** key (private key
+- [x] Sign each release binary with a self-managed **Ed25519** key (private key
       in a GitHub Actions secret, public key pinned in the app); verify the
       `.sig` in `updater.fetch_update` before staging PENDING, failing closed.
       Closes the self-update provenance gap — a compromised release or CI token
       can't forge a signature — without a CA, form, or cost. Same model as
-      Sparkle/WinSparkle.
+      Sparkle/WinSparkle. Landed on `dev` 2026-07-17; release-time proof done
+      at v0.7.1: 9 assets published (3 platforms × binary/`.sha256`/`.sig`),
+      windows-x64 `.sha256` matches, and its `.sig` verifies against the key
+      pinned in `app/updater.py`. The updater's own sig-check log line first
+      fires on the next release.
 - [ ] **(human)** EdgeTX elevated-install UAC smoke test on a real machine
 
 *Out of scope: public-trust (Authenticode / SmartScreen) code signing. It needs
