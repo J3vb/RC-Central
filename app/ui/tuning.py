@@ -120,8 +120,8 @@ _TUNING_TIPS: dict[str, str] = {
     ),
     "Rear Diff": (
         "How tightly the rear wheels are coupled. Tighter (toward spool) drives "
-        "both rears equally for predictable rotation; looser lets them "
-        "differentiate for more forward bite."
+        "both rears as one so the rear breaks loose predictably; looser lets them "
+        "differentiate, adding rear grip through corners."
     ),
 }
 
@@ -153,37 +153,132 @@ _GYRO_ROWS: list[tuple[str, str]] = [
 ]
 
 
-class _ChassisGuide(QWidget):
-    """The understeer/oversteer chart with click-to-expand setting explainers.
+# Why each gyro adjustment works — tooltips and click-to-expand explainers for
+# the Symptom column, keyed by symptom text (same pattern as _TUNING_TIPS).
+_GYRO_TIPS: dict[str, str] = {
+    "Tail wags / oscillates on straights": (
+        "The gyro is over-correcting: each counter-steer overshoots and the next "
+        "correction chases it. Lower the gain until the oscillation dies out."
+    ),
+    "Snap-spins on throttle transitions": (
+        "The rear steps out faster than the gyro catches it when power comes on "
+        "or off. More gain gives a bigger, earlier counter-steer so the slide is "
+        "caught before it passes the point of no return."
+    ),
+    "Counter-steer too slow, spins before catching": (
+        "The correction arrives too late rather than too small. Raise gain so the "
+        "gyro commands more angle sooner; if it still lags, the servo is the "
+        "bottleneck — a faster servo fixes what gain can't."
+    ),
+    "Steering fights your inputs, feels robotic": (
+        "The gyro is overriding your hands instead of assisting them. Lower the "
+        "gain to hand steering authority back to the transmitter."
+    ),
+    "Won't hold deep angle, self-straightens": (
+        "High gain treats a deliberate deep slide as an error and steers out of "
+        "it. Lower the gain so the chassis can sit at bigger angles before the "
+        "gyro intervenes."
+    ),
+    "Wanders at speed, needs constant correction": (
+        "Too little stabilizing authority: small yaw disturbances go uncorrected "
+        "until you fix them by hand. Raise gain a notch at a time — too far and "
+        "wandering turns into tail-wagging."
+    ),
+}
 
-    Click a setting row and its explanation drops in as a spanned row directly
-    beneath it (one open at a time; clicking another setting moves it there).
+
+class _AccordionTable(QWidget):
+    """Reference table with click-to-expand explanation rows.
+
+    Click a first-column row and its explanation (from `tips`, keyed by that
+    cell's text) drops in as a spanned row directly beneath it — one open at a
+    time; clicking another row moves it there. The same text doubles as the
+    cell's hover tooltip.
     Implemented on QTableWidget with insertRow/removeRow — QTreeWidget branch
     expand/collapse cycles live-lock Qt's UIA accessibility bridge and freeze
     the GUI under screen readers / UI automation (PySide6 6.11.1, 2026-07-16).
     """
 
-    def __init__(self):
+    def __init__(
+        self, rows: list[tuple[str, ...]], headers: tuple[str, ...], tips: dict[str, str]
+    ):
         super().__init__()
-        self._open_row: int | None = None  # table index of the open setting row, if any
+        self._tips = tips
+        self._open_row: int | None = None  # table index of the open row, if any
 
-        self.table = QTableWidget(len(_TUNING_ROWS), 3)
-        self.table.setHorizontalHeaderLabels(("Setting", "If understeering", "If oversteering"))
+        self.table = QTableWidget(len(rows), len(headers))
+        self.table.setHorizontalHeaderLabels(headers)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setWordWrap(True)  # camber-link cells are long
+        self.table.setWordWrap(True)  # explanation and reference cells can be long
+        for row, texts in enumerate(rows):
+            for col, text in enumerate(texts):
+                item = QTableWidgetItem("▸ " + text if col == 0 else text)
+                if col == 0:
+                    item.setToolTip(tips[text])
+                self.table.setItem(row, col, item)
+        # subclasses must call table.resizeRowsToContents() AFTER setting their
+        # header resize modes: with word wrap on, row heights depend on column
+        # widths, and the pre-stretch defaults produce tall mostly-empty rows
+        self.table.cellClicked.connect(self._toggle_row)
+
+    def _row_name(self, row: int) -> str:
+        return self.table.item(row, 0).text()[2:]  # strip the "▸ "/"▾ " prefix
+
+    def _toggle_row(self, row: int, column: int = 0) -> None:
+        if self._open_row is not None and row == self._open_row + 1:
+            return  # clicks on the explanation row itself do nothing
+        reopen = None if row == self._open_row else row
+        if self._open_row is not None:
+            was = self._open_row
+            self.table.removeRow(was + 1)
+            self.table.item(was, 0).setText("▸ " + self._row_name(was))
+            self._open_row = None
+            if reopen is not None and reopen > was:
+                reopen -= 1  # rows below the removed explanation shifted up
+        if reopen is None:
+            return
+        name = self._row_name(reopen)
+        exp = QTableWidgetItem(self._tips[name])
+        font = exp.font()
+        font.setItalic(True)
+        exp.setFont(font)
+        self.table.insertRow(reopen + 1)
+        self.table.setItem(reopen + 1, 0, exp)
+        self.table.setSpan(reopen + 1, 0, 1, self.table.columnCount())
+        self.table.item(reopen, 0).setText("▾ " + name)
+        self._open_row = reopen
+        self._fit_explanation()
+
+    def _fit_explanation(self) -> None:
+        # the delegate paints wrapped text across the span but sizes the row as
+        # a single line, so compute the wrapped height ourselves
+        if self._open_row is None:
+            return
+        row = self._open_row + 1
+        item = self.table.item(row, 0)
+        metrics = QFontMetrics(item.font())
+        width = self.table.viewport().width() - 24
+        rect = metrics.boundingRect(0, 0, width, 100000, Qt.TextFlag.TextWordWrap, item.text())
+        self.table.setRowHeight(row, rect.height() + 12)
+
+    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        super().resizeEvent(event)
+        self._fit_explanation()  # re-wrap the open explanation at the new width
+
+
+class _ChassisGuide(_AccordionTable):
+    """The understeer/oversteer chart with search, symptom highlight, and explainers."""
+
+    def __init__(self):
+        super().__init__(
+            _TUNING_ROWS, ("Setting", "If understeering", "If oversteering"), _TUNING_TIPS
+        )
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        for row, texts in enumerate(_TUNING_ROWS):
-            for col, text in enumerate(texts):
-                item = QTableWidgetItem("▸ " + text if col == 0 else text)
-                if col == 0:
-                    item.setToolTip(_TUNING_TIPS[text])
-                self.table.setItem(row, col, item)
         self.table.resizeRowsToContents()
-        self.table.cellClicked.connect(self._toggle_row)
 
         self.search = QLineEdit()
         self.search.setPlaceholderText("Filter settings…")
@@ -210,56 +305,12 @@ class _ChassisGuide(QWidget):
         layout.addLayout(controls)
         layout.addWidget(self.table)
 
-    def _setting_name(self, row: int) -> str:
-        return self.table.item(row, 0).text()[2:]  # strip the "▸ "/"▾ " prefix
-
-    def _toggle_row(self, row: int, column: int = 0) -> None:
-        if self._open_row is not None and row == self._open_row + 1:
-            return  # clicks on the explanation row itself do nothing
-        reopen = None if row == self._open_row else row
-        if self._open_row is not None:
-            was = self._open_row
-            self.table.removeRow(was + 1)
-            self.table.item(was, 0).setText("▸ " + self._setting_name(was))
-            self._open_row = None
-            if reopen is not None and reopen > was:
-                reopen -= 1  # rows below the removed explanation shifted up
-        if reopen is None:
-            return
-        name = self._setting_name(reopen)
-        exp = QTableWidgetItem(_TUNING_TIPS[name])
-        font = exp.font()
-        font.setItalic(True)
-        exp.setFont(font)
-        self.table.insertRow(reopen + 1)
-        self.table.setItem(reopen + 1, 0, exp)
-        self.table.setSpan(reopen + 1, 0, 1, 3)
-        self.table.item(reopen, 0).setText("▾ " + name)
-        self._open_row = reopen
-        self._fit_explanation()
-
-    def _fit_explanation(self) -> None:
-        # the delegate paints wrapped text across the span but sizes the row as
-        # a single line, so compute the wrapped height ourselves
-        if self._open_row is None:
-            return
-        row = self._open_row + 1
-        item = self.table.item(row, 0)
-        metrics = QFontMetrics(item.font())
-        width = self.table.viewport().width() - 24
-        rect = metrics.boundingRect(0, 0, width, 100000, Qt.TextFlag.TextWordWrap, item.text())
-        self.table.setRowHeight(row, rect.height() + 12)
-
-    def resizeEvent(self, event) -> None:  # noqa: N802 (Qt override)
-        super().resizeEvent(event)
-        self._fit_explanation()  # re-wrap the open explanation at the new width
-
     def _apply_filter(self, text: str) -> None:
         if self._open_row is not None:
             self._toggle_row(self._open_row)  # close it; rows are 1:1 settings again
         needle = text.strip().lower()
         for row in range(self.table.rowCount()):
-            self.table.setRowHidden(row, needle not in self._setting_name(row).lower())
+            self.table.setRowHidden(row, needle not in self._row_name(row).lower())
 
     def _highlight(self, checked: bool) -> None:
         if not checked:  # a radio switch fires toggled twice (old off, new on); paint once
@@ -304,25 +355,18 @@ class _OilGuide(QWidget):
         layout.addWidget(self.table)
 
 
-class _GyroGuide(QWidget):
-    """Drift gyro symptom → gain adjustment reference."""
+class _GyroGuide(_AccordionTable):
+    """Drift gyro symptom → gain adjustment reference with click-to-expand explainers."""
 
     def __init__(self):
-        super().__init__()
-        self.table = QTableWidget(len(_GYRO_ROWS), 2)
-        self.table.setHorizontalHeaderLabels(("Symptom", "Adjustment"))
-        self.table.verticalHeader().hide()
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.table.setWordWrap(True)
+        super().__init__(_GYRO_ROWS, ("Symptom", "Adjustment"), _GYRO_TIPS)
         header = self.table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        for row, texts in enumerate(_GYRO_ROWS):
-            for col, text in enumerate(texts):
-                self.table.setItem(row, col, QTableWidgetItem(text))
         self.table.resizeRowsToContents()
 
         layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Drift gyro troubleshooting — click a symptom for details"))
         layout.addWidget(self.table)
 
 

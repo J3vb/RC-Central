@@ -1445,15 +1445,27 @@ def test_tuning_gyro_guide(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app.ui.tuning import TuningTab, _GYRO_ROWS
+    from app.ui.tuning import TuningTab, _GYRO_ROWS, _GYRO_TIPS
+
+    # every symptom row has a tip, and no tip is orphaned
+    assert set(_GYRO_TIPS) == {r[0] for r in _GYRO_ROWS}
 
     _ = QApplication.instance() or QApplication([])
     tab = TuningTab()
     assert tab.subtabs.tabText(2) == "Gyro"
     t = tab.gyro.table
     assert t.rowCount() == len(_GYRO_ROWS) == 6
-    assert t.item(0, 0).text() == "Tail wags / oscillates on straights"
+    assert t.item(0, 0).text() == "▸ Tail wags / oscillates on straights"
     assert t.item(0, 1).text() == "Lower gain"
+    assert all(t.item(r, 0).toolTip() for r in range(t.rowCount()))
+
+    # same accordion as the chassis chart: spanned explanation row, one open at a time
+    tab.gyro._toggle_row(0)
+    assert t.rowCount() == 7
+    assert t.item(1, 0).text() == _GYRO_TIPS["Tail wags / oscillates on straights"]
+    assert t.columnSpan(1, 0) == 2
+    tab.gyro._toggle_row(0)
+    assert t.rowCount() == 6
 
 
 def test_tuning_log(monkeypatch, tmp_path):
