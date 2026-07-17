@@ -1,4 +1,4 @@
-"""The Gear tab: live gearing calculator plus the gear ratio chart dialog."""
+"""The Gear tab: live gearing calculator, inline gear ratio chart, pinion sweep dialog."""
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
@@ -115,26 +115,22 @@ class GearTab(QWidget):
         self.save_btn = QPushButton("Save results to car")
         self.save_btn.clicked.connect(self._save_to_car)
         self.save_btn.setEnabled(False)
-        chart_btn = QPushButton("Gear ratio chart…")
-        chart_btn.clicked.connect(self._open_chart)
+        sweep_btn = QPushButton("Pinion sweep…")
+        sweep_btn.clicked.connect(self._open_sweep)
         btn_row = QHBoxLayout()
         btn_row.addWidget(self.save_btn, 1)
-        btn_row.addWidget(chart_btn)
+        btn_row.addWidget(sweep_btn)
 
-        # What-if sweep: the current pinion ±3, so tuners see the effect of a
-        # pinion swap (the common drift adjustment) at a glance. The base row is bold.
-        self.sweep_table = QTableWidget(0, 4)
-        self.sweep_table.setHorizontalHeaderLabels(("Pinion", "FDR", "Rollout (mm)", "km/h"))
-        self.sweep_table.verticalHeader().hide()
-        self.sweep_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.sweep_table.horizontalHeader().setStretchLastSection(True)
+        # Inline gear ratio chart; live-tracks the inputs via set_setup in _recompute.
+        self.chart = _GearChartPanel(
+            self.pinion.value(), self.spur.value(), self.internal_ratio.value()
+        )
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
         layout.addLayout(preset_row)
         layout.addLayout(btn_row)
-        layout.addWidget(self.sweep_table)
-        layout.addStretch(1)
+        layout.addWidget(self.chart, 1)
 
         self._load_active_car()
         self._recompute()
@@ -187,27 +183,19 @@ class GearTab(QWidget):
         )
 
     def _recompute(self) -> None:
+        self.chart.set_setup(
+            self.pinion.value(), self.spur.value(), self.internal_ratio.value()
+        )
         try:
             r = self._current()
-            rows = gearing.pinion_sweep(
-                base_pinion=self.pinion.value(),
-                spur=self.spur.value(),
-                internal_ratio=self.internal_ratio.value(),
-                tire_diameter_mm=self.tire.value(),
-                kv=self.kv.value(),
-                voltage=gearing.pack_voltage(self.cells.value()),
-                span=3,
-            )
         except ValueError:
             for lbl in (self.fdr_out, self.rollout_out, self.kmh_out, self.mph_out):
                 lbl.setText("—")
-            self.sweep_table.setRowCount(0)
             return
         self.fdr_out.setText(f"{r['fdr']:.2f}")
         self.rollout_out.setText(f"{r['rollout_mm']:.1f}")
         self.kmh_out.setText(f"{r['top_speed_kmh']:.1f}")
         self.mph_out.setText(f"{r['top_speed_mph']:.1f}")
-        self._fill_sweep(rows)
 
     def _solve_pinion(self) -> None:
         """Fill the pinion spinbox with the nearest tooth for the target rollout.
@@ -228,28 +216,21 @@ class GearTab(QWidget):
             return
         self.pinion.setValue(p)
 
-    def _fill_sweep(self, rows: list[dict]) -> None:
-        self.sweep_table.setRowCount(len(rows))
-        for row, data in enumerate(rows):
-            values = (
-                str(data["pinion"]),
-                f"{data['fdr']:.2f}",
-                f"{data['rollout_mm']:.1f}",
-                f"{data['top_speed_kmh']:.1f}",
+    def _open_sweep(self) -> None:
+        # snapshot of the current setup; the modal sweep doesn't live-track the tab
+        try:
+            rows = gearing.pinion_sweep(
+                base_pinion=self.pinion.value(),
+                spur=self.spur.value(),
+                internal_ratio=self.internal_ratio.value(),
+                tire_diameter_mm=self.tire.value(),
+                kv=self.kv.value(),
+                voltage=gearing.pack_voltage(self.cells.value()),
+                span=3,
             )
-            for col, text in enumerate(values):
-                item = QTableWidgetItem(text)
-                if data["is_base"]:  # the current pinion, bolded so it stands out
-                    font = item.font()
-                    font.setBold(True)
-                    item.setFont(font)
-                self.sweep_table.setItem(row, col, item)
-
-    def _open_chart(self) -> None:
-        # snapshot of the current setup; the modal chart doesn't live-track the tab
-        _GearChartDialog(
-            self.pinion.value(), self.spur.value(), self.internal_ratio.value(), self
-        ).exec()
+        except ValueError:
+            return
+        _SweepDialog(rows, self).exec()
 
     def _save_to_car(self) -> None:
         if self._active_id is None:
@@ -341,16 +322,46 @@ class GearTab(QWidget):
         self._refresh_presets(car)
 
 
-class _GearChartDialog(QDialog):
+class _SweepDialog(QDialog):
+    """What-if sweep: the current pinion ±3, so tuners see the effect of a
+    pinion swap (the common drift adjustment) at a glance. The base row is bold."""
+
+    def __init__(self, rows: list[dict], parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Pinion sweep")
+        self.table = QTableWidget(len(rows), 4)
+        self.table.setHorizontalHeaderLabels(("Pinion", "FDR", "Rollout (mm)", "km/h"))
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.horizontalHeader().setStretchLastSection(True)
+        for row, data in enumerate(rows):
+            values = (
+                str(data["pinion"]),
+                f"{data['fdr']:.2f}",
+                f"{data['rollout_mm']:.1f}",
+                f"{data['top_speed_kmh']:.1f}",
+            )
+            for col, text in enumerate(values):
+                item = QTableWidgetItem(text)
+                if data["is_base"]:  # the current pinion, bolded so it stands out
+                    font = item.font()
+                    font.setBold(True)
+                    item.setFont(font)
+                self.table.setItem(row, col, item)
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.table)
+        self.resize(420, 300)
+
+
+class _GearChartPanel(QWidget):
     """Spur × pinion FDR matrix, like the printed gear chart that ships with a kit.
 
-    Internal ratio is a snapshot of the tab at open (change it there, like the fixed
-    "RATIO" header on a printed chart). Ranges are editable and persist via QSettings.
+    Lives inline in the Gear tab and tracks its inputs via set_setup. Ranges are
+    editable and persist via QSettings on every change.
     """
 
     def __init__(self, pinion: int, spur: int, internal_ratio: float, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Gear ratio chart")
         self._pinion = pinion
         self._spur = spur
         self._ratio = internal_ratio
@@ -358,7 +369,7 @@ class _GearChartDialog(QDialog):
         self.pinion_min, self.pinion_max = QSpinBox(), QSpinBox()
         self.spur_min, self.spur_max = QSpinBox(), QSpinBox()
         # (box, settings key, first-run default centered on the current setup);
-        # done() persists through this same tuple so keys can't drift apart
+        # _rebuild persists through this same tuple so keys can't drift apart
         self._persist = (
             (self.pinion_min, "gearchart/pinion_min", pinion - 8),
             (self.pinion_max, "gearchart/pinion_max", pinion + 8),
@@ -371,6 +382,8 @@ class _GearChartDialog(QDialog):
             box.setValue(settings.value(key, default, type=int))  # clamps to range
 
         controls = QHBoxLayout()
+        controls.addWidget(QLabel("<b>Gear ratio chart</b>"))
+        controls.addSpacing(16)
         controls.addWidget(QLabel("Pinion"))
         controls.addWidget(self.pinion_min)
         controls.addWidget(QLabel("–"))
@@ -381,7 +394,6 @@ class _GearChartDialog(QDialog):
         controls.addWidget(QLabel("–"))
         controls.addWidget(self.spur_max)
         controls.addStretch(1)
-        controls.addWidget(QLabel(f"Internal ratio: {internal_ratio:.2f}"))
 
         self.table = QTableWidget()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -393,9 +405,14 @@ class _GearChartDialog(QDialog):
             box.valueChanged.connect(self._rebuild)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addLayout(controls)
         layout.addWidget(self.table)
-        self.resize(720, 480)
+        self._rebuild()
+
+    def set_setup(self, pinion: int, spur: int, internal_ratio: float) -> None:
+        """Re-highlight (and re-price) the matrix for the tab's current inputs."""
+        self._pinion, self._spur, self._ratio = pinion, spur, internal_ratio
         self._rebuild()
 
     def _rebuild(self) -> None:
@@ -418,10 +435,6 @@ class _GearChartDialog(QDialog):
                     item.setBackground(QColor(_ACCENT))
                     item.setForeground(QColor("white"))  # readable on accent in both themes
                 self.table.setItem(row, col, item)
-
-    def done(self, result: int) -> None:  # noqa: N802 (Qt override)
-        # done() runs on OK/Esc/titlebar-close alike, so ranges always persist
-        settings = _settings()
+        settings = _settings()  # persist on every change; there's no close to hook inline
         for box, key, _default in self._persist:
             settings.setValue(key, box.value())
-        super().done(result)

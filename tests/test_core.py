@@ -1277,28 +1277,31 @@ def test_garage_tab_import_malformed_car_warns(monkeypatch, tmp_path):
     assert garage.list_cars() == []  # a car that fails to render is never persisted
 
 
-def test_gear_tab_whatif_table(monkeypatch, tmp_path):
+def test_gear_sweep_dialog(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
     from app import catalog, garage, gearing
-    from app.ui.gear import GearTab
+    from app.ui.gear import GearTab, _SweepDialog
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GearTab()
 
-    tab.pinion.setValue(20)  # triggers _recompute; span=3 -> pinions 17..23 = 7 rows
-    assert tab.sweep_table.rowCount() == 7
+    tab.pinion.setValue(20)
+    captured = {}
+    monkeypatch.setattr(_SweepDialog, "exec", lambda self: captured.update(dlg=self))
+    tab._open_sweep()  # span=3 -> pinions 17..23 = 7 rows
+    table = captured["dlg"].table
+    assert table.rowCount() == 7
 
     # exactly one row (the current pinion) is bold, and it reads "20"
     bold_rows = [
-        r for r in range(tab.sweep_table.rowCount())
-        if tab.sweep_table.item(r, 0).font().bold()
+        r for r in range(table.rowCount()) if table.item(r, 0).font().bold()
     ]
     assert len(bold_rows) == 1
-    assert tab.sweep_table.item(bold_rows[0], 0).text() == "20"
+    assert table.item(bold_rows[0], 0).text() == "20"
 
     # the base row's FDR matches gearing.compute for that pinion
     expected = gearing.compute(
@@ -1306,41 +1309,49 @@ def test_gear_tab_whatif_table(monkeypatch, tmp_path):
         tire_diameter_mm=tab.tire.value(), kv=tab.kv.value(),
         voltage=gearing.pack_voltage(tab.cells.value()),
     )
-    assert tab.sweep_table.item(bold_rows[0], 1).text() == f"{expected['fdr']:.2f}"
+    assert table.item(bold_rows[0], 1).text() == f"{expected['fdr']:.2f}"
 
 
-def test_gear_chart_dialog(monkeypatch):
+def test_gear_chart_panel(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app.ui.gear import _GearChartDialog
+    from app import catalog, garage
+    from app.ui.gear import GearTab
 
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    dlg = _GearChartDialog(22, 87, 1.9)
+    tab = GearTab()
+    chart = tab.chart
 
-    # first run: ranges center on the current setup -> pinion 14..30, spur 77..97
-    assert dlg.table.columnCount() == 17
-    assert dlg.table.rowCount() == 21
-    assert dlg.table.horizontalHeaderItem(0).text() == "14"
-    assert dlg.table.verticalHeaderItem(0).text() == "97"  # highest spur on top
+    # first run: ranges center on the default setup (22/87) -> pinion 14..30, spur 77..97
+    assert chart.table.columnCount() == 17
+    assert chart.table.rowCount() == 21
+    assert chart.table.horizontalHeaderItem(0).text() == "14"
+    assert chart.table.verticalHeaderItem(0).text() == "97"  # highest spur on top
 
     # the current-combo cell holds 1.9 * 87 / 22 and is the only styled one
     row, col = 97 - 87, 22 - 14
-    cell = dlg.table.item(row, col)
+    cell = chart.table.item(row, col)
     assert cell.text() == "7.51"
     assert cell.font().bold()
-    assert not dlg.table.item(row, col + 1).font().bold()
+    assert not chart.table.item(row, col + 1).font().bold()
+
+    # the inline chart live-tracks the inputs: bumping the pinion moves the highlight
+    tab.pinion.setValue(23)
+    assert not chart.table.item(row, col).font().bold()
+    assert chart.table.item(row, col + 1).font().bold()
 
     # editing a range rebuilds; an inverted range (min > max) still renders sorted
-    dlg.pinion_min.setValue(40)  # max is 30 -> sorted -> columns 30..40
-    assert dlg.table.columnCount() == 11
-    assert dlg.table.horizontalHeaderItem(0).text() == "30"
+    chart.pinion_min.setValue(40)  # max is 30 -> sorted -> columns 30..40
+    assert chart.table.columnCount() == 11
+    assert chart.table.horizontalHeaderItem(0).text() == "30"
 
-    # closing persists the ranges; a fresh dialog restores them over its defaults
-    dlg.done(0)
-    dlg2 = _GearChartDialog(22, 87, 1.9)
-    assert dlg2.pinion_min.value() == 40
-    assert dlg2.spur_max.value() == 97
+    # range edits persist immediately; a fresh tab restores them over its defaults
+    tab2 = GearTab()
+    assert tab2.chart.pinion_min.value() == 40
+    assert tab2.chart.spur_max.value() == 97
 
 
 def test_tuning_tab(monkeypatch):
