@@ -12,9 +12,9 @@ automated.
 
 - [x] Tuning page additions — landed on `dev` 2026-07-16
       (plan: `docs/superpowers/plans/2026-07-15-tuning-page-additions.md`)
-- [ ] Refresh README — stale since v0.5.0: still says "first supported tool:
-      Rêve D" while the catalog has 12 entries
-- [ ] Bump GitHub Actions off deprecated Node 20 majors
+- [x] Refresh README — landed on `dev` 2026-07-17
+- [x] Bump GitHub Actions off deprecated Node 20 majors — landed on `dev`
+      2026-07-17 (setup-uv pinned to v7: astral-sh publishes no v8 major alias)
 
 ## v0.7 — "Trust" (security & robustness, before promoting the app anywhere)
 
