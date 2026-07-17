@@ -1,8 +1,8 @@
 """App-wide logging: rotating file + an in-memory buffer, configured once.
 
 Kept Qt-free on purpose so it stays importable and testable without a GUI. The
-Qt bridge that streams records live into the Log tab lives in app/main.py; this
-module only owns the root-logger configuration, the shared format, and the
+Qt bridge that streams records live into the Log tab lives in app/ui/log.py;
+this module only owns the root-logger configuration, the shared format, and the
 buffer the tab preloads from.
 """
 

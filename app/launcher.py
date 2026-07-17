@@ -1,8 +1,8 @@
 """Spawn and track vendor tool processes.
 
 The catalog tools are Windows-only vendor executables, so the Tools tab that
-calls this only exists on Windows (see app/main.py). ``launch`` guards on that
-so the Windows-only ``os.startfile`` path is never reached elsewhere.
+calls this only exists on Windows (see app/ui/window.py). ``launch`` guards on
+that so the Windows-only ``os.startfile`` path is never reached elsewhere.
 """
 
 import os

@@ -66,9 +66,8 @@ in the two README/CI items above).
 
 ## Backlog / experimental
 
-- Window-embedding spike on the real Rêve D exe (`spike/embed_spike.py` —
-  never run). Phase 2 embedding stays opt-in per tool, and only if the spike
-  proves solid.
-- Split `app/main.py` (~2,100 lines) into an `app/ui/` package, one file per
-  tab. Deliberately deferred — trigger: the next time a tab-level change costs
-  more scrolling than thinking.
+- ~~Window-embedding spike on the real Rêve D exe~~ — dropped 2026-07-17; the
+  spike files were removed. External launch stays the model.
+- ~~Split `app/main.py` into an `app/ui/` package~~ — done, PR #13
+  (2026-07-17): main.py is a pure entry point, one module per tab under
+  `app/ui/`.
