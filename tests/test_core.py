@@ -1737,3 +1737,40 @@ def test_install_exe_download_rejects_traversal(sandbox, monkeypatch):
     assert exe == dest / "installer.exe"  # fell back to the safe default
     assert exe.exists()
     assert not (installer.TOOLS_DIR / "evil.exe").exists()  # nothing escaped the tool dir
+
+
+def test_load_catalog_rejects_malformed_remote(monkeypatch, tmp_path):
+    from app import catalog
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"not": "a tool list"}  # valid JSON, wrong shape
+
+    monkeypatch.setattr(catalog.requests, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+
+    tools = catalog.load_catalog()
+
+    # fell through to the bundled catalog, and did not cache the bad payload
+    assert isinstance(tools, list) and tools
+    assert all("id" in t for t in tools)
+    assert not (tmp_path / "catalog.json").exists()
+
+
+def test_load_catalog_skips_corrupt_cache(monkeypatch, tmp_path):
+    from app import catalog
+
+    def offline(*a, **k):
+        raise catalog.requests.RequestException("no network")
+
+    monkeypatch.setattr(catalog.requests, "get", offline)
+    cache = tmp_path / "catalog.json"
+    cache.write_text("{corrupt", encoding="utf-8")
+    monkeypatch.setattr(catalog, "CACHE_FILE", cache)
+
+    tools = catalog.load_catalog()  # must not raise on the bad cache
+    assert isinstance(tools, list) and all("id" in t for t in tools)
