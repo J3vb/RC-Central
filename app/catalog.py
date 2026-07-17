@@ -28,8 +28,8 @@ def _valid(tools) -> bool:
         and bool(tools)
         and all(
             isinstance(t, dict)
-            and "id" in t
-            and "name" in t
+            and isinstance(t.get("name"), str)
+            and isinstance(t.get("id"), str)
             # id becomes a filesystem path component (TOOLS_DIR / tool["id"]) in
             # installer.py, so it must stay a strict slug - never "../.."
             and re.fullmatch(r"[a-z0-9][a-z0-9-]*", t["id"])

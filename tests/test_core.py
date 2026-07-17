@@ -1805,3 +1805,6 @@ def test_valid_rejects_path_traversal_id():
 
     assert catalog._valid([{"id": "../..", "name": "x"}]) is False
     assert catalog._valid([{"id": "agfrc-servo-programmer", "name": "x"}]) is True
+    # non-string id/name (corrupt or hostile catalog) must not crash the shape check
+    assert catalog._valid([{"id": 5, "name": "x"}]) is False
+    assert catalog._valid([{"id": "ok-id", "name": None}]) is False
