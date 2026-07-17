@@ -1774,3 +1774,34 @@ def test_load_catalog_skips_corrupt_cache(monkeypatch, tmp_path):
 
     tools = catalog.load_catalog()  # must not raise on the bad cache
     assert isinstance(tools, list) and all("id" in t for t in tools)
+
+
+def test_load_catalog_rejects_path_traversal_id(monkeypatch, tmp_path):
+    from app import catalog
+
+    class _Resp:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            # id is well-formed JSON but not a slug: it becomes a filesystem path
+            # component in installer.py, so "../.." would point outside TOOLS_DIR
+            return [{"id": "../..", "name": "x"}]
+
+    monkeypatch.setattr(catalog.requests, "get", lambda *a, **k: _Resp())
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+
+    tools = catalog.load_catalog()
+
+    # fell through to the bundled catalog, and did not cache the hostile payload
+    assert isinstance(tools, list) and tools
+    assert all("id" in t for t in tools)
+    assert not (tmp_path / "catalog.json").exists()
+
+
+def test_valid_rejects_path_traversal_id():
+    from app import catalog
+
+    assert catalog._valid([{"id": "../..", "name": "x"}]) is False
+    assert catalog._valid([{"id": "agfrc-servo-programmer", "name": "x"}]) is True

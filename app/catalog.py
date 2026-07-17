@@ -1,6 +1,7 @@
 """Load the tool catalog: remote JSON with a local cache, bundled fallback."""
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -25,7 +26,15 @@ def _valid(tools) -> bool:
     return (
         isinstance(tools, list)
         and bool(tools)
-        and all(isinstance(t, dict) and "id" in t and "name" in t for t in tools)
+        and all(
+            isinstance(t, dict)
+            and "id" in t
+            and "name" in t
+            # id becomes a filesystem path component (TOOLS_DIR / tool["id"]) in
+            # installer.py, so it must stay a strict slug - never "../.."
+            and re.fullmatch(r"[a-z0-9][a-z0-9-]*", t["id"])
+            for t in tools
+        )
     )
 
 
@@ -37,15 +46,18 @@ def load_catalog() -> list[dict]:
         tools = resp.json()
         if not _valid(tools):
             raise ValueError("remote catalog has unexpected shape")
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        CACHE_FILE.write_text(json.dumps(tools), encoding="utf-8")
+        try:
+            DATA_DIR.mkdir(parents=True, exist_ok=True)
+            CACHE_FILE.write_text(json.dumps(tools), encoding="utf-8")
+        except OSError:
+            pass  # a failed cache write must not discard a good fetch
         return tools
     except (requests.RequestException, ValueError):
         pass
     if CACHE_FILE.exists():
         try:
             cached = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        except ValueError:
+        except (ValueError, OSError):
             cached = None
         if _valid(cached):
             return cached
