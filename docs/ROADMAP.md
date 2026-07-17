@@ -44,13 +44,16 @@ in the two README/CI items above).
 
 ## v0.8 — "Growth" (catalog & community)
 
-- [ ] Populate `drivers[]` for tools that need USB drivers (SkyRC, Hobbywing,
-      Rêve D programmers) — the per-row driver menu shipped in v0.4.0 but no
-      catalog entry uses it yet
-- [ ] `CONTRIBUTING.md` plus a catalog-entry PR template — catalog PRs are the
-      project's growth engine and there is no on-ramp for outsiders today
-- [ ] Extend `check-versions.yml` to auto-open an issue when a vendor link
-      dies, instead of just failing red
+- [x] ~~Populate `drivers[]` for tools that need USB drivers~~ — resolved as
+      won't-do 2026-07-17: Windows 10/11 auto-installs the common USB-serial
+      bridges (CP210x/CH340/FTDI) from Windows Update on plug-in, confirmed
+      in practice (Rêve D works driver-free). The mechanism stays; driver
+      links are added per user report only (policy in `CONTRIBUTING.md`)
+- [x] `CONTRIBUTING.md` plus a catalog-entry PR template — landed on `dev`
+      2026-07-17
+- [x] Auto-open an issue when a vendor link dies, instead of just failing
+      red — landed on `dev` 2026-07-17 in `validate-catalog.yml` (where the
+      nightly URL check actually runs, not `check-versions.yml`)
 
 ## v1.0 — community launch
 
