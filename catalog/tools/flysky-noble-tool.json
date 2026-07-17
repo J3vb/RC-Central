@@ -10,7 +10,7 @@
     "download": {
         "url": "https://www.flysky-cn.com/s/Flysky_NB4_UpdateFirmware_20116-1.exe",
         "archive": "exe",
-        "sha256": null
+        "sha256": "662955adfa643dde4ec22a5bc57c01869e98aec38f21e4b580b5aa480b5a219c"
     },
     "install": {
         "exe_relative_path": "Flysky_NB4_UpdateFirmware_20116-1.exe",

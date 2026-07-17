@@ -48,7 +48,7 @@
     "download": {
       "url": "https://www.agfrc.com/res/excel/0d8052f9183934d1.exe",
       "archive": "exe",
-      "sha256": null
+      "sha256": "6420bdf95fc4902c2c4714415104b1f12b12a39249043adc00fce8a87be2b50d"
     },
     "install": {
       "exe_relative_path": "0d8052f9183934d1.exe",
@@ -83,7 +83,7 @@
     "download": {
       "url": "https://github.com/EdgeTX/edgetx/releases/download/v2.12.2/edgetx-cpn-win64-v2.12.2.zip",
       "archive": "zip",
-      "sha256": null
+      "sha256": "7466f63f2c9e7a0cd280d1ce61a1be4eacd776ab2ccc148be13aba7b31289224"
     },
     "install": {
       "setup_relative_path": "companion-windows-2.12.2.exe",
@@ -123,7 +123,7 @@
     "download": {
       "url": "https://www.flysky-cn.com/s/Flysky_NB4_UpdateFirmware_20116-1.exe",
       "archive": "exe",
-      "sha256": null
+      "sha256": "662955adfa643dde4ec22a5bc57c01869e98aec38f21e4b580b5aa480b5a219c"
     },
     "install": {
       "exe_relative_path": "Flysky_NB4_UpdateFirmware_20116-1.exe",
@@ -175,7 +175,7 @@
     "download": {
       "url": "https://www.hobbywing.com/Upload/software/Hobbywing_USB_Link_V5.1.1.zip",
       "archive": "zip",
-      "sha256": null
+      "sha256": "adf9701e456fcf3cf4411fde9f242e290e1b553c470787f6b71d11e6507ca754"
     },
     "install": {
       "setup_args": [

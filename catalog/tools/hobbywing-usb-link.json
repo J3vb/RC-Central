@@ -10,7 +10,7 @@
     "download": {
         "url": "https://www.hobbywing.com/Upload/software/Hobbywing_USB_Link_V5.1.1.zip",
         "archive": "zip",
-        "sha256": null
+        "sha256": "adf9701e456fcf3cf4411fde9f242e290e1b553c470787f6b71d11e6507ca754"
     },
     "install": {
         "setup_args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", "/DIR={dest}"],

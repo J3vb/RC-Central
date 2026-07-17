@@ -10,7 +10,7 @@
     "download": {
         "url": "https://www.agfrc.com/res/excel/0d8052f9183934d1.exe",
         "archive": "exe",
-        "sha256": null
+        "sha256": "6420bdf95fc4902c2c4714415104b1f12b12a39249043adc00fce8a87be2b50d"
     },
     "install": {
         "exe_relative_path": "0d8052f9183934d1.exe",

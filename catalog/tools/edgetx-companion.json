@@ -10,7 +10,7 @@
     "download": {
         "url": "https://github.com/EdgeTX/edgetx/releases/download/v2.12.2/edgetx-cpn-win64-v2.12.2.zip",
         "archive": "zip",
-        "sha256": null
+        "sha256": "7466f63f2c9e7a0cd280d1ce61a1be4eacd776ab2ccc148be13aba7b31289224"
     },
     "install": {
         "setup_relative_path": "companion-windows-2.12.2.exe",
