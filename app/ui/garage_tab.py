@@ -187,7 +187,7 @@ class GarageTab(QWidget):
         self.log_note.returnPressed.connect(self._on_add_log)
         add_log_btn = QPushButton("Add")
         add_log_btn.clicked.connect(self._on_add_log)
-        remove_log_btn = QPushButton("Remove selected")
+        remove_log_btn = QPushButton("Delete selected")
         remove_log_btn.clicked.connect(self._on_remove_log)
         log_add_row = QHBoxLayout()
         log_add_row.addWidget(self.log_kind)

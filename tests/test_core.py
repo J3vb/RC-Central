@@ -1644,7 +1644,7 @@ def test_tuning_gyro_guide(monkeypatch):
 def test_tuning_log(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings
-    from PySide6.QtWidgets import QApplication
+    from PySide6.QtWidgets import QApplication, QTableWidget
 
     from app import garage
     from app.ui.tuning import TuningTab
@@ -1664,6 +1664,7 @@ def test_tuning_log(monkeypatch, tmp_path):
     log = tab.mylog
     names = [tab.subtabs.tabText(i) for i in range(tab.subtabs.count())]
     assert names == ["Chassis", "Shock Oil", "Gyro", "My Log"]
+    assert log.table.selectionBehavior() == QTableWidget.SelectionBehavior.SelectRows
 
     # no active car: entry controls disabled, hint shown
     # (isHidden, not isVisible — the tab itself is never shown in offscreen tests)

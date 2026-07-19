@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage
-from app.ui.common import _ACCENT, _ACTIVE_CAR_KEY, _settings
+from app.ui.common import _ACCENT, _ACTIVE_CAR_KEY, _settings, _show_status
 
 
 # (setting, action if understeering, action if oversteering) — transcribed from the
@@ -280,7 +280,7 @@ class _ChassisGuide(_AccordionTable):
         self.table.resizeRowsToContents()
 
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Filter settings…")
+        self.search.setPlaceholderText("Search settings…")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._apply_filter)
 
@@ -393,6 +393,7 @@ class _TuningLog(QWidget):
         self.table.setHorizontalHeaderLabels(("Date", "Note"))
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
 
         # connect only now that self.table exists (same trap as _CompareDialog)
@@ -450,6 +451,7 @@ class _TuningLog(QWidget):
             return
         car.setdefault("log", []).append(garage.new_log_entry("Tuning", note))
         garage.save_car(car)
+        _show_status(self, "Added tuning note", 5000)
         self.note.clear()
         self._render()
 
@@ -464,6 +466,7 @@ class _TuningLog(QWidget):
             return
         car["log"] = [e for e in car.get("log", []) if e.get("id") != entry_id]
         garage.save_car(car)
+        _show_status(self, "Deleted log entry", 5000)
         self._render()
 
 

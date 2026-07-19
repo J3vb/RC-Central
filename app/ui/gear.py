@@ -355,6 +355,7 @@ class GearTab(QWidget):
             return
         car = garage.save_car(garage.delete_preset(car, name))
         self._refresh_presets(car)
+        _show_status(self, f"Deleted preset '{name}'", 5000)
 
 
 class _SweepDialog(QDialog):
