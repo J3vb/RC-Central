@@ -1,5 +1,6 @@
 """The Tools tab: install/launch each catalog tool."""
 
+import logging
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QUrl
@@ -23,6 +24,8 @@ from PySide6.QtWidgets import (
 
 from app import catalog, installer, launcher
 from app.ui.common import _CATEGORY_LABELS, _DownloadTab, _is_software, _link_button
+
+log = logging.getLogger(__name__)
 
 
 class ToolsTab(_DownloadTab):
@@ -235,7 +238,14 @@ class ToolsTab(_DownloadTab):
         self._refresh_row(row)
         self._refresh_summary()
         if error:
+            name = self.tools[row]["name"]
+            log.warning("install of %s failed: %s", name, error)
             self._clear_status()
-            QMessageBox.warning(self, "Install failed", error)
+            QMessageBox.warning(
+                self,
+                "Install failed",
+                f"Couldn't download and install {name}.\n"
+                "Check your internet connection and try again — details are in Settings ▸ Log.",
+            )
         else:
             self._status(f"Installed {self.tools[row]['name']}", 5000)

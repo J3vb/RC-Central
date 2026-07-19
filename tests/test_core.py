@@ -1,4 +1,5 @@
 import json
+import logging
 import sys
 import zipfile
 from pathlib import Path
@@ -1086,7 +1087,7 @@ def test_manuals_tab_finished_success_refreshes_siblings(monkeypatch):
     assert [tab.table.item(r, 3).text() for r in range(2)] == ["Downloaded", "Downloaded"]
 
 
-def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch):
+def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch, caplog):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     import threading
 
@@ -1103,9 +1104,11 @@ def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch):
     _ = QApplication.instance() or QApplication([])
     tab = ManualsTab()
 
-    warned = {"n": 0}
+    warned = {"n": 0, "args": None}
     monkeypatch.setattr(
-        QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1)
+        QMessageBox,
+        "warning",
+        lambda *a, **k: warned.update(n=warned["n"] + 1, args=a) or None,
     )
 
     # cancel: no error, nothing cached -> row resets to "Download", NO dialog
@@ -1114,11 +1117,16 @@ def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch):
     assert tab.table.cellWidget(0, 4).text() == "Download"
     assert warned["n"] == 0
 
-    # real failure: warning dialog, row still reset
+    # real failure: warning dialog, row still reset; raw error logged, not shown
     tab._active[0] = threading.Event()
-    tab._download_finished(0, "network boom")
+    with caplog.at_level(logging.WARNING):
+        tab._download_finished(0, "network boom")
     assert warned["n"] == 1
     assert tab.table.cellWidget(0, 4).text() == "Download"
+    dialog_text = warned["args"][2]
+    assert "M (PDF)" in dialog_text
+    assert "network boom" not in dialog_text
+    assert "network boom" in caplog.text
 
 
 def test_manuals_tab_pdf_row_menu_open_and_delete(monkeypatch):
@@ -2036,7 +2044,7 @@ def test_tools_tab_install_flow_installs_and_reenables(monkeypatch, sandbox):
     assert tab.table.cellWidget(0, 4).text() == "Launch"
 
 
-def test_tools_tab_install_finished_error_warns(monkeypatch, sandbox):
+def test_tools_tab_install_finished_error_warns(monkeypatch, sandbox, caplog):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication, QMessageBox
 
@@ -2047,12 +2055,21 @@ def test_tools_tab_install_finished_error_warns(monkeypatch, sandbox):
     _ = QApplication.instance() or QApplication([])
     tab = ToolsTab()
 
-    warned = {"n": 0}
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1))
+    warned = {"n": 0, "args": None}
+    monkeypatch.setattr(
+        QMessageBox,
+        "warning",
+        lambda *a, **k: warned.update(n=warned["n"] + 1, args=a) or None,
+    )
     tab.table.cellWidget(0, 4).setEnabled(False)  # _install disabled it before the thread
-    tab._install_finished(0, "network boom")
+    with caplog.at_level(logging.WARNING):
+        tab._install_finished(0, "network boom")
     assert warned["n"] == 1  # the failure reaches the user, not a silent swallow
     assert tab.table.cellWidget(0, 4).isEnabled()  # button restored so they can retry
+    dialog_text = warned["args"][2]
+    assert "Fake Tool" in dialog_text
+    assert "network boom" not in dialog_text
+    assert "network boom" in caplog.text
 
 
 def test_tools_tab_action_launches_installed_tool(monkeypatch, sandbox):

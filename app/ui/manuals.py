@@ -1,5 +1,6 @@
 """The Manuals tab: one row per official manual / support link across the catalog."""
 
+import logging
 import threading
 
 from PySide6.QtCore import Qt, QUrl
@@ -27,6 +28,8 @@ from app.ui.common import (
     _is_software,
     _link_button,
 )
+
+log = logging.getLogger(__name__)
 
 
 class ManualsTab(_DownloadTab):
@@ -238,8 +241,14 @@ class ManualsTab(_DownloadTab):
         manual = self._manuals[row]
         self._refresh_idle_rows()  # this row + any sibling sharing the URL flip to their new state
         if error:
+            log.warning("manual download failed for %s: %s", manual["name"], error)
             self._clear_status()
-            QMessageBox.warning(self, "Download failed", error)
+            QMessageBox.warning(
+                self,
+                "Download failed",
+                f"Couldn't download {manual['name']}.\n"
+                "Check your internet connection and try again — details are in Settings ▸ Log.",
+            )
         elif installer.manual_is_cached(manual["url"]):
             self._status(f"Downloaded {manual['name']}", 5000)
         # else: cancelled -> _refresh_row already reset it to "Download", no message
