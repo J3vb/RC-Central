@@ -722,6 +722,52 @@ def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
     assert win.update_consented is True
 
 
+def test_settings_check_updates_reports_outcome(monkeypatch):
+    # The manual "Check for updates now" must give feedback on both silent outcomes:
+    # "up to date" on the status bar when the check succeeded but found nothing, and a
+    # warning dialog when the check itself failed. The worker thread is run synchronously
+    # so the whole flow completes within the call.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import threading
+
+    from PySide6.QtWidgets import QApplication, QMainWindow, QMessageBox
+
+    from app import updater
+    from app.ui.settings import SettingsTab
+
+    _ = QApplication.instance() or QApplication([])
+
+    class FakeThread:  # run the worker inline on .start() so the outcome lands here
+        def __init__(self, target=None, daemon=None):
+            self._target = target
+
+        def start(self):
+            self._target()
+
+    monkeypatch.setattr(threading, "Thread", FakeThread)
+
+    warned = {"n": 0}  # QMessageBox.warning MUST be patched or offscreen hangs on the modal
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: warned.update(n=warned["n"] + 1))
+
+    win = QMainWindow()  # host in a real QMainWindow (keep referenced: shiboken trap) so
+    tab = SettingsTab()  # _show_status has a status bar to write to
+    win.setCentralWidget(tab)
+
+    # up to date: fetch found nothing but the check reached GitHub -> status bar, no dialog
+    monkeypatch.setattr(updater, "fetch_update", lambda force=False: False)
+    monkeypatch.setattr(updater, "last_check_current", lambda: True)
+    tab._check_updates()
+    assert "up to date" in win.statusBar().currentMessage().lower()
+    assert warned["n"] == 0
+    assert tab.check_btn.isEnabled()  # re-enabled after the check
+
+    # failed: the check itself couldn't complete -> warning dialog, button re-enabled
+    monkeypatch.setattr(updater, "last_check_current", lambda: False)
+    tab._check_updates()
+    assert warned["n"] == 1
+    assert tab.check_btn.isEnabled()
+
+
 def test_log_tab_preload_stream_and_filter(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     import logging

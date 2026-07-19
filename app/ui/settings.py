@@ -7,6 +7,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QMessageBox,
     QPushButton,
     QTabWidget,
     QVBoxLayout,
@@ -15,7 +16,8 @@ from PySide6.QtWidgets import (
 
 from app import paths, updater
 from app.ui.common import (
-    _DARK_MODE_DEFAULT, _DARK_MODE_KEY, _STARTUP_CHECK_DEFAULT, _STARTUP_CHECK_KEY, _settings,
+    _DARK_MODE_DEFAULT, _DARK_MODE_KEY, _show_status, _STARTUP_CHECK_DEFAULT, _STARTUP_CHECK_KEY,
+    _settings,
 )
 from app.ui.log import LogTab
 from app.ui.theme import apply_theme
@@ -24,7 +26,7 @@ from app.ui.theme import apply_theme
 class SettingsTab(QWidget):
     """Two sub-tabs: Preferences (QSettings-backed toggles) and the live Log."""
 
-    _check_done = Signal()
+    _check_done = Signal(str)  # outcome: "staged" | "current" | "failed"
 
     def __init__(self):
         super().__init__()
@@ -42,7 +44,7 @@ class SettingsTab(QWidget):
 
         self.check_btn = QPushButton("Check for updates now")
         self.check_btn.clicked.connect(self._check_updates)
-        self._check_done.connect(lambda: self.check_btn.setEnabled(True))
+        self._check_done.connect(self._on_check_done)
 
         open_folder_btn = QPushButton("Open data folder")
         open_folder_btn.clicked.connect(self._open_data_folder)
@@ -73,17 +75,37 @@ class SettingsTab(QWidget):
 
     def _check_updates(self) -> None:
         self.check_btn.setEnabled(False)
+        _show_status(self, "Checking for updates…")
         updater.log.info("manual update check requested from Settings")
         win = self.window()  # grab on the GUI thread; the worker only emits its signal
 
         def work():
+            outcome = "failed"
             try:
-                if updater.fetch_update(force=True) and hasattr(win, "update_ready"):
-                    win.update_ready.emit(updater.staged_version() or "")
+                if updater.fetch_update(force=True):
+                    outcome = "staged"
+                    if hasattr(win, "update_ready"):
+                        win.update_ready.emit(updater.staged_version() or "")
+                elif updater.last_check_current():
+                    outcome = "current"
             finally:
-                self._check_done.emit()  # re-enable the button on the GUI thread
+                self._check_done.emit(outcome)  # report back on the GUI thread
 
         threading.Thread(target=work, daemon=True).start()
+
+    def _on_check_done(self, outcome: str) -> None:
+        """Re-enable the button and give feedback: status-bar for success, dialog for
+        failure, nothing for a staged update (the main-window banner is its feedback)."""
+        self.check_btn.setEnabled(True)
+        if outcome == "current":
+            _show_status(self, "You're up to date.", 5000)
+        else:
+            _show_status(self, "")  # clear the "Checking for updates…" status
+            if outcome == "failed":
+                QMessageBox.warning(
+                    self, "Update check",
+                    "Couldn't check for updates. Details are in the Log tab.",
+                )
 
     def _open_data_folder(self) -> None:
         folder = paths.data_dir()

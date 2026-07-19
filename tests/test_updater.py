@@ -128,6 +128,27 @@ def test_no_newer_version(sandbox, monkeypatch, caplog):
     assert not updater.PENDING.exists()
 
 
+def test_up_to_date_sets_last_check_current(sandbox, monkeypatch):
+    # reached GitHub and the latest tag equals the running version: not newer (False),
+    # but last_check_current() must report True so a manual check can say "up to date".
+    api = FakeResp(json_data={"tag_name": f"v{updater.__version__}", "assets": []})
+    _patch_requests(monkeypatch, api)
+
+    assert updater.fetch_update(force=True) is False
+    assert updater.last_check_current() is True
+
+
+def test_offline_leaves_last_check_current_false(sandbox, monkeypatch):
+    # a failed check (offline) also returns False, but must NOT read as "up to date"
+    def boom(url, **kwargs):
+        raise requests.ConnectionError("no route to host")
+
+    monkeypatch.setattr(updater.requests, "get", boom)
+
+    assert updater.fetch_update(force=True) is False
+    assert updater.last_check_current() is False
+
+
 def test_newer_with_matching_asset(monkeypatch, tmp_path, caplog):
     payload = b"MZ" + b"fake exe body"
     pending = _patch_signed_flow(monkeypatch, tmp_path, payload)

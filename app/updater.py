@@ -97,6 +97,17 @@ def staged_version() -> str | None:
     return _staged_version
 
 
+# Set by fetch_update() only when it reached GitHub and the running build is
+# already the newest release, so a manual check can tell "up to date" apart from a
+# failure (both return False). Reset to False at every fetch_update() entry.
+_last_check_current = False
+
+
+def last_check_current() -> bool:
+    """True when the most recent fetch_update() reached GitHub and confirmed this build is the newest release"""
+    return _last_check_current
+
+
 def _sidelined(exe: Path) -> Path:
     """Where the running binary is moved so the update can take its place.
 
@@ -116,6 +127,8 @@ def fetch_update(force: bool = False) -> bool:
     passes ``force=True`` to exercise the real path from source. Every step logs,
     so a failed update is visible in rc-central.log instead of vanishing.
     """
+    global _last_check_current
+    _last_check_current = False
     frozen = bool(getattr(sys, "frozen", False))
     log.info("update check: current=v%s frozen=%s force=%s", __version__, frozen, force)
     if not frozen and not force:
@@ -144,6 +157,7 @@ def fetch_update(force: bool = False) -> bool:
                 tag,
                 __version__,
             )
+            _last_check_current = True
             return False
         log.info("newer version available: %r > v%s", tag, __version__)
 
