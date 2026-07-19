@@ -66,6 +66,7 @@ class _CompareDialog(QDialog):
         layout.addLayout(pick_row)
         layout.addWidget(self.table)
         self.resize(520, 480)
+        self.setMinimumSize(440, 340)
         self._render()
 
     def _render(self) -> None:

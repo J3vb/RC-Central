@@ -655,6 +655,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     )
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    assert win.minimumWidth() >= 640
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
     tools = ["Tools"] if sys.platform == "win32" else []
@@ -2303,6 +2304,7 @@ def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):
 
     # constructing must fully render the table (no _render before self.table exists)
     dlg = _CompareDialog(garage.list_cars(), a["id"])
+    assert dlg.minimumWidth() >= 440
     assert dlg.table.rowCount() > 0
     assert dlg.combo_a.currentData() != dlg.combo_b.currentData()  # two distinct cars
 

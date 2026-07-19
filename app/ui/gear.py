@@ -391,6 +391,7 @@ class _SweepDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.addWidget(self.table)
         self.resize(420, 300)
+        self.setMinimumSize(360, 260)
 
 
 class _GearChartPanel(QWidget):

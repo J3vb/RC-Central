@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"RC Central v{__version__}")
         self.setWindowIcon(app_icon())
         self.resize(760, 500)
+        self.setMinimumSize(640, 420)
 
         # An update is only swapped in on quit once the user has explicitly asked
         # for it via the banner; dismissing leaves the download unused.
