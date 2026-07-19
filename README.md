@@ -1,8 +1,17 @@
 # RC Central
 
-One app to install and launch all your RC drift setup tools — servo programmers,
-ESC config software, and friends. Pick a tool from the catalog, click Install,
-click Launch. No hunting through vendor download pages.
+[![Build](https://github.com/J3vb/RC-Central/actions/workflows/build.yml/badge.svg)](https://github.com/J3vb/RC-Central/actions/workflows/build.yml)
+[![Release](https://img.shields.io/github/v/release/J3vb/RC-Central)](https://github.com/J3vb/RC-Central/releases/latest)
+![Status](https://img.shields.io/badge/status-beta-orange)
+![Python](https://img.shields.io/badge/python-3.12%2B-blue)
+![Platforms](https://img.shields.io/badge/platforms-Windows%20x64%20%7C%20ARM64%20%7C%20Linux%20x64-informational)
+[![License: MIT](https://img.shields.io/github/license/J3vb/RC-Central)](LICENSE)
+
+One desktop app to install and launch all your radio-controlled (RC) drift car
+setup tools — servo programmers, ESC configuration software, and radio
+utilities. Pick a tool from the catalog, click Install, click Launch. No hunting
+through vendor download pages. It also bundles a gearing calculator, a drift
+tuning guide, and a car garage for tracking your setups.
 
 **Status: beta.** The catalog covers 12 entries: 7 installable tools — servo
 programmers (Rêve D, AGFRC), ESC suites (Hobbywing, SkyRC, Acuvance), and
