@@ -1,6 +1,7 @@
 """Main application window: tab assembly and update banner."""
 
 import sys
+import threading
 
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtWidgets import (
@@ -28,6 +29,9 @@ class MainWindow(QMainWindow):
     # update. Carried across threads by Qt's queued connection, so the check can
     # run off the GUI thread and still light up the banner safely.
     update_ready = Signal(str)
+    # Carries a freshly fetched catalog from the background refresh thread back to the
+    # GUI thread (queued connection), same cross-thread pattern as update_ready.
+    catalog_ready = Signal(list)
 
     def __init__(self):
         super().__init__()
@@ -40,9 +44,11 @@ class MainWindow(QMainWindow):
         # for it via the banner; dismissing leaves the download unused.
         self.update_consented = False
 
-        # One catalog fetch, shared by both tabs that render it, so startup makes a
-        # single (blocking) network round-trip and both tabs show the same snapshot.
-        tools = catalog.load_catalog()
+        # Seed both tabs instantly from the on-disk snapshot (cached fetch, else
+        # bundled) — a local read, not a blocking network round-trip. The background
+        # thread wired below refreshes it. One shared snapshot, one source of truth.
+        tools = catalog.cached_catalog()
+        self._catalog = tools
 
         self.tabs = QTabWidget()
         self.workshop_tab = WorkshopTab()
@@ -82,6 +88,16 @@ class MainWindow(QMainWindow):
 
         self.update_ready.connect(self._show_update_banner)
 
+        # Refresh the catalog off the GUI thread: a daemon thread fetches and emits the
+        # result, delivered here by Qt's queued connection (connect BEFORE start; the
+        # thread only emits, never touches widgets). _catalog_thread is kept as an
+        # attribute purely so tests can join() it deterministically.
+        self.catalog_ready.connect(self._refresh_catalog)
+        self._catalog_thread = threading.Thread(
+            target=lambda: self.catalog_ready.emit(catalog.load_catalog()), daemon=True
+        )
+        self._catalog_thread.start()
+
         # back-compat: existing tests (and any external callers) reach the table
         # here — present only when the Tools tab is.
         if self.tools_tab is not None:
@@ -96,6 +112,15 @@ class MainWindow(QMainWindow):
             self.restoreGeometry(geometry)
         tab = int(settings.value("tab", 0))
         self.tabs.setCurrentIndex(max(0, min(tab, self.tabs.count() - 1)))
+
+    def _refresh_catalog(self, fresh: list) -> None:
+        if fresh == self._catalog:
+            return  # remote unreachable or unchanged — keep what's shown
+        self._catalog = fresh
+        if self.tools_tab is not None:
+            self.tools_tab.set_catalog(fresh)
+        self.manuals_tab.set_catalog(fresh)
+        self.statusBar().showMessage("Catalog updated", 5000)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         settings = _settings()

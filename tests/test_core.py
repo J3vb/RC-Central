@@ -395,6 +395,27 @@ def test_load_catalog_falls_back_to_valid_cache_when_offline(monkeypatch, tmp_pa
     assert catalog.load_catalog() == seeded  # valid cache used when the fetch fails
 
 
+def test_cached_catalog_never_touches_network(monkeypatch, tmp_path):
+    # The instant-startup seed reads disk only; a network call here would be a bug.
+    from app import catalog
+
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    cache = tmp_path / "catalog.json"
+    monkeypatch.setattr(catalog, "CACHE_FILE", cache)
+
+    def boom(*a, **k):
+        raise AssertionError("network")
+
+    monkeypatch.setattr(catalog.requests, "get", boom)
+
+    seeded = [_tool(id="cached", name="Cached")]
+    cache.write_text(json.dumps(seeded), encoding="utf-8")
+    assert catalog.cached_catalog() == seeded  # valid cache returned verbatim
+
+    cache.unlink()
+    assert catalog.cached_catalog()  # no cache -> bundled entries, still no network
+
+
 def test_catalog_valid_rejects_hostile_download_shape():
     from app import catalog
 
@@ -600,6 +621,7 @@ def test_ui_smoke(monkeypatch):
 
     from PySide6.QtWidgets import QToolButton
 
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: [_tool()])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
@@ -615,7 +637,7 @@ def test_ui_smoke(monkeypatch):
 
 
 def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
-    # ToolsTab (Windows) + ManualsTab must share one fetch, not fetch twice at startup
+    # ToolsTab (Windows) + ManualsTab must share one disk read, not seed twice at startup
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -624,15 +646,42 @@ def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
 
     calls = {"n": 0}
 
-    def counting_load():
+    def counting_cached():
         calls["n"] += 1
         return [_tool()]
 
-    monkeypatch.setattr(catalog, "load_catalog", counting_load)
+    monkeypatch.setattr(catalog, "cached_catalog", counting_cached)
+    # background refresh is benign and equal to the seed, so it no-ops
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     MainWindow()
     assert calls["n"] == 1
+
+
+def test_mainwindow_background_refresh_repopulates(monkeypatch, tmp_path):
+    # cached seed shows immediately; the background load then repopulates the tabs
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app.ui.window import MainWindow
+
+    link = {"name": "M1", "url": "https://example.invalid/1.pdf"}
+    seeded = [_tool(links=[link])]
+    fresh = [_tool(links=[link, {"name": "M2", "url": "https://example.invalid/2.pdf"}])]
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: seeded)
+    monkeypatch.setattr(catalog, "load_catalog", lambda: fresh)
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    win = MainWindow()
+
+    assert win.manuals_tab.table.rowCount() == 1  # one link, from the cached seed
+    win._catalog_thread.join(5)  # wait for the background fetch to emit
+    QApplication.processEvents()  # deliver the queued catalog_ready signal
+    assert win.manuals_tab.table.rowCount() == 2  # background refresh added the 2nd link
+    assert "Catalog updated" in win.statusBar().currentMessage()
+    assert win is not None  # keep referenced to the end (shiboken trap)
 
 
 def test_tabs_smoke(monkeypatch, tmp_path):
@@ -644,6 +693,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     from app.ui.window import MainWindow
     import app.ui.common
 
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: [_tool()])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     # scope QSettings to a temp INI: the header combo writes the active-car key
@@ -699,6 +749,7 @@ def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
     from app import catalog, garage
     from app.ui.window import MainWindow
 
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: [_tool()])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
@@ -815,6 +866,7 @@ def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
     from app import catalog, garage
     from app.ui.window import MainWindow
 
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: [_tool()])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
@@ -1363,6 +1415,7 @@ def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):
     from app import catalog, garage
     from app.ui.window import MainWindow
 
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: [_tool()])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
@@ -2257,6 +2310,7 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
     from app.ui.window import MainWindow
     import app.ui.common
 
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: [_tool()])
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
 

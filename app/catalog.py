@@ -54,6 +54,24 @@ def _valid(tools) -> bool:
     return isinstance(tools, list) and bool(tools) and all(_valid_tool(t) for t in tools)
 
 
+def cached_catalog() -> list[dict]:
+    """Catalog from disk only, no network: cached fetch if valid, else bundled.
+
+    The single source of truth for the offline fallback chain — load_catalog's tail
+    and the instant-startup seed both come through here."""
+    if CACHE_FILE.exists():
+        try:
+            cached = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            cached = None
+        if _valid(cached):
+            return cached
+    return [
+        json.loads(f.read_text(encoding="utf-8"))
+        for f in sorted(_bundled_tools_dir().glob("*.json"))
+    ]
+
+
 def load_catalog() -> list[dict]:
     """Newest catalog we can get: remote > cached > bundled."""
     try:
@@ -70,14 +88,4 @@ def load_catalog() -> list[dict]:
         return tools
     except (requests.RequestException, ValueError):
         pass
-    if CACHE_FILE.exists():
-        try:
-            cached = json.loads(CACHE_FILE.read_text(encoding="utf-8"))
-        except (ValueError, OSError):
-            cached = None
-        if _valid(cached):
-            return cached
-    return [
-        json.loads(f.read_text(encoding="utf-8"))
-        for f in sorted(_bundled_tools_dir().glob("*.json"))
-    ]
+    return cached_catalog()
