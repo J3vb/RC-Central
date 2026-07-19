@@ -678,6 +678,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     win.gear_tab._recompute()
     assert win.gear_tab.fdr_out.text() not in ("", "—")
     assert win.garage_tab.list.count() == 0  # empty garage dir
+    assert not win.garage_tab.empty_hint.isHidden()  # empty garage dir
 
     # picking a car in the Workshop header seeds the calculator and persists the id
     car = garage.new_car("Linked")
@@ -823,6 +824,7 @@ def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
     tab._on_save()
 
     assert tab.list.count() == 1
+    assert tab.empty_hint.isHidden()  # a car exists now
     cars = garage.list_cars()
     assert len(cars) == 1 and cars[0]["name"] == "Test Rig"
     # the form no longer edits gearing; Save must leave the default block intact
@@ -1787,6 +1789,7 @@ def test_gear_tab_follows_active_car_and_preserves_tweaks(monkeypatch, tmp_path)
     tab = GearTab()
     assert tab.pinion.value() == 30  # seeded from the active car at construction
     assert tab.save_btn.isEnabled()
+    assert tab.hint.isHidden()  # a car is active
 
     tab.pinion.setValue(33)  # a what-if tweak
     tab._load_active_car()  # simulates returning to the sub-tab
@@ -1797,6 +1800,7 @@ def test_gear_tab_follows_active_car_and_preserves_tweaks(monkeypatch, tmp_path)
     tab._load_active_car()
     assert not tab.save_btn.isEnabled()
     assert not tab.save_preset_btn.isEnabled()
+    assert not tab.hint.isHidden()  # no car active
 
 
 def test_gear_tab_solve_buttons_fill_pinion(monkeypatch, tmp_path):

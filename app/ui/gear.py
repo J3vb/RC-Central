@@ -105,6 +105,8 @@ class GearTab(QWidget):
         form.addRow("Top speed (km/h)", self.kmh_out)
         form.addRow("Top speed (mph)", self.mph_out)
 
+        self.hint = QLabel("Create or select a car in the Garage to save gearing and presets.")
+
         # Named gearing presets for the active car (moved here from the Garage form
         # with the gearing dedupe). activated fires only on user picks, never on
         # programmatic repopulation in _refresh_presets.
@@ -136,6 +138,7 @@ class GearTab(QWidget):
 
         layout = QVBoxLayout(self)
         layout.addLayout(form)
+        layout.addWidget(self.hint)
         layout.addLayout(preset_row)
         layout.addLayout(btn_row)
         layout.addWidget(self.chart, 1)
@@ -156,6 +159,7 @@ class GearTab(QWidget):
         car = garage.load_car(car_id) if car_id else None
         self._active_id = car["id"] if car else None
         self.save_btn.setEnabled(self._active_id is not None)
+        self.hint.setVisible(self._active_id is None)
         if car and (force or self._active_id != self._seeded_id):
             self.load_from_car(car)
         self._seeded_id = self._active_id

@@ -111,6 +111,7 @@ class GarageTab(QWidget):
         self.search.textChanged.connect(self._apply_filter)
         self.list = QListWidget()
         self.list.currentItemChanged.connect(self._on_select)
+        self.empty_hint = QLabel("No cars yet — click New to add your first car.")
         new_btn = QPushButton("New")
         new_btn.clicked.connect(self._on_new)
         import_btn = QPushButton("Import…")
@@ -140,6 +141,7 @@ class GarageTab(QWidget):
         left = QVBoxLayout()
         left.addWidget(self.search)
         left.addWidget(self.list)
+        left.addWidget(self.empty_hint)
         left.addLayout(left_buttons)
         left.addLayout(backup_row)
 
@@ -220,6 +222,7 @@ class GarageTab(QWidget):
             self.list.addItem(item)
         self.list.blockSignals(False)
         self.compare_btn.setEnabled(len(self._cars) >= 2)  # needs two cars to compare
+        self.empty_hint.setVisible(not self._cars)
         self._apply_filter()
 
     _SEARCH_FIELDS = ("name", "chassis", "motor", "esc", "servo", "tires")
