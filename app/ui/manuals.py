@@ -42,11 +42,44 @@ class ManualsTab(_DownloadTab):
     def __init__(self, tools: list[dict] | None = None):
         super().__init__()
         tools = catalog.load_catalog() if tools is None else tools
+        self._active: dict[int, "threading.Event"] = {}  # row -> cancel event; in == downloading
+        installer.clear_partial_manuals()  # drop orphaned .part temps from a prior killed run
+
+        self.table = QTableWidget(0, len(self.COLS))
+        self.table.setHorizontalHeaderLabels(self.COLS)
+        self.table.verticalHeader().hide()
+        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+
+        # Live filter: a search box and a category dropdown, both feeding one pass.
+        self.search = QLineEdit()
+        self.search.setPlaceholderText("Search manuals…")
+        self.search.setClearButtonEnabled(True)
+        self.search.textChanged.connect(self._apply_filter)
+        self.category_filter = QComboBox()  # populated per-catalog in set_catalog
+        self.category_filter.currentIndexChanged.connect(self._apply_filter)
+        controls = QHBoxLayout()
+        controls.addWidget(self.search, 1)
+        controls.addWidget(self.category_filter)
+
+        layout = QVBoxLayout(self)
+        layout.addLayout(controls)
+        layout.addWidget(self.table)
+
+        # Per-row menu actions that only make sense once a PDF is downloaded;
+        # _refresh_row toggles their enabled state from the cache state.
+        self._pdf_actions: dict[int, tuple] = {}
+        # stretch the manual-name column so the trailing button columns stay compact
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.set_catalog(tools)
+
+    def set_catalog(self, tools: list[dict]) -> None:
+        """(Re)populate the table from a catalog; safe to call again for a background
+        refresh. Declines while any download is in flight (its row closures hold indexes)."""
+        if self._active:
+            return
         # Flatten to one entry per link; a tool with no links has no manual to list
         # (its vendor site stays reachable from that vendor's other rows).
         self._manuals: list[dict] = []
-        self._active: dict[int, "threading.Event"] = {}  # row -> cancel event; in == downloading
-        installer.clear_partial_manuals()  # drop orphaned .part temps from a prior killed run
         for tool in sorted(tools, key=lambda t: (t.get("category", ""), t["name"].lower())):
             links = tool.get("links", [])
             if not links and not _is_software(tool) and tool.get("homepage"):
@@ -69,33 +102,17 @@ class ManualsTab(_DownloadTab):
                         "description": tool.get("description", ""),
                     }
                 )
+        self.table.setRowCount(len(self._manuals))
 
-        self.table = QTableWidget(len(self._manuals), len(self.COLS))
-        self.table.setHorizontalHeaderLabels(self.COLS)
-        self.table.verticalHeader().hide()
-        self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-
-        # Live filter: a search box and a category dropdown, both feeding one pass.
-        self.search = QLineEdit()
-        self.search.setPlaceholderText("Search manuals…")
-        self.search.setClearButtonEnabled(True)
-        self.search.textChanged.connect(self._apply_filter)
-        self.category_filter = QComboBox()
+        self.category_filter.blockSignals(True)
+        self.category_filter.clear()
         self.category_filter.addItem("All categories", None)
         for cat in sorted({m["category"] for m in self._manuals if m["category"]}):
             self.category_filter.addItem(_CATEGORY_LABELS.get(cat, cat.title()), cat)
-        self.category_filter.currentIndexChanged.connect(self._apply_filter)
-        controls = QHBoxLayout()
-        controls.addWidget(self.search, 1)
-        controls.addWidget(self.category_filter)
+        self.category_filter.setCurrentIndex(0)
+        self.category_filter.blockSignals(False)
 
-        layout = QVBoxLayout(self)
-        layout.addLayout(controls)
-        layout.addWidget(self.table)
-
-        # Per-row menu actions that only make sense once a PDF is downloaded;
-        # _refresh_row toggles their enabled state from the cache state.
-        self._pdf_actions: dict[int, tuple] = {}
+        self._pdf_actions.clear()
         for row, manual in enumerate(self._manuals):
             name = QTableWidgetItem(manual["name"])
             name.setToolTip(f"{manual['tool_name']} — {manual['description']}".strip(" —"))
@@ -121,8 +138,7 @@ class ManualsTab(_DownloadTab):
             self.table.setCellWidget(row, 5, _link_button("Website", manual["homepage"]))
             self._refresh_row(row)
         self.table.resizeColumnsToContents()
-        # stretch the manual-name column so the trailing button columns stay compact
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._apply_filter()  # re-apply any live search text against the new rows
 
     def _apply_filter(self) -> None:
         """Show only rows matching both the search text and the chosen category."""

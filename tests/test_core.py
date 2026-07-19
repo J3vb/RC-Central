@@ -869,6 +869,86 @@ def test_tools_tab_search_and_category_filter(monkeypatch):
     assert tab.table.isRowHidden(1)
 
 
+def test_tools_tab_set_catalog_repopulates(monkeypatch):
+    # set_catalog swaps the whole table to a new catalog; while an install is in
+    # flight (progress bar shown) it declines so live row closures stay valid.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app.ui.tools import ToolsTab
+
+    first = [_tool(id="a", name="Alpha", vendor="Acme", category="servo")]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: first)
+    _ = QApplication.instance() or QApplication([])
+    tab = ToolsTab()  # constructed directly so the test runs off Windows too
+    assert tab.table.rowCount() == 1
+    assert [t["id"] for t in tab.tools] == ["a"]
+
+    info_only = {  # no "download" -> filtered off the Tools tab by set_catalog
+        "id": "d", "name": "Info", "vendor": "Delta", "version": "n/a", "category": "gyro",
+    }
+    second = [
+        _tool(id="b", name="Beta", vendor="Bravo", category="esc"),
+        _tool(id="c", name="Gamma", vendor="Charlie", category="radio"),
+        info_only,
+    ]
+    tab.set_catalog(second)
+    assert tab.table.rowCount() == 2  # info-only "d" excluded
+    assert [t["id"] for t in tab.tools] == ["b", "c"]
+    assert tab.table.item(0, 0).text() == "Beta"
+    assert tab.update_summary.text() == ""  # nothing installed -> no update badge
+    # category combo rebuilt from the new catalog: "All categories" + its two categories
+    cats = [tab.category_filter.itemData(i) for i in range(tab.category_filter.count())]
+    assert cats == [None, "esc", "radio"]
+    assert tab.category_filter.currentIndex() == 0
+
+    # an install mid-flight (progress shown) makes the next set_catalog decline
+    tab.progress.show()
+    tab.set_catalog(first)
+    assert tab.table.rowCount() == 2  # unchanged: the swap was refused
+    assert [t["id"] for t in tab.tools] == ["b", "c"]
+
+
+def test_manuals_tab_set_catalog_repopulates(monkeypatch):
+    # set_catalog swaps the whole table to a new catalog; while a download is in
+    # flight (self._active non-empty) it declines so live row closures stay valid.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import threading
+
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app.ui.manuals import ManualsTab
+
+    first = [_tool(id="a", name="Alpha", category="servo",
+                   links=[{"name": "Alpha manual (PDF)", "url": "https://example.invalid/a.pdf"}])]
+    monkeypatch.setattr(catalog, "load_catalog", lambda: first)
+    _ = QApplication.instance() or QApplication([])
+    tab = ManualsTab()
+    assert tab.table.rowCount() == 1
+
+    second = [
+        _tool(id="b", name="Beta", vendor="Bravo", category="esc",
+              links=[{"name": "Beta support", "url": "https://example.invalid/b"}]),
+        _tool(id="c", name="Gamma", vendor="Charlie", category="radio",
+              links=[{"name": "Gamma manual (PDF)", "url": "https://example.invalid/c.pdf"}]),
+    ]
+    tab.set_catalog(second)
+    assert tab.table.rowCount() == 2
+    assert {tab.table.item(r, 0).text() for r in range(2)} == {"Beta support", "Gamma manual (PDF)"}
+    # category combo rebuilt from the new catalog: "All categories" + its two categories
+    cats = [tab.category_filter.itemData(i) for i in range(tab.category_filter.count())]
+    assert cats == [None, "esc", "radio"]
+    assert tab.category_filter.currentIndex() == 0
+
+    # a download mid-flight makes the next set_catalog decline
+    tab._active[0] = threading.Event()
+    tab.set_catalog(first)
+    assert tab.table.rowCount() == 2  # unchanged: the swap was refused
+    assert {tab.table.item(r, 0).text() for r in range(2)} == {"Beta support", "Gamma manual (PDF)"}
+
+
 def test_tools_tab_excludes_info_only_tools(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication

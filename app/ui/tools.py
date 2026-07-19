@@ -36,11 +36,8 @@ class ToolsTab(_DownloadTab):
     def __init__(self, tools: list[dict] | None = None):
         super().__init__()
         tools = catalog.load_catalog() if tools is None else tools
-        # Only installable tools belong here; info-only devices (no download) are
-        # reference-only and live on the Manuals tab via their manual links.
-        self.tools = [t for t in tools if _is_software(t)]
 
-        self.table = QTableWidget(len(self.tools), len(self.COLS))
+        self.table = QTableWidget(0, len(self.COLS))
         self.table.setHorizontalHeaderLabels(self.COLS)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -50,10 +47,7 @@ class ToolsTab(_DownloadTab):
         self.search.setPlaceholderText("Search tools…")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self._apply_filter)
-        self.category_filter = QComboBox()
-        self.category_filter.addItem("All categories", None)
-        for cat in sorted({t.get("category", "") for t in self.tools if t.get("category")}):
-            self.category_filter.addItem(_CATEGORY_LABELS.get(cat, cat.title()), cat)
+        self.category_filter = QComboBox()  # populated per-catalog in set_catalog
         self.category_filter.currentIndexChanged.connect(self._apply_filter)
         # Count of installed tools with a newer catalog version, kept in sync with
         # the per-row Update buttons (see _refresh_summary).
@@ -65,7 +59,7 @@ class ToolsTab(_DownloadTab):
 
         # ponytail: one shared progress bar; per-row bars if parallel installs matter
         self.progress = QProgressBar()
-        self.progress.hide()
+        self.progress.hide()  # hidden before set_catalog so its in-flight guard reads idle
 
         layout = QVBoxLayout(self)
         layout.addLayout(controls)
@@ -75,6 +69,30 @@ class ToolsTab(_DownloadTab):
         # Per-row menu actions that only make sense once a tool is installed;
         # _refresh_row toggles their enabled state from the install state.
         self._install_actions: dict[int, tuple] = {}
+        # stretch the tool-name column so the two trailing button columns stay compact
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self.set_catalog(tools)
+
+    def set_catalog(self, tools: list[dict]) -> None:
+        """(Re)populate the table from a catalog; safe to call again for a background
+        refresh. Declines while an install is mid-flight (see the guard below)."""
+        if not self.progress.isHidden():
+            # ponytail: stale-for-a-session beats repopulating under a live download
+            return
+        # Only installable tools belong here; info-only devices (no download) are
+        # reference-only and live on the Manuals tab via their manual links.
+        self.tools = [t for t in tools if _is_software(t)]
+        self.table.setRowCount(len(self.tools))
+
+        self.category_filter.blockSignals(True)
+        self.category_filter.clear()
+        self.category_filter.addItem("All categories", None)
+        for cat in sorted({t.get("category", "") for t in self.tools if t.get("category")}):
+            self.category_filter.addItem(_CATEGORY_LABELS.get(cat, cat.title()), cat)
+        self.category_filter.setCurrentIndex(0)
+        self.category_filter.blockSignals(False)
+
+        self._install_actions.clear()
         for row, tool in enumerate(self.tools):
             name = QTableWidgetItem(tool["name"])
             name.setToolTip(tool.get("description", ""))
@@ -117,8 +135,7 @@ class ToolsTab(_DownloadTab):
             self._refresh_row(row)
         self._refresh_summary()
         self.table.resizeColumnsToContents()
-        # stretch the tool-name column so the two trailing button columns stay compact
-        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._apply_filter()  # re-apply any live search text against the new rows
 
     def _apply_filter(self) -> None:
         """Show only rows matching both the search text and the chosen category."""
