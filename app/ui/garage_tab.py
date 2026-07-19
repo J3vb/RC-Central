@@ -5,6 +5,7 @@ import zipfile
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -26,14 +27,14 @@ from PySide6.QtWidgets import (
 )
 
 from app import backup, garage
-from app.ui.common import _show_status
+from app.ui.common import _ACCENT, _show_status
 
 
 class _CompareDialog(QDialog):
     """Read-only side-by-side of two cars' spec fields; differing rows highlighted.
 
-    Highlight uses yellow bg + black text so it stays readable in either theme
-    (a themed foreground could otherwise vanish on the yellow).
+    Highlight uses the app accent bg + white text so it stays readable on accent
+    in both themes.
     """
 
     def __init__(self, cars: list[dict], default_id: str | None, parent=None):
@@ -81,8 +82,8 @@ class _CompareDialog(QDialog):
             for col, text in ((1, va), (2, vb)):
                 item = QTableWidgetItem(text)
                 if differs:
-                    item.setBackground(Qt.GlobalColor.yellow)
-                    item.setForeground(Qt.GlobalColor.black)
+                    item.setBackground(QColor(_ACCENT))
+                    item.setForeground(QColor("white"))  # readable on accent in both themes
                 self.table.setItem(r, col, item)
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)

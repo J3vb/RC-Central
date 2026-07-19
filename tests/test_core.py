@@ -2224,17 +2224,27 @@ def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import garage
+    from app.ui.common import _ACCENT
     from app.ui.garage_tab import _CompareDialog
 
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    a = garage.save_car(garage.new_car("Alpha"))
+    alpha = garage.new_car("Alpha")
+    alpha["chassis"] = "TC-01"  # Beta lacks this, so the Chassis row differs
+    a = garage.save_car(alpha)
     garage.save_car(garage.new_car("Beta"))
 
     # constructing must fully render the table (no _render before self.table exists)
     dlg = _CompareDialog(garage.list_cars(), a["id"])
     assert dlg.table.rowCount() > 0
     assert dlg.combo_a.currentData() != dlg.combo_b.currentData()  # two distinct cars
+
+    # a differing row highlights with the app accent, not the old hardcoded yellow
+    rows = [dlg.table.item(r, 0).text() for r in range(dlg.table.rowCount())]
+    chassis_row = rows.index("Chassis")
+    item = dlg.table.item(chassis_row, 1)
+    assert item.background().color().name() == _ACCENT
+    assert item.foreground().color().name() == "#ffffff"
 
 
 def test_manuals_tab_shows_homepage_only_info_device(monkeypatch):
