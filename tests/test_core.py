@@ -1912,6 +1912,28 @@ def test_settings_tab_toggles_persist_and_apply(monkeypatch):
     assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is True
 
 
+def test_settings_about_button(monkeypatch):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import __version__
+    from app.ui.settings import SettingsTab
+
+    QApplication.instance() or QApplication([])
+    captured = {}
+    monkeypatch.setattr(
+        QMessageBox, "about", lambda *a, **k: captured.update(args=a)
+    )  # modal — must be patched or offscreen hangs
+
+    tab = SettingsTab()
+    tab.about_btn.click()
+
+    text = captured["args"][-1]
+    assert __version__ in text
+    assert "MIT" in text
+    assert "github.com/J3vb/RC-Central" in text
+
+
 def test_workshop_active_car_sync(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings

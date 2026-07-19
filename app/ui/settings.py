@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app import paths, updater
+from app import __version__, paths, updater
 from app.ui.common import (
     _DARK_MODE_DEFAULT, _DARK_MODE_KEY, _show_status, _STARTUP_CHECK_DEFAULT, _STARTUP_CHECK_KEY,
     _settings,
@@ -49,12 +49,16 @@ class SettingsTab(QWidget):
         open_folder_btn = QPushButton("Open data folder")
         open_folder_btn.clicked.connect(self._open_data_folder)
 
+        self.about_btn = QPushButton("About RC Central…")
+        self.about_btn.clicked.connect(self._about)
+
         prefs = QWidget()
         prefs_layout = QVBoxLayout(prefs)
         prefs_layout.addWidget(self.dark_toggle)
         prefs_layout.addWidget(self.update_toggle)
         prefs_layout.addWidget(self.check_btn)
         prefs_layout.addWidget(open_folder_btn)
+        prefs_layout.addWidget(self.about_btn)
         prefs_layout.addStretch(1)
 
         self.log = LogTab()
@@ -111,3 +115,11 @@ class SettingsTab(QWidget):
         folder = paths.data_dir()
         folder.mkdir(parents=True, exist_ok=True)  # may not exist on a fresh run
         QDesktopServices.openUrl(QUrl.fromLocalFile(str(folder)))
+
+    def _about(self) -> None:
+        QMessageBox.about(
+            self, "About RC Central",
+            f"<b>RC Central</b> v{__version__}<br>"
+            "One app to install, update, and launch RC drift setup tools.<br><br>"
+            'MIT licensed — <a href="https://github.com/J3vb/RC-Central">github.com/J3vb/RC-Central</a>',
+        )
