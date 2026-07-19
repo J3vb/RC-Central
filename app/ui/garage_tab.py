@@ -365,10 +365,16 @@ class GarageTab(QWidget):
     def _on_delete(self) -> None:
         if not self.current_id:
             return
+        name = self.name.text().strip() or "this car"
+        if QMessageBox.question(
+            self, "Delete", f"Delete '{name}' and everything saved with it (specs, gearing, presets, log)?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
         garage.delete_car(self.current_id)
         self._blank_form()
         self._reload_list()
         self.car_selected.emit(None)
+        _show_status(self, f"Deleted {name}", 5000)
 
     def _on_compare(self) -> None:
         if len(self._cars) >= 2:

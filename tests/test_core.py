@@ -1893,6 +1893,13 @@ def test_workshop_active_car_sync(monkeypatch, tmp_path):
     assert tab.car_combo.currentData() == b_id
 
     # deleting the active car in the Garage falls back to "— no car —"
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        lambda *a, **k: QMessageBox.StandardButton.Yes,
+    )
     tab.garage._on_delete()
     assert tab.car_combo.currentData() is None
     assert (app.ui.common._settings().value(app.ui.common._ACTIVE_CAR_KEY) or "") == ""
@@ -2175,6 +2182,41 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
 
     # the form was re-filled from disk, not left showing the stale edit
     assert tab.chassis.text() == "Yokomo"
+
+
+def test_garage_delete_requires_confirmation(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog, garage
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Alpha")
+    tab._on_save()
+    assert tab.current_id is not None
+
+    # declining the confirmation leaves the car untouched
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No
+    )
+    tab._on_delete()
+    assert len(garage.list_cars()) == 1
+    assert tab.current_id is not None
+
+    # accepting it deletes the car and blanks the form
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    tab._on_delete()
+    assert garage.list_cars() == []
+    assert tab.name.text() == ""
+    assert tab.current_id is None
 
 
 def test_compare_dialog_opens_and_populates(monkeypatch, tmp_path):
