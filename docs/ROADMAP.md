@@ -16,7 +16,7 @@ automated.
       (spec: `docs/superpowers/specs/2026-07-17-workshop-merge-design.md`)
 - [x] Inline the gear-ratio chart into Gearing and move the pinion sweep to a
       dialog — landed on `dev` 2026-07-17
-- [ ] Editable FDR reverse-solve (target FDR → nearest whole tooth) — in progress
+- [x] Editable FDR reverse-solve (target FDR → nearest whole tooth) — landed on dev 2026-07-17, shipped in v0.7.1
 
 ### Earlier — v0.6.x wrap-up
 
@@ -63,7 +63,7 @@ in the two README/CI items above).
 a CA identity check (SignPath's form, Azure's US/Canada-only validation, or a
 paid cert) for a marginal fresh-install-warning benefit, while the self-managed
 update signing above already protects existing users from a malicious update.
-Dropped 2026-07-17; `docs/SIGNING.md` is now orphaned.*
+Dropped 2026-07-17; `docs/SIGNING.md` is retained (annotated) with the parked application answers.*
 
 ## v0.8 — "Growth" (catalog & community)
 

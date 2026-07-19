@@ -3,7 +3,7 @@
 Status: **deferred 2026-07-17** — the maintainer decided to wait until the
 project is more widely used before applying (a week-old project scores poorly
 on the application's "Reputation" question). Everything below is ready for
-when that day comes.
+when that day comes. The v0.7 roadmap has since dropped public-trust signing from scope entirely (docs/ROADMAP.md); this file is retained solely as the parked application answers.
 
 ## Applying
 
