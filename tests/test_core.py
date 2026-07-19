@@ -625,6 +625,7 @@ def test_ui_smoke(monkeypatch):
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
     assert win.table.rowCount() == 1
     button = win.table.cellWidget(0, 4)
     assert isinstance(button, QToolButton)
@@ -655,7 +656,8 @@ def test_mainwindow_loads_catalog_once(monkeypatch, tmp_path):
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    MainWindow()
+    win = MainWindow()  # bind it: the worker's target-lambda holds the only other ref,
+    win._catalog_thread.join(5)  # so join before teardown or the final decref runs off-thread
     assert calls["n"] == 1
 
 
@@ -674,14 +676,44 @@ def test_mainwindow_background_refresh_repopulates(monkeypatch, tmp_path):
     monkeypatch.setattr(catalog, "load_catalog", lambda: fresh)
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
-    win = MainWindow()
+    win = MainWindow()  # win must stay bound for the test's duration (shiboken trap)
 
     assert win.manuals_tab.table.rowCount() == 1  # one link, from the cached seed
     win._catalog_thread.join(5)  # wait for the background fetch to emit
     QApplication.processEvents()  # deliver the queued catalog_ready signal
     assert win.manuals_tab.table.rowCount() == 2  # background refresh added the 2nd link
     assert "Catalog updated" in win.statusBar().currentMessage()
-    assert win is not None  # keep referenced to the end (shiboken trap)
+
+
+def test_mainwindow_background_refresh_declined_under_modal(monkeypatch, tmp_path):
+    # A queued catalog_ready can be delivered inside the nested event loop of an open
+    # dialog/menu; rebuilding the tables there deletes widgets in use. _refresh_catalog
+    # must decline and leave _catalog untouched while a modal/popup is open.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QWidget
+
+    from app import catalog, garage
+    from app.ui.window import MainWindow
+
+    link = {"name": "M1", "url": "https://example.invalid/1.pdf"}
+    seeded = [_tool(links=[link])]
+    fresh = [_tool(links=[link, {"name": "M2", "url": "https://example.invalid/2.pdf"}])]
+    monkeypatch.setattr(catalog, "cached_catalog", lambda: seeded)
+    monkeypatch.setattr(catalog, "load_catalog", lambda: fresh)
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    win = MainWindow()  # win must stay bound for the test's duration (shiboken trap)
+    win._catalog_thread.join(5)  # let the background fetch queue its catalog_ready
+
+    # a real widget stands in for an open dialog; activeModalWidget is a staticmethod
+    modal = QWidget()
+    monkeypatch.setattr(QApplication, "activeModalWidget", staticmethod(lambda: modal))
+    QApplication.processEvents()  # deliver the queued catalog_ready -> _refresh_catalog
+
+    assert win.manuals_tab.table.rowCount() == 1  # still the cached seed, refresh declined
+    if win.tools_tab is not None:
+        assert win.tools_tab.table.rowCount() == 1
+    assert win._catalog == seeded  # state left consistent; the one-shot refresh is dropped
 
 
 def test_tabs_smoke(monkeypatch, tmp_path):
@@ -705,6 +737,7 @@ def test_tabs_smoke(monkeypatch, tmp_path):
     )
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
     assert win.minimumWidth() >= 640
 
     # The Tools tab is Windows-only; the rest of the tabs are cross-platform.
@@ -754,6 +787,7 @@ def test_update_banner_shows_and_consent_flow(monkeypatch, tmp_path):
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
 
     # hidden until a check reports a staged update (isHidden reflects the local
     # flag; isVisible would need the top-level window shown, which offscreen isn't)
@@ -871,6 +905,7 @@ def test_garage_tab_save_and_reload(monkeypatch, tmp_path):
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
 
     tab = win.garage_tab
     tab.name.setText("Test Rig")
@@ -1243,7 +1278,7 @@ def test_manuals_tab_finished_cancel_resets_and_error_warns(monkeypatch, caplog)
     monkeypatch.setattr(
         QMessageBox,
         "warning",
-        lambda *a, **k: warned.update(n=warned["n"] + 1, args=a) or None,
+        lambda *a, **k: warned.update(n=warned["n"] + 1, args=a),
     )
 
     # cancel: no error, nothing cached -> row resets to "Download", NO dialog
@@ -1420,6 +1455,7 @@ def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
     tab = win.garage_tab
 
     # two cars, distinguished by chassis
@@ -2155,6 +2191,32 @@ def test_tools_tab_uninstall_and_action_enablement(monkeypatch, sandbox):
     assert not open_action.isEnabled() and not uninstall_action.isEnabled()
 
 
+def test_tools_tab_uninstall_survives_catalog_shrink_mid_modal(monkeypatch, sandbox):
+    # A background catalog refresh can rebuild self.tools while the uninstall confirmation
+    # is open; the captured row then points past the shrunk list. _uninstall must re-resolve
+    # by tool id and not IndexError on the stale row.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app.ui.tools import ToolsTab
+
+    _ = QApplication.instance() or QApplication([])
+    tab = ToolsTab([_tool(), _tool(id="other-tool", name="Other")])
+    installer.install(_tool(id="other-tool", name="Other"))
+    tab._refresh_row(1)  # row 1 now shows the installed "other-tool"
+
+    # confirming the uninstall ALSO shrinks the catalog to just fake-tool, exactly as a
+    # background refresh landing in the modal's nested loop would — row 1 goes out of range
+    def shrink_then_yes(*a, **k):
+        tab.set_catalog([_tool()])
+        return QMessageBox.StandardButton.Yes
+
+    monkeypatch.setattr(QMessageBox, "question", shrink_then_yes)
+    tab._uninstall(1)  # must not raise despite the now-stale row 1
+    assert installer.get_state("other-tool") is None  # the uninstall still ran
+    assert len(tab.tools) == 1  # table rebuilt to the shrunk catalog
+
+
 def test_tools_tab_update_summary_badge(monkeypatch, sandbox):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -2219,7 +2281,7 @@ def test_tools_tab_install_finished_error_warns(monkeypatch, sandbox, caplog):
     monkeypatch.setattr(
         QMessageBox,
         "warning",
-        lambda *a, **k: warned.update(n=warned["n"] + 1, args=a) or None,
+        lambda *a, **k: warned.update(n=warned["n"] + 1, args=a),
     )
     tab.table.cellWidget(0, 4).setEnabled(False)  # _install disabled it before the thread
     with caplog.at_level(logging.WARNING):
@@ -2327,6 +2389,7 @@ def test_mainwindow_restores_clamped_tab_and_closeevent(monkeypatch, tmp_path):
 
     _ = QApplication.instance() or QApplication([])
     win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
     assert win.tabs.currentIndex() == win.tabs.count() - 1  # clamped, not 99
 
     win.close()  # closeEvent persists geometry + tab and must not raise
@@ -2412,11 +2475,10 @@ def test_garage_delete_requires_confirmation(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.garage_tab import GarageTab
     from PySide6.QtWidgets import QMessageBox
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()

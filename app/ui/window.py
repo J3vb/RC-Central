@@ -116,6 +116,14 @@ class MainWindow(QMainWindow):
     def _refresh_catalog(self, fresh: list) -> None:
         if fresh == self._catalog:
             return  # remote unreachable or unchanged — keep what's shown
+        # ponytail: a queued catalog_ready can land inside the nested event loop of an
+        # open dialog, native file picker, or per-row menu; rebuilding the Tools table
+        # there deletes widgets the loop is still driving. Skip the one-shot refresh
+        # rather than rebuild under it — stale-for-a-session accepted, same trade-off as
+        # set_catalog's in-flight guards. Leave self._catalog untouched so state stays
+        # consistent (the next launch re-fetches).
+        if QApplication.activeModalWidget() or QApplication.activePopupWidget():
+            return
         self._catalog = fresh
         if self.tools_tab is not None:
             self.tools_tab.set_catalog(fresh)

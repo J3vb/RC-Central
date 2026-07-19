@@ -214,7 +214,12 @@ class ToolsTab(_DownloadTab):
         except Exception as e:  # bad path etc. must reach the user, not a traceback
             QMessageBox.warning(self, "Couldn't add existing install", str(e))
             return
-        self._refresh_row(row)
+        # A background catalog refresh can rebuild self.tools during the dialogs above,
+        # so the captured row may be stale. Re-resolve by tool id; if the tool is gone,
+        # skip the row-scoped refresh (the summary/status still hold).
+        row = next((i for i, t in enumerate(self.tools) if t["id"] == tool["id"]), None)
+        if row is not None:
+            self._refresh_row(row)
         self._refresh_summary()
         self._status(f"Linked existing {tool['name']}", 5000)
 
@@ -238,7 +243,12 @@ class ToolsTab(_DownloadTab):
         except OSError as e:  # a locked file etc. must reach the user, not a traceback
             QMessageBox.warning(self, "Uninstall failed", str(e))
             return
-        self._refresh_row(row)
+        # The confirmation dialog above can outlive the row: a background catalog refresh
+        # may rebuild self.tools. The uninstall already ran, so re-resolve by tool id and
+        # only skip the row-scoped refresh if the tool is gone; summary/status still hold.
+        row = next((i for i, t in enumerate(self.tools) if t["id"] == tool["id"]), None)
+        if row is not None:
+            self._refresh_row(row)
         self._refresh_summary()
         self._status(f"Uninstalled {tool['name']}", 5000)
 
