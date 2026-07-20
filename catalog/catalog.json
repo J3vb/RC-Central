@@ -567,6 +567,57 @@
     "source_verified": "2026-07-20"
   },
   {
+    "id": "lrp-firmware-update-tool",
+    "name": "LRP Firmware Update Tool",
+    "vendor": "LRP",
+    "category": "esc",
+    "homepage": "https://www.lrp.cc/en/service/software-updates/",
+    "description": "Update firmware on LRP Flow, iX8 and Spin ESCs over the LRP USB Bridge V3.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.2.0",
+    "download": {
+      "url": "https://www.lrp.cc/fileadmin/product_downloads/firmware/LRP%20Firmware%20Update%20Tool%202.2.0%20Win.zip",
+      "archive": "zip",
+      "sha256": "30775da0a4377829aa66cfa920e7c3b2f5fdee81a664aa02f11a2c2f8fdd5078"
+    },
+    "install": {
+      "setup_relative_path": "LRP Firmware Update Tool 2.2.0 Win Setup.exe",
+      "setup_args": [
+        "/VERYSILENT",
+        "/SUPPRESSMSGBOXES",
+        "/NORESTART",
+        "/NOICONS",
+        "/DIR={dest}"
+      ],
+      "exe_relative_path": "lrpupdater.exe",
+      "portable": false,
+      "needs_admin": true
+    },
+    "version_check": {
+      "url": "https://www.lrp.cc/en/service/software-updates/",
+      "pattern": "Firmware Update Tool (\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "USB Bridge V3 manual (EN PDF)",
+        "url": "https://www.lrp.cc/fileadmin/product_downloads/instructions_en/500904.pdf"
+      },
+      {
+        "name": "LRP software updates page",
+        "url": "https://www.lrp.cc/en/service/software-updates/"
+      },
+      {
+        "name": "Flow X TC-spec ESC manual (EN PDF)",
+        "url": "https://www.lrp.cc/fileadmin/product_downloads/instructions_en/500004.pdf"
+      }
+    ],
+    "notes": "Zip wraps an Inno Setup installer; RC Central runs it silently into the tool dir. Verified end-to-end 2026-07-20: /DIR={dest} is honoured and nothing lands outside the tool dir. exe_relative_path MUST stay pinned - the installed app is lrpupdater.exe, and EVERY exe in the finished directory is rejected by _EXE_SKIP ('update', 'setup', 'unins'), so the fallback scan finds nothing and install fails with ExeNotFound if the pin is dropped. Requires the LRP USB Bridge V3 (part 500904). Flow X TC-spec/StockSpec are 1/10 on-road sensored ESCs; LRP is not a drift default, so this sits at the edge of the catalog's scope. Version is in the URL and rots on the next release.",
+    "source_verified": "2026-07-20"
+  },
+  {
     "id": "mst-drift-chassis",
     "name": "RMX / FXX Drift Chassis",
     "vendor": "MST",
@@ -676,6 +727,50 @@
       }
     ],
     "notes": "Reference card: a chassis kit, not software. Overdose makes no programmable electronics, so there is nothing to install. Manuals are Japanese but are diagram-driven exploded views, and large (8-24 MB). The manufacturer is Weld Techniques Factory at weld-jp.com - overdose.co.jp does not resolve and overdoserc.com is an unrelated parts shop. Their index page emits http:// links; the https forms all work and are used here.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "powerhd-usb-link",
+    "name": "PowerHD USB-Link",
+    "vendor": "Power HD",
+    "category": "servo",
+    "homepage": "https://www.chd.hk/newsdetail.aspx?id=135",
+    "description": "Set centre point, endpoints and PWM band on Power HD programmable servos via the PG-CB63 program box.",
+    "os": [
+      "windows"
+    ],
+    "version": "1.3",
+    "download": {
+      "url": "https://www.chd.hk/UploadFiles/news/PowerHD%20USB-Link%20V1.3.rar",
+      "archive": "rar",
+      "sha256": "63dbfb51c5abb447590c3c0680fa1e7bbaac4b7cf5c65edaaed87d65925ed1d8"
+    },
+    "install": {
+      "setup_relative_path": "PowerHD USB-Link V1.3/PowerHDSetup.exe",
+      "setup_args": [
+        "/S",
+        "/D={dest}"
+      ],
+      "exe_relative_path": "PowerHD.exe",
+      "portable": false,
+      "needs_admin": true
+    },
+    "version_check": {
+      "url": "https://www.chd.hk/newsdetail.aspx?id=135",
+      "pattern": "USB-Link\\s*V(\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "PG-CB63 program box manual (PDF)",
+        "url": "https://www.chd.hk/UploadFiles/Att/2026031015404659.pdf"
+      },
+      {
+        "name": "Power HD downloads",
+        "url": "https://www.chd.hk/downloads.aspx"
+      }
+    ],
+    "notes": "Ships as a .rar (unpacked with Windows' bundled bsdtar) wrapping an NSIS installer whose manifest is requireAdministrator, so installing raises a UAC prompt; RC Central retries elevated. Verified end-to-end 2026-07-20: the installer honours /D={dest} and stays inside the tool dir. exe_relative_path MUST stay pinned - the installed app is PowerHD.exe, but the folder also holds PowerHDSetup.exe, uninst.exe, vcredist2013_x86.exe and two CP210xVCPInstaller exes, and the single-exe fallback scan only happens to work because _EXE_SKIP drops all of them. The bundled CP2102 USB driver installs itself; Windows 10/11 also pulls that bridge from Windows Update, so no drivers[] entry. The manufacturer is HuiDa RC at chd.hk - powerhd.com is a parked stub with a mismatched cert. The download is linked only from this 2021 news post, though the archive's contents are dated 2024-10; both the version and a literal space are in the URL, so it rots on the next release.",
     "source_verified": "2026-07-20"
   },
   {

@@ -1,0 +1,34 @@
+{
+    "id": "lrp-firmware-update-tool",
+    "name": "LRP Firmware Update Tool",
+    "vendor": "LRP",
+    "category": "esc",
+    "homepage": "https://www.lrp.cc/en/service/software-updates/",
+    "description": "Update firmware on LRP Flow, iX8 and Spin ESCs over the LRP USB Bridge V3.",
+    "os": ["windows"],
+    "version": "2.2.0",
+    "download": {
+        "url": "https://www.lrp.cc/fileadmin/product_downloads/firmware/LRP%20Firmware%20Update%20Tool%202.2.0%20Win.zip",
+        "archive": "zip",
+        "sha256": "30775da0a4377829aa66cfa920e7c3b2f5fdee81a664aa02f11a2c2f8fdd5078"
+    },
+    "install": {
+        "setup_relative_path": "LRP Firmware Update Tool 2.2.0 Win Setup.exe",
+        "setup_args": ["/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/NOICONS", "/DIR={dest}"],
+        "exe_relative_path": "lrpupdater.exe",
+        "portable": false,
+        "needs_admin": true
+    },
+    "version_check": {
+        "url": "https://www.lrp.cc/en/service/software-updates/",
+        "pattern": "Firmware Update Tool (\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "USB Bridge V3 manual (EN PDF)", "url": "https://www.lrp.cc/fileadmin/product_downloads/instructions_en/500904.pdf"},
+        {"name": "LRP software updates page", "url": "https://www.lrp.cc/en/service/software-updates/"},
+        {"name": "Flow X TC-spec ESC manual (EN PDF)", "url": "https://www.lrp.cc/fileadmin/product_downloads/instructions_en/500004.pdf"}
+    ],
+    "notes": "Zip wraps an Inno Setup installer; RC Central runs it silently into the tool dir. Verified end-to-end 2026-07-20: /DIR={dest} is honoured and nothing lands outside the tool dir. exe_relative_path MUST stay pinned - the installed app is lrpupdater.exe, and EVERY exe in the finished directory is rejected by _EXE_SKIP ('update', 'setup', 'unins'), so the fallback scan finds nothing and install fails with ExeNotFound if the pin is dropped. Requires the LRP USB Bridge V3 (part 500904). Flow X TC-spec/StockSpec are 1/10 on-road sensored ESCs; LRP is not a drift default, so this sits at the edge of the catalog's scope. Version is in the URL and rots on the next release.",
+    "source_verified": "2026-07-20"
+}
