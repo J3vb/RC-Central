@@ -17,6 +17,14 @@ automated.
 - [x] Inline the gear-ratio chart into Gearing and move the pinion sweep to a
       dialog — landed on `dev` 2026-07-17
 - [x] Editable FDR reverse-solve (target FDR → nearest whole tooth) — landed on dev 2026-07-17, shipped in v0.7.1
+- [x] UI polish round (11 tasks) — landed on `dev` 2026-07-19/20
+      (plan: `.superpowers/sdd/polish-plan.md`, local-only). Instant startup:
+      the window seeds from `catalog.cached_catalog()` (pure disk read) and a
+      daemon thread refreshes it in the background. Plus car-delete confirm,
+      accent-coloured compare diffs, a reported outcome for manual update
+      checks, plain-language download-failure dialogs, empty-state hints,
+      minimum window/dialog sizes, an About dialog, and Garage button
+      mnemonics.
 
 ### Earlier — v0.6.x wrap-up
 
