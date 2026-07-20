@@ -1544,11 +1544,11 @@ def test_garage_tab_search_and_maintenance_log(monkeypatch, tmp_path):
     # two cars, distinguished by chassis
     tab._on_new()
     tab.name.setText("Blue")
-    tab.chassis.setText("Yokomo")
+    tab.chassis.setCurrentText("Yokomo")
     tab._on_save()
     tab._on_new()
     tab.name.setText("Red")
-    tab.chassis.setText("MST")
+    tab.chassis.setCurrentText("MST")
     tab._on_save()
     assert tab.list.count() == 2
 
@@ -1608,6 +1608,42 @@ def test_garage_tab_duplicate(monkeypatch, tmp_path):
     assert tab.name.text() == "Original (copy)"
 
 
+def test_garage_tab_part_combos_keep_free_text_and_learn_it(monkeypatch, tmp_path):
+    # The part fields are suggestions, not a closed set: a value that is on no curated
+    # list must save verbatim, survive a reload, and then be offered back as a choice.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Scratch build")
+    tab.chassis.setCurrentText("One-off carbon tub")  # deliberately not in parts.CHASSIS
+    tab.esc.setCurrentText("Yokomo BL-RPX4")  # curated
+    tab._on_save()
+
+    saved = garage.list_cars()[0]
+    assert saved["chassis"] == "One-off carbon tub"
+    assert saved["esc"] == "Yokomo BL-RPX4"
+    # the rebuild that follows a save must not blank the form under the user
+    assert tab.chassis.currentText() == "One-off carbon tub"
+    # ...and the novel value is now a selectable option
+    assert "One-off carbon tub" in [
+        tab.chassis.itemText(i) for i in range(tab.chassis.count())
+    ]
+    # reopening the car refills from disk
+    tab._blank_form()
+    assert tab.chassis.currentText() == ""
+    tab._fill_form(saved)
+    assert tab.chassis.currentText() == "One-off carbon tub"
+
+
+
+
 def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
@@ -1622,7 +1658,7 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
 
     # fill a car and export it to JSON (dialog stubbed to a .json path)
     tab.name.setText("Exported Rig")
-    tab.chassis.setText("Yokomo")
+    tab.chassis.setCurrentText("Yokomo")
     out = tmp_path / "rig.json"
     monkeypatch.setattr(
         QFileDialog, "getSaveFileName", lambda *a, **k: (str(out), "JSON (*.json)")
@@ -2176,6 +2212,7 @@ def test_settings_about_button(monkeypatch):
     assert "github.com/J3vb/RC-Central" in text
 
 
+
 def test_workshop_active_car_sync(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtCore import QSettings
@@ -2526,10 +2563,10 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
 
     # save Alpha and open it, back it up, then make an unsaved local edit
     tab.name.setText("Alpha")
-    tab.chassis.setText("Yokomo")
+    tab.chassis.setCurrentText("Yokomo")
     tab._on_save()
     zip_path = backup.make_backup(tmp_path / "b.zip")
-    tab.chassis.setText("stale")  # edit that would clobber the restore on next Save
+    tab.chassis.setCurrentText("stale")  # edit that would clobber the restore on next Save
 
     monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(zip_path), ""))
     monkeypatch.setattr(
@@ -2539,7 +2576,7 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
     tab._on_restore()
 
     # the form was re-filled from disk, not left showing the stale edit
-    assert tab.chassis.text() == "Yokomo"
+    assert tab.chassis.currentText() == "Yokomo"
 
 
 def test_garage_delete_requires_confirmation(monkeypatch, tmp_path):

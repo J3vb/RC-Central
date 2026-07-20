@@ -26,8 +26,24 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app import backup, garage
+from app import backup, garage, parts
 from app.ui.common import _ACCENT, _show_status
+
+
+def _part_combo() -> QComboBox:
+    """An editable combo for a spec field: browse the known parts, or type your own.
+
+    NoInsert matters - an editable combo otherwise appends whatever is typed as a real
+    item on Enter, which would quietly grow a duplicate-riddled list that _refresh_
+    suggestions then rebuilds anyway. MatchContains lets "yd-2" find "Yokomo YD-2S".
+    """
+    combo = QComboBox()
+    combo.setEditable(True)
+    combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+    completer = combo.completer()
+    completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+    completer.setFilterMode(Qt.MatchFlag.MatchContains)
+    return combo
 
 
 class _CompareDialog(QDialog):
@@ -147,11 +163,20 @@ class GarageTab(QWidget):
         left.addLayout(backup_row)
 
         self.name = QLineEdit()
-        self.chassis = QLineEdit()
-        self.motor = QLineEdit()
-        self.esc = QLineEdit()
-        self.servo = QLineEdit()
-        self.tires = QLineEdit()
+        # Part fields are editable combos, never closed lists: the suggestions are a
+        # convenience and any value the user types is stored verbatim (see app/parts.py).
+        self.chassis = _part_combo()
+        self.motor = _part_combo()
+        self.esc = _part_combo()
+        self.servo = _part_combo()
+        self.tires = _part_combo()
+        self._part_fields = {
+            "chassis": self.chassis,
+            "motor": self.motor,
+            "esc": self.esc,
+            "servo": self.servo,
+            "tires": self.tires,
+        }
         self.notes = QPlainTextEdit()
 
         # Gearing (pinion/spur/…) is edited on the Gearing sub-tab, not here; the
@@ -224,7 +249,23 @@ class GarageTab(QWidget):
         self.list.blockSignals(False)
         self.compare_btn.setEnabled(len(self._cars) >= 2)  # needs two cars to compare
         self.empty_hint.setVisible(not self._cars)
+        self._refresh_suggestions()  # a car saved with a new part name offers it next time
         self._apply_filter()
+
+    def _refresh_suggestions(self) -> None:
+        """Repopulate the part combos from the curated seed plus the garage's own values.
+
+        clear() also wipes an editable combo's line edit, so whatever the user has typed
+        is captured and restored around the rebuild - otherwise saving a car would blank
+        the form fields underneath them.
+        """
+        for field, combo in self._part_fields.items():
+            typed = combo.currentText()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItems(parts.suggestions(field, self._cars))
+            combo.setCurrentText(typed)
+            combo.blockSignals(False)
 
     _SEARCH_FIELDS = ("name", "chassis", "motor", "esc", "servo", "tires")
 
@@ -245,11 +286,8 @@ class GarageTab(QWidget):
 
     def _fill_form(self, car: dict) -> None:
         self.name.setText(car.get("name", ""))
-        self.chassis.setText(car.get("chassis", ""))
-        self.motor.setText(car.get("motor", ""))
-        self.esc.setText(car.get("esc", ""))
-        self.servo.setText(car.get("servo", ""))
-        self.tires.setText(car.get("tires", ""))
+        for field, combo in self._part_fields.items():
+            combo.setCurrentText(car.get(field, ""))
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
@@ -275,11 +313,7 @@ class GarageTab(QWidget):
         car.update(
             {
                 "name": self.name.text().strip() or "Unnamed",
-                "chassis": self.chassis.text().strip(),
-                "motor": self.motor.text().strip(),
-                "esc": self.esc.text().strip(),
-                "servo": self.servo.text().strip(),
-                "tires": self.tires.text().strip(),
+                **{f: c.currentText().strip() for f, c in self._part_fields.items()},
                 "notes": self.notes.toPlainText(),
                 "log": self._current_log,  # the log is edited in-form before Save
             }
