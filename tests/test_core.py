@@ -1499,10 +1499,9 @@ def test_garage_tab_duplicate(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.garage_tab import GarageTab
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
@@ -1530,11 +1529,10 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.garage_tab import GarageTab
     from PySide6.QtWidgets import QFileDialog
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
@@ -1568,11 +1566,10 @@ def test_garage_tab_export_txt_writes_spec_sheet(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.garage_tab import GarageTab
     from PySide6.QtWidgets import QFileDialog
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
@@ -1590,11 +1587,10 @@ def test_garage_tab_import_bad_json_warns(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.garage_tab import GarageTab
     from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
@@ -1617,11 +1613,10 @@ def test_garage_tab_import_malformed_car_warns(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.garage_tab import GarageTab
     from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
@@ -1648,10 +1643,9 @@ def test_gear_sweep_dialog(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage, gearing
+    from app import garage, gearing
     from app.ui.gear import GearTab, _SweepDialog
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GearTab()
@@ -1683,10 +1677,9 @@ def test_gear_chart_panel(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.gear import GearTab
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GearTab()
@@ -1935,11 +1928,10 @@ def test_gear_tab_follows_active_car_and_preserves_tweaks(monkeypatch, tmp_path)
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.gear import GearTab
     import app.ui.common
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     ini = tmp_path / "settings.ini"
     monkeypatch.setattr(
@@ -1981,11 +1973,10 @@ def test_gear_tab_solve_buttons_fill_pinion(monkeypatch, tmp_path):
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage, gearing
+    from app import garage, gearing
     from app.ui.gear import GearTab
     import app.ui.common
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     ini = tmp_path / "settings.ini"
     monkeypatch.setattr(
@@ -2023,11 +2014,10 @@ def test_gear_tab_force_reseed_after_restore(monkeypatch, tmp_path):
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.gear import GearTab
     import app.ui.common
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     ini = tmp_path / "settings.ini"
     monkeypatch.setattr(
@@ -2402,12 +2392,11 @@ def test_gear_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     from PySide6.QtCore import QSettings
     from PySide6.QtWidgets import QApplication
 
-    from app import catalog, garage
+    from app import garage
     from app.ui.gear import GearTab
     from PySide6.QtWidgets import QInputDialog
     import app.ui.common
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     ini = tmp_path / "settings.ini"
     monkeypatch.setattr(
@@ -2444,11 +2433,10 @@ def test_garage_restore_refreshes_open_form(monkeypatch, tmp_path):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
-    from app import backup, catalog, garage
+    from app import backup, garage
     from app.ui.garage_tab import GarageTab
     from PySide6.QtWidgets import QFileDialog, QMessageBox
 
-    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool()])
     monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
     _ = QApplication.instance() or QApplication([])
     tab = GarageTab()
