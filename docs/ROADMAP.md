@@ -4,8 +4,8 @@ Where RC Central is headed, phase by phase. The ordering logic: **trust before
 growth before launch** — code signing and hash verification protect exactly the
 users a README refresh and community push would bring in.
 
-Executable plans live in `docs/superpowers/plans/`; this file is the big
-picture. Items marked **(human)** need a maintainer action that can't be
+Executable plans and design specs are kept locally, outside the repo; this file
+is the big picture. Items marked **(human)** need a maintainer action that can't be
 automated.
 
 ## Now — UI consolidation (post-0.7.0)
@@ -13,7 +13,7 @@ automated.
 - [x] Merge Garage, Gearing, and Tuning into one **Workshop** tab with a shared
       active-car header (tab bar 7 → 4), and fold the log viewer into Settings as
       a Preferences|Log pair — landed on `dev` 2026-07-17
-      (spec: `docs/superpowers/specs/2026-07-17-workshop-merge-design.md`)
+      (design spec kept locally)
 - [x] Inline the gear-ratio chart into Gearing and move the pinion sweep to a
       dialog — landed on `dev` 2026-07-17
 - [x] Editable FDR reverse-solve (target FDR → nearest whole tooth) — landed on dev 2026-07-17, shipped in v0.7.1
@@ -29,16 +29,15 @@ automated.
 ### Earlier — v0.6.x wrap-up
 
 - [x] Tuning page additions — landed on `dev` 2026-07-16
-      (plan: `docs/superpowers/plans/2026-07-15-tuning-page-additions.md`)
+      (plan kept locally)
 - [x] Refresh README — landed on `dev` 2026-07-17
 - [x] Bump GitHub Actions off deprecated Node 20 majors — landed on `dev`
       2026-07-17 (setup-uv pinned to v7: astral-sh publishes no v8 major alias)
 
 ## v0.7 — "Trust" (security & robustness, before promoting the app anywhere)
 
-The code-side work is fully planned in
-`docs/superpowers/plans/2026-07-16-v0.7-trust-hardening.md` (which also folds
-in the two README/CI items above).
+The code-side work is fully planned in a local trust-hardening plan (which also
+folds in the two README/CI items above).
 
 - [x] Publish a `.sha256` per release asset; verify it in
       `updater.fetch_update` before staging PENDING — landed on `dev`
