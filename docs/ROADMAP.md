@@ -8,7 +8,18 @@ Executable plans and design specs are kept locally, outside the repo; this file
 is the big picture. Items marked **(human)** need a maintainer action that can't be
 automated.
 
-## Now — UI consolidation (post-0.7.0)
+## Now
+
+- [ ] Prove the sig-check path on a live upgrade — install v0.7.1, let it
+      self-update to v0.7.2, and confirm the log records the signature check.
+      v0.7.2's `.sig` is verified against the pinned key (checked at release
+      time), but the in-app path that consumes it has never run against a real
+      release. This is the last unproven link in the update chain.
+- [ ] Watch for the first community reports after the r/rcdrift announcement —
+      vendor links that only fail on other people's networks, tools whose
+      installers behave differently on other Windows builds, catalog requests.
+
+## Shipped — UI consolidation & polish (v0.7.1–v0.7.2)
 
 - [x] Merge Garage, Gearing, and Tuning into one **Workshop** tab with a shared
       active-car header (tab bar 7 → 4), and fold the log viewer into Settings as
@@ -17,8 +28,8 @@ automated.
 - [x] Inline the gear-ratio chart into Gearing and move the pinion sweep to a
       dialog — landed on `dev` 2026-07-17
 - [x] Editable FDR reverse-solve (target FDR → nearest whole tooth) — landed on dev 2026-07-17, shipped in v0.7.1
-- [x] UI polish round (11 tasks) — landed on `dev` 2026-07-19/20
-      (plan: `.superpowers/sdd/polish-plan.md`, local-only). Instant startup:
+- [x] UI polish round (11 tasks) — landed on `dev` 2026-07-19/20, shipped in
+      v0.7.2 (plan kept locally). Instant startup:
       the window seeds from `catalog.cached_catalog()` (pure disk read) and a
       daemon thread refreshes it in the background. Plus car-delete confirm,
       accent-coloured compare diffs, a reported outcome for manual update
@@ -43,8 +54,9 @@ folds in the two README/CI items above).
       `updater.fetch_update` before staging PENDING — landed on `dev`
       2026-07-17; release-time proof done at v0.7.0: 6 assets published,
       `.sha256` files match GitHub's asset digests, and a live v0.6→v0.7
-      self-update swapped in a binary matching the release hash. The new
-      updater's own hash-check log line first fires on the next release.
+      self-update swapped in a binary matching the release hash. The updater's
+      own hash-check log line fired as expected one release later, on a live
+      v0.7.0→v0.7.1 upgrade ("update downloaded and verified").
 - [x] Pin vendor `download.sha256` for the high-blast-radius catalog entries
       (AGFRC, FlySky, Hobbywing, EdgeTX) — landed on `dev` 2026-07-17
 - [x] Traversal guard on `exe_relative_path`/`setup_relative_path` — landed on
@@ -62,8 +74,10 @@ folds in the two README/CI items above).
       Sparkle/WinSparkle. Landed on `dev` 2026-07-17; release-time proof done
       at v0.7.1: 9 assets published (3 platforms × binary/`.sha256`/`.sig`),
       windows-x64 `.sha256` matches, and its `.sig` verifies against the key
-      pinned in `app/updater.py`. The updater's own sig-check log line first
-      fires on the next release.
+      pinned in `app/updater.py` — re-confirmed at v0.7.2 (9 assets, all three
+      `.sha256` match GitHub's asset digests, windows-x64 `.sig` verifies).
+      The in-app sig-check has still only been proven statically; a live
+      v0.7.1→v0.7.2 upgrade would exercise it for real (tracked under **Now**).
 - [x] **(human)** EdgeTX elevated-install UAC smoke test on a real machine —
       passed 2026-07-20. Full chain from source: download → pinned sha256 →
       extract → `CreateProcess` WinError 740 → `ShellExecuteExW('runas')` → UAC
@@ -94,7 +108,12 @@ Dropped 2026-07-17; `docs/SIGNING.md` is retained (annotated) with the parked ap
 ## v1.0 — community launch
 
 - [ ] Update-signed, documented, hardened → announce to the RC drift community
-      (forums, Discord, r/rcdrift)
+      (forums, Discord, r/rcdrift). **Partly out of order:** the r/rcdrift post
+      went up 2026-07-20, ahead of the prerequisites. Update signing and
+      hardening are done; public-trust signing is deliberately out of scope, so
+      arriving users still meet a SmartScreen warning — README now has a
+      Download section explaining it and the `certutil` verification path.
+      Left unticked because the wider push (forums, Discord) hasn't happened.
 - [ ] Publish RC Central itself to winget/Scoop, so the launcher is
       installable the way it installs others
 - [ ] Split `catalog/` into its own repo at the first outside PR (settled
