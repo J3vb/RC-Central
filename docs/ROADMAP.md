@@ -65,7 +65,13 @@ in the two README/CI items above).
       windows-x64 `.sha256` matches, and its `.sig` verifies against the key
       pinned in `app/updater.py`. The updater's own sig-check log line first
       fires on the next release.
-- [ ] **(human)** EdgeTX elevated-install UAC smoke test on a real machine
+- [x] **(human)** EdgeTX elevated-install UAC smoke test on a real machine —
+      passed 2026-07-20. Full chain from source: download → pinned sha256 →
+      extract → `CreateProcess` WinError 740 → `ShellExecuteExW('runas')` → UAC
+      accepted → NSIS `/S /D=` silent install → exit 0 → state written →
+      `bin/companion.exe` resolved. The decline path (WinError 1223) was already
+      proven; both branches are now covered. Note the tested `/D=` path had no
+      spaces, so the verbatim-args fix is exercised but not stress-tested.
 
 *Out of scope: public-trust (Authenticode / SmartScreen) code signing. It needs
 a CA identity check (SignPath's form, Azure's US/Canada-only validation, or a
