@@ -25,8 +25,9 @@
     },
     "drivers": [],
     "links": [
-        {"name": "EdgeTX user manual (online)", "url": "https://edgetx.gitbook.io/edgetx-user-manual"}
+        {"name": "EdgeTX user manual (online)", "url": "https://manual.edgetx.org/"},
+        {"name": "Installing and updating EdgeTX (online)", "url": "https://manual.edgetx.org/installing-and-updating-edgetx"}
     ],
-    "notes": "Zip wraps an NSIS installer (companion-windows-<ver>.exe) run silently via /S /D={dest}. The installer manifest is requireAdministrator, so installing shows a UAC prompt (RC Central retries it elevated); the installed companion.exe is asInvoker and launches without one. Both the download URL and the inner installer filename embed the version, so both rot on the next release - bump them together.",
-    "source_verified": "2026-07-12"
+    "notes": "Zip wraps an NSIS installer (companion-windows-<ver>.exe) run silently via /S /D={dest}. The installer manifest is requireAdministrator, so installing shows a UAC prompt (RC Central retries it elevated); the installed companion.exe is asInvoker and launches without one. Both the download URL and the inner installer filename embed the version, so both rot on the next release - bump them together. The manual now lives at manual.edgetx.org; the old edgetx.gitbook.io host is only a 307 shim. EdgeTX has no Companion-specific manual yet (that section reads 'Coming Soon').",
+    "source_verified": "2026-07-20"
 }

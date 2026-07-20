@@ -1,0 +1,17 @@
+{
+    "id": "overdose-drift-chassis",
+    "name": "GALM / Divall Drift Chassis",
+    "vendor": "Overdose",
+    "category": "chassis",
+    "homepage": "https://weld-jp.com/overdose/instruction.htm",
+    "description": "Build manuals for Overdose's premium RWD drift chassis - GALM, GALM ver.2, Divall and XEX.",
+    "version": "n/a",
+    "links": [
+        {"name": "GALM ver.2 manual (JP PDF)", "url": "https://weld-jp.com/overdose/galm2/od_galm2_050620.pdf"},
+        {"name": "Divall manual (JP PDF)", "url": "https://weld-jp.com/overdose/divall/divall_instruction.pdf"},
+        {"name": "XEX manual (JP PDF)", "url": "https://weld-jp.com/overdose/xex/xex_instruction.pdf"},
+        {"name": "All Overdose instructions", "url": "https://weld-jp.com/overdose/instruction.htm"}
+    ],
+    "notes": "Reference card: a chassis kit, not software. Overdose makes no programmable electronics, so there is nothing to install. Manuals are Japanese but are diagram-driven exploded views, and large (8-24 MB). The manufacturer is Weld Techniques Factory at weld-jp.com - overdose.co.jp does not resolve and overdoserc.com is an unrelated parts shop. Their index page emits http:// links; the https forms all work and are used here.",
+    "source_verified": "2026-07-20"
+}

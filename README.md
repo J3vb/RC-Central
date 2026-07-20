@@ -15,11 +15,14 @@ tuning guide, and a car garage for tracking your setups.
 
 ![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](screenshots/tools-tab.png)
 
-**Status: beta.** The catalog covers 12 entries: 7 installable tools — servo
-programmers (Rêve D, AGFRC), ESC suites (Hobbywing, SkyRC, Acuvance), and
-radio tools (FlySky Noble, EdgeTX Companion) — plus 5 info cards for drift
-gear that has no PC software (Sanwa PGS, Futaba GYD550, Yokomo RPX, Rêve D
-REVOX, Onisiki).
+**Status: beta.** The catalog covers 32 entries: 17 installable tools — servo
+programmers (Rêve D, AGFRC, KO Propo, Yokomo), ESC suites (Hobbywing, SkyRC,
+Acuvance, G-Force, KO Propo), gyro (Futaba GYD560) and radio tools (FlySky,
+EdgeTX Companion, Sanwa, KO Propo EX-NEXT / EX-RR) — plus 15 reference cards
+for drift gear that has no PC software at all, covering servos and gyros
+(Sanwa PGS and SGS-02, Futaba GYD550, Yokomo DP-302, SRT D1S, Rêve D REVOX,
+Onisiki) and chassis build manuals (Yokomo YD-2/SD/RD, MST RMX/FXX, Overdose
+GALM/Divall, Rêve D RDX, Onisiki Kodama).
 
 ## How it works
 
@@ -35,8 +38,8 @@ Central tracks and launches your copy without re-downloading it.
 
 ## Beyond the launcher
 
-- **Manuals** — official manual and support links for every catalog tool,
-  cross-platform.
+- **Manuals** — official manual and support links for every catalog entry,
+  cross-platform, including chassis build guides for the common drift kits.
 - **Workshop** — Garage, Gearing, and Tuning in one tab, all sharing the active
   car picked in its header:
   - **Garage** — car profiles with specs, gearing, and a setup log; compare two

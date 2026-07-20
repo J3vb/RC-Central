@@ -9,6 +9,6 @@
     "links": [
         {"name": "Instruction manual (EN PDF)", "url": "https://futabausa.com/wp-content/uploads/manuals/GYD550_ENG_0306.pdf"}
     ],
-    "notes": "Hardware-only device: no PC app; firmware updates use the CIU-3 interface.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no PC app - confirmed absent from Futaba's software index in all three regions. Futaba has marked the GYD550 discontinued; its successor is the GYD560, which unlike this unit does ship a Windows updater (see futaba-gyd560).",
+    "source_verified": "2026-07-20"
 }

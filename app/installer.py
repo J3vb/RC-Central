@@ -3,6 +3,7 @@
 import ctypes
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tempfile
@@ -302,17 +303,77 @@ def _run_setup(setup: Path, args: list[str], timeout: int = 900) -> None:
 
 
 def _extract(archive: Path, dest: Path) -> None:
-    # both extractors sanitize member paths (no ../ escape)
+    # every extractor here sanitizes member paths (no ../ escape)
     if archive.suffix == ".7z":
         import py7zr  # deferred: slow import, only some vendors ship 7z
 
         with py7zr.SevenZipFile(archive) as z:
             z.extractall(dest)
+    elif archive.suffix == ".rar":
+        _extract_rar(archive, dest)
     else:
         import zipfile
 
         with zipfile.ZipFile(archive) as z:
             z.extractall(dest)
+    _unwrap_nested_zip(dest)
+
+
+def _bsdtar() -> Path:
+    """Windows' bundled libarchive CLI, which reads RAR and RAR5.
+
+    Shipped in System32 since Windows 10 1803, so a vendor who publishes .rar (Power HD,
+    FlySky's receiver updater) costs us no new dependency and no redistributed UnRAR
+    binary - which is the only reason RAR support is cheap enough to be worth having.
+    The Tools tab is Windows-only, so there is no cross-platform gap to cover.
+    """
+    return Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "tar.exe"
+
+
+def _extract_rar(archive: Path, dest: Path) -> None:
+    tar = _bsdtar()
+    if not tar.is_file():
+        raise RuntimeError(
+            "this tool ships as a .rar and Windows' built-in archive support "
+            f"({tar}) is missing, so it can't be unpacked automatically. "
+            "Download it from the vendor's site instead."
+        )
+    dest.mkdir(parents=True, exist_ok=True)
+    # NO -P: without it bsdtar refuses absolute paths and '..' members
+    # (SECURE_NODOTDOT), giving the same containment zipfile/py7zr provide.
+    try:
+        subprocess.run(
+            [str(tar), "-xf", str(archive), "-C", str(dest)],
+            check=True,
+            timeout=300,
+            capture_output=True,
+        )
+    except subprocess.CalledProcessError as e:
+        detail = (e.stderr or b"").decode(errors="replace").strip()
+        raise RuntimeError(f"could not unpack the vendor's .rar archive: {detail}") from e
+
+
+def _unwrap_nested_zip(dest: Path) -> None:
+    """Unpack a lone inner zip in place: some vendors ship a zip inside a zip.
+
+    Futaba's GYD560 package is a zip whose payload is another zip plus a PDF, so the
+    updater exe sits one level deeper than exe_relative_path can address. Only fires
+    when the outer archive yielded no exe at all and exactly one zip, so an archive
+    that legitimately bundles a zip beside its app is left alone.
+
+    ponytail: one level only - a package nested deeper needs a real unpack step in the
+    manifest rather than more guessing here.
+    """
+    if any(dest.rglob("*.exe")):
+        return
+    nested = list(dest.rglob("*.zip"))
+    if len(nested) != 1:
+        return
+    import zipfile
+
+    with zipfile.ZipFile(nested[0]) as z:
+        z.extractall(dest)  # sanitizes member paths, same as the outer extract
+    nested[0].unlink()  # content is now in dest; keep the tool dir free of the husk
 
 
 def _find_exe(root: Path, relative: str | None) -> Path:

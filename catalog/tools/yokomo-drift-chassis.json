@@ -1,0 +1,22 @@
+{
+    "id": "yokomo-drift-chassis",
+    "name": "YD-2 / SD / RD Drift Chassis",
+    "vendor": "Yokomo",
+    "category": "chassis",
+    "homepage": "https://teamyokomo.com/download/",
+    "description": "Build manuals for Yokomo's drift chassis line - the YD-2 family plus the SD and RD competition kits.",
+    "version": "n/a",
+    "links": [
+        {"name": "YD-2 manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2_Manual.pdf"},
+        {"name": "YD-2S manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2S_Manual.pdf"},
+        {"name": "YD-2E manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2E_Manual.pdf"},
+        {"name": "YD-2ZX manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2ZX_Manual.pdf"},
+        {"name": "YD-2SX III manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2SXIII_Manual.pdf"},
+        {"name": "SD 2.0 manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/SD2.0_Instruction_Manual.pdf"},
+        {"name": "SD 3.0 manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/SD3.0_Instruction_Manual.pdf"},
+        {"name": "RD 1.0 manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/RD1.0_Instruction_Manual.pdf"},
+        {"name": "RD 2.0 manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/RD2.0_Instruction_Manual.pdf"}
+    ],
+    "notes": "Reference card: a chassis kit, not software. The YD-2 is the most widely run competition drift chassis. Manuals are large (15-20 MB) illustrated exploded-view build guides, so they cache slowly on first open. Yokomo's download index does not expose directory listings, so each manual URL is pinned individually; guessing filenames by analogy is unsafe (their 404 is a 41 KB HTML page).",
+    "source_verified": "2026-07-20"
+}

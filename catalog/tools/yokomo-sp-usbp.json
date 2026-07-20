@@ -1,0 +1,30 @@
+{
+    "id": "yokomo-sp-usbp",
+    "name": "USB Servo Programmer (SP-USBP)",
+    "vendor": "Yokomo",
+    "category": "servo",
+    "homepage": "https://teamyokomo.com/parts/SP-USBP/",
+    "description": "Set power, torque, hunting suppression, neutral width and reverse on Yokomo SP-02D / SP-03D drift servos via the SP-USBP adapter.",
+    "os": ["windows"],
+    "version": "0.7",
+    "download": {
+        "url": "https://teamyokomo.com/users/servo/YOKOMO_V0.7.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "YOKOMO_V0.7.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://teamyokomo.com/parts/SP-USBP/",
+        "pattern": "YOKOMO_V(\\d+\\.\\d+)\\.zip"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "SP-USBP product page (usage instructions)", "url": "https://teamyokomo.com/parts/SP-USBP/"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. Covers SP-02DV2 (and A/BL/P/R variants), SP-03DV2A/BL/PA/RA and the MDR-020 series; the SP-02D is Yokomo's RWD-drift-dedicated servo. Yokomo publishes no separate PDF - the product page carries the read/adjust/write instructions. The version is embedded in both the URL and the exe name, so bump them together; version_check scrapes the product page for the zip filename, which catches a download-URL change and a version bump in one go. Note https://teamyokomo.com/users/servo/ itself redirects to the site root - only the exact file path works.",
+    "source_verified": "2026-07-20"
+}

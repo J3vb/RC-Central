@@ -1,0 +1,32 @@
+{
+    "id": "kopropo-ex-next-backup",
+    "name": "EX-NEXT Backup Manager",
+    "vendor": "KO Propo",
+    "category": "radio",
+    "homepage": "https://www.kopropo.co.jp/supports/view/285",
+    "description": "Back up and restore model data from a KO Propo EX-NEXT transmitter to the PC.",
+    "os": ["windows"],
+    "version": "1.01",
+    "download": {
+        "url": "https://www.kopropo.co.jp/app/webroot/js/kcfinder/upload/files/Backup_Manager_for_EX-NEXT_V1.01.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "Backup_Manager_for_EX-NEXT_V1.01/Backup_Manager_for_EX-NEXT_V1.01.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.kopropo.co.jp/supports/view/285",
+        "pattern": "Backup_Manager_for_EX-NEXT_V(\\d+\\.\\d+)"
+    },
+    "drivers": [
+        {"name": "KO Driver 2023 (ICS USB adapter)", "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"}
+    ],
+    "links": [
+        {"name": "EX-NEXT Backup Manager support page", "url": "https://www.kopropo.co.jp/supports/view/285"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. English and Japanese manuals ship inside the zip. KO hosts this under /app/webroot/js/kcfinder/upload/files/, NOT the /upload/materials/ root their other tools use - that path 404s with an HTML body for this file, so do not 'tidy' the URL. KO's own page states data transfer is not guaranteed, so treat a failed read/write as expected behaviour rather than a bug.",
+    "source_verified": "2026-07-20"
+}

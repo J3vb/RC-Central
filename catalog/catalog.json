@@ -62,12 +62,16 @@
     "drivers": [],
     "links": [
       {
-        "name": "AGF-SP USB program card instructions",
+        "name": "AGF-SPV3 USB program card instructions",
         "url": "https://www.agfrc.com/index.php?id=2550"
+      },
+      {
+        "name": "AGFRC software downloads index",
+        "url": "https://www.agfrc.com/index.php?id=DOWNLOAD&cate=software"
       }
     ],
-    "notes": "Bare portable exe (AGF-SP V4 build) - no installer, run directly. AGFRC serves it under an opaque hashed filename that changes when re-uploaded, so both the download URL and exe_relative_path rot together (the single-exe scan still resolves the launcher). A separate legacy build exists for the older AGF-SPV2 card.",
-    "source_verified": "2026-07-12"
+    "notes": "Bare portable exe (AGF-SP V4 build) - no installer, run directly. AGFRC serves it under an opaque hashed filename that changes when re-uploaded, so both the download URL and exe_relative_path rot together (the single-exe scan still resolves the launcher); as of 2026-07-20 it had not rotted and the pinned sha256 still matches. AGFRC publishes no manual for the SPV4 card - the linked instructions cover the older SPV3, which is why they are labelled as such. A separate legacy build exists for the AGF-SPV2 card.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "edgetx-companion",
@@ -103,11 +107,15 @@
     "links": [
       {
         "name": "EdgeTX user manual (online)",
-        "url": "https://edgetx.gitbook.io/edgetx-user-manual"
+        "url": "https://manual.edgetx.org/"
+      },
+      {
+        "name": "Installing and updating EdgeTX (online)",
+        "url": "https://manual.edgetx.org/installing-and-updating-edgetx"
       }
     ],
-    "notes": "Zip wraps an NSIS installer (companion-windows-<ver>.exe) run silently via /S /D={dest}. The installer manifest is requireAdministrator, so installing shows a UAC prompt (RC Central retries it elevated); the installed companion.exe is asInvoker and launches without one. Both the download URL and the inner installer filename embed the version, so both rot on the next release - bump them together.",
-    "source_verified": "2026-07-12"
+    "notes": "Zip wraps an NSIS installer (companion-windows-<ver>.exe) run silently via /S /D={dest}. The installer manifest is requireAdministrator, so installing shows a UAC prompt (RC Central retries it elevated); the installed companion.exe is asInvoker and launches without one. Both the download URL and the inner installer filename embed the version, so both rot on the next release - bump them together. The manual now lives at manual.edgetx.org; the old edgetx.gitbook.io host is only a 307 shim. EdgeTX has no Companion-specific manual yet (that section reads 'Coming Soon').",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "flysky-noble-tool",
@@ -139,10 +147,49 @@
       {
         "name": "Noble NB4 user manual (PDF)",
         "url": "https://www.flysky-cn.com/s/Noble_NB4_User_Manual-20250512-EN.pdf"
+      },
+      {
+        "name": "NB4 firmware release notes (PDF)",
+        "url": "https://www.flysky-cn.com/s/Release_Notes_For_Noble_NB4_Transmitter_Firmware-20250430.pdf"
       }
     ],
-    "notes": "Bare portable exe (self-contained firmware updater) - no installer, run directly. STD/global build; an FCC (US) variant also exists. USB flashing may trigger an antivirus warning (vendor says this is expected). The download URL redirects to a Squarespace static host whose token changes if FlySky re-uploads.",
-    "source_verified": "2026-07-12"
+    "notes": "Bare portable exe (self-contained firmware updater) - no installer, run directly. STD/global build; an FCC (US) variant also exists. USB flashing may trigger an antivirus warning (vendor says this is expected). The download URL redirects to a Squarespace static host whose token changes if FlySky re-uploads (it had not as of 2026-07-20, and the pinned sha256 still matches). Do not add FlySky's 'Quick Start Guide' link: it resolves to a Chinese-language 2019 doc for the original Noble, not the NB4.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "flysky-receiver-updater",
+    "name": "Receiver Upgrade Updater",
+    "vendor": "FlySky",
+    "category": "radio",
+    "homepage": "https://www.flysky-cn.com/nb4-xiazai",
+    "description": "Update the AFHDS3 RF firmware on FlySky surface receivers (FGr4, FGr4S, FGr4P, FTr-series and others).",
+    "os": [
+      "windows"
+    ],
+    "version": "1.0.15",
+    "download": {
+      "url": "https://www.flysky-cn.com/s/Flysky-Reciver-Upgrade-Updater-V1015_EN.rar",
+      "archive": "rar",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "Flysky Reciver Upgrade Updater V1.0.15_EN/Flysky Reciver Upgrade Updater V1.0.15_EN.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "NB4 download page",
+        "url": "https://www.flysky-cn.com/nb4-xiazai"
+      },
+      {
+        "name": "AFHDS3 RF firmware update instructions",
+        "url": "https://www.flysky-cn.com/journal/2022/3/11/operation-instructions-for-updating-afhds3-rf-library-firmware"
+      }
+    ],
+    "notes": "Ships as a .rar - unpacked with Windows' bundled bsdtar (System32/tar.exe), no extra dependency. Portable Qt app, no installer. 'Reciver' is FlySky's own spelling in both the URL and the folder name; do not correct it. The exe name contains 'Updater', which installer._find_exe's skip-list rejects, so exe_relative_path must stay pinned. FGr4/FGr4S/FGr4P are the surface receivers paired with NB4-class drift radios. Deliberately has NO version_check: FlySky only ever prints the compressed 4-digit form (V1015) and never a dotted one, and is_newer('1015', '1.0.15') is True - so any regex here would report this tool permanently outdated. Self-hosted (302 to a Squarespace static host); the separate 'downgrade' build is Google-Drive hosted and deliberately not catalogued.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "futaba-gyd550",
@@ -158,8 +205,99 @@
         "url": "https://futabausa.com/wp-content/uploads/manuals/GYD550_ENG_0306.pdf"
       }
     ],
-    "notes": "Hardware-only device: no PC app; firmware updates use the CIU-3 interface.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no PC app - confirmed absent from Futaba's software index in all three regions. Futaba has marked the GYD550 discontinued; its successor is the GYD560, which unlike this unit does ship a Windows updater (see futaba-gyd560).",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "futaba-gyd560",
+    "name": "GYD560 Gyro Updater",
+    "vendor": "Futaba",
+    "category": "gyro",
+    "homepage": "https://futabausa.com/product/gyd560/",
+    "description": "Update the firmware on the Futaba GYD560 drift counter-steer gyro over a CIU-2 / CIU-3 USB interface.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.0",
+    "download": {
+      "url": "https://futabausa.com/wp-content/uploads/2026/05/GYD560_Ver_2_0-Eng.zip",
+      "archive": "zip",
+      "sha256": "407febc7400b59e9359d42b3cc4385be969ea325648817756fcd88cefcad7f9a"
+    },
+    "install": {
+      "exe_relative_path": "Updater(Highspeed).exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://futabausa.com/product-support/software-downloads/",
+      "pattern": "GYD560[\\s\\S]{0,400}?Version (\\d+\\.\\d+)"
+    },
+    "drivers": [
+      {
+        "name": "CIU-2 / CIU-3 USB driver (FTDI CDM 2.12.10)",
+        "url": "https://futabausa.com/wp-content/uploads/2018/10/CIU-2_v2.12.10_ENG.zip"
+      }
+    ],
+    "links": [
+      {
+        "name": "GYD560 product page",
+        "url": "https://futabausa.com/product/gyd560/"
+      },
+      {
+        "name": "Futaba software downloads index",
+        "url": "https://futabausa.com/product-support/software-downloads/"
+      },
+      {
+        "name": "CIU-2 / CIU-3 driver instructions (EN PDF)",
+        "url": "https://futabausa.com/wp-content/uploads/2023/07/Driver-2_12_10_ENG.pdf"
+      }
+    ],
+    "notes": "The successor to the GYD550 and the only drift gyro with real Windows software. The download is a ZIP INSIDE A ZIP: the outer holds GYD560_Ver_2_0.zip plus the English update manual, and installer._unwrap_nested_zip flattens it so the updater lands at the tool dir root. Two updaters ship (Highspeed/Lowspeed) and both contain 'Update', which installer._find_exe's skip-list rejects - exe_relative_path must stay pinned or install fails with ExeNotFound. Requires a CIU-2 or CIU-3 interface (driver offered as a driver action; Windows usually installs the FTDI bridge itself). A transmitter-side update package also exists for T10PX/T10PXR/T10XCR/T6PV owners who have no CIU-3. Futaba's WordPress URL embeds both the upload month and the version, and WordPress appends '-1' on filename collisions, so version_check anchors on the software index page instead.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "gforce-usb-link",
+    "name": "G-Force USB Link",
+    "vendor": "G-Force",
+    "category": "esc",
+    "homepage": "https://www.gforce-hobby.jp/download/software/index.html",
+    "description": "Configure G-Force TS-series brushless ESCs and update the PROGBOX, over the G0017 PROGBOX USB link.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.08",
+    "download": {
+      "url": "https://www.gforce-hobby.jp/software/GFORCE%20USB%20Link%20V2.08.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "GFORCE USB Link V2.08/GFORCE USB Link V2.08.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.gforce-hobby.jp/download/software/index.html",
+      "pattern": "G-Force Link \\(Ver\\.(\\d+\\.\\d+)\\)"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "G-Force software downloads index",
+        "url": "https://www.gforce-hobby.jp/download/software/index.html"
+      },
+      {
+        "name": "TS120A R2 ESC manual (JP PDF)",
+        "url": "https://www.gforce-hobby.jp/manual_pdf/TS120R2-manual.pdf"
+      },
+      {
+        "name": "PROGBOX manual (JP PDF)",
+        "url": "https://www.gforce-hobby.jp/manual_pdf/GFORCE_PROGBOX_Ver0.8.pdf"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. The archive holds TWO exes (the main app and USBLINK/GFUsbLink_V2.exe), so exe_relative_path must stay pinned - the single-exe fallback scan cannot disambiguate them. Both the folder and exe names contain spaces. UI ships EN/JP/CN/DE resources; the manuals are Japanese. Requires the PROGBOX (G0017) and a data-capable micro-USB cable. G-Force keeps superseded versions online, so a stale URL degrades to an older build rather than a 404.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "hobbywing-usb-link",
@@ -196,16 +334,274 @@
     "drivers": [],
     "links": [
       {
-        "name": "USB Link software / support page",
-        "url": "https://hobbywing.com/en/service/application?id=1"
+        "name": "USB Link software user manual (EN PDF)",
+        "url": "https://hobbywing.oss-cn-shenzhen.aliyuncs.com/pdf/enhw-20-usb.pdf"
       },
       {
         "name": "XeRun XR10 Justock ESC manual (PDF)",
         "url": "https://www.hobbywing.com/en/uploads/file/20221012/705a865b5f96846c156633191af766d3.pdf"
       }
     ],
-    "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release.",
-    "source_verified": "2026-07-10"
+    "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release. The support page is already reachable via homepage and version_check, so links[0] carries the actual 9-page software manual instead (first-party, on Hobbywing's own OSS bucket).",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "kopropo-ex-next-backup",
+    "name": "EX-NEXT Backup Manager",
+    "vendor": "KO Propo",
+    "category": "radio",
+    "homepage": "https://www.kopropo.co.jp/supports/view/285",
+    "description": "Back up and restore model data from a KO Propo EX-NEXT transmitter to the PC.",
+    "os": [
+      "windows"
+    ],
+    "version": "1.01",
+    "download": {
+      "url": "https://www.kopropo.co.jp/app/webroot/js/kcfinder/upload/files/Backup_Manager_for_EX-NEXT_V1.01.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "Backup_Manager_for_EX-NEXT_V1.01/Backup_Manager_for_EX-NEXT_V1.01.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.kopropo.co.jp/supports/view/285",
+      "pattern": "Backup_Manager_for_EX-NEXT_V(\\d+\\.\\d+)"
+    },
+    "drivers": [
+      {
+        "name": "KO Driver 2023 (ICS USB adapter)",
+        "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"
+      }
+    ],
+    "links": [
+      {
+        "name": "EX-NEXT Backup Manager support page",
+        "url": "https://www.kopropo.co.jp/supports/view/285"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. English and Japanese manuals ship inside the zip. KO hosts this under /app/webroot/js/kcfinder/upload/files/, NOT the /upload/materials/ root their other tools use - that path 404s with an HTML body for this file, so do not 'tidy' the URL. KO's own page states data transfer is not guaranteed, so treat a failed read/write as expected behaviour rather than a bug.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "kopropo-ex-next-updater",
+    "name": "EX-NEXT Updater",
+    "vendor": "KO Propo",
+    "category": "radio",
+    "homepage": "https://www.kopropo.co.jp/supports/view/340",
+    "description": "Flash firmware to the KO Propo EX-NEXT transmitter's master and Xpansion units.",
+    "os": [
+      "windows"
+    ],
+    "version": "1.00",
+    "download": {
+      "url": "https://www.kopropo.co.jp/upload/materials/UpDater_for_EX_NEXT_V1_00_Download.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "UpDater_for_EX-NEXT_V1.00-Download/EX_Next_UpDater_V1_00_01.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "drivers": [
+      {
+        "name": "KO Driver 2023 (ICS USB adapter)",
+        "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"
+      }
+    ],
+    "links": [
+      {
+        "name": "EX-NEXT updater support page (firmware files)",
+        "url": "https://www.kopropo.co.jp/supports/view/340"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. English and Japanese manuals ship inside the zip. Deliberately has NO version_check: the support page advertises the EX-NEXT *firmware* version (3.02+), not this updater app, which has stayed at V1.00 since 2021 - a version_check there would report the tool permanently outdated. Firmware payloads are separate downloads from the same page. Needs the ICS USB Adapter HS (#61028, red label - the black #61018 does not work). The exe name contains 'UpDater', which installer._find_exe's skip-list would reject, so exe_relative_path must stay pinned.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "kopropo-ex-xpansion-manager",
+    "name": "EX-Xpansion Manager",
+    "vendor": "KO Propo",
+    "category": "radio",
+    "homepage": "https://www.kopropo.co.jp/supports/view/267",
+    "description": "Edit, back up and restore model data for KO Propo EX-RR / EX-2 / EX-LDT transmitters fitted with the EXP-104 Xpansion unit.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.12",
+    "download": {
+      "url": "https://www.kopropo.co.jp/upload/materials/XpansionManagerV2_12.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "EX-XpansionManager_20190627/EX-XpansionManagerV2_1_2_1.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.kopropo.co.jp/supports/view/267",
+      "pattern": "V(\\d+\\.\\d+) - KOPROPO"
+    },
+    "drivers": [
+      {
+        "name": "KO Driver 2023 (ICS USB adapter)",
+        "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"
+      }
+    ],
+    "links": [
+      {
+        "name": "EX-Xpansion Manager support page",
+        "url": "https://www.kopropo.co.jp/supports/view/267"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. The zip ships en-US and ja-JP resource DLLs, so the UI is genuinely bilingual. Note the folder version (V2.12) and the exe's own build string (V2_1_2_1) differ - exe_relative_path uses the exe's. Requires the EXP-104S Xpansion unit, the ICS USB Adapter HS and KO Driver. Not for EX-NEXT: that radio uses its own updater and backup manager.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "kopropo-ics-servo-manager",
+    "name": "ICS Servo Manager",
+    "vendor": "KO Propo",
+    "category": "servo",
+    "homepage": "https://www.kopropo.co.jp/supports/view/62",
+    "description": "Set power, torque, punch, neutral and dead band on KO Propo RSx/BSx series servos over the ICS USB adapter.",
+    "os": [
+      "windows"
+    ],
+    "version": "2.0.1.0",
+    "download": {
+      "url": "https://www.kopropo.co.jp/app/webroot/js/kcfinder/upload/images/sys/2014/01/IcsServoManagerV2010.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "IcsServoManagerV2010/IcsServoManager.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.kopropo.co.jp/supports/view/62",
+      "pattern": "Ver(?:\\.)?(\\d+\\.\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [
+      {
+        "name": "KO Driver 2023 (ICS USB adapter)",
+        "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"
+      }
+    ],
+    "links": [
+      {
+        "name": "ICS Servo Manager support page",
+        "url": "https://www.kopropo.co.jp/supports/view/62"
+      },
+      {
+        "name": "RSx4S/BSx4S servo manual (EN/JP PDF)",
+        "url": "https://www.kondokagaku.jp/data_download/BSx4S_RSx4S_manual_V1_3_J_E.pdf"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. Covers RSx3/RSx2/RSx-one10/RSx-12 and BSx3/BSx2; the newer RSx4S/BSx4S are NOT PC-programmable (KO says so outright - use the Servo Model Selector or EX-NEXT real-time ICS). Requires the ICS USB Adapter HS plus KO Driver 2023, offered as a driver action. English and Japanese manuals ship inside the zip. KO publishes across two upload roots and the wrong one 404s with an HTML body, so do not hand-edit this path.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "kopropo-rsx4s-servos",
+    "name": "RSx4S / BSx4S Servos",
+    "vendor": "KO Propo",
+    "category": "servo",
+    "homepage": "https://www.kopropo.co.jp/products/view/30137",
+    "description": "KO Propo RSx4S / BSx4S servos. No PC software - set from an EX-NEXT via REAL TIME ICS, the LCD Expansion Unit 2, or the 4S Servo Model Selector.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "RSx4S / BSx4S manual (EN/JP PDF)",
+        "url": "https://www.kondokagaku.jp/data_download/BSx4S_RSx4S_manual_V1_3_J_E.pdf"
+      },
+      {
+        "name": "RSx4S support page",
+        "url": "https://www.kopropo.co.jp/supports/view/294"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software. KO states this outright on the product page - unlike the earlier RSx/BSx series, the 4S generation cannot be configured with ICS Servo Manager over a PC. Catalogued so owners stop hunting for software that does not exist; for the PC-programmable earlier servos see kopropo-ics-servo-manager.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "kopropo-vfs-fr3-manager",
+    "name": "VFS-FR3 Manager",
+    "vendor": "KO Propo",
+    "category": "esc",
+    "homepage": "https://www.kopropo.co.jp/supports/view/335",
+    "description": "Adjust drive frequency, brake, drag brake and throttle curve on the KO Propo VFS-FR3 ESC.",
+    "os": [
+      "windows"
+    ],
+    "version": "1.0.1",
+    "download": {
+      "url": "https://www.kondokagaku.jp/data_download/VFS-FR3_Manager_V1_0_1.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "VFS-FR3_Manager_V1_0_1/FR3_ManagetSoft_Ver101.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://www.kopropo.co.jp/supports/view/335",
+      "pattern": "VFS-FR3 Manager Ver(\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [
+      {
+        "name": "KO Driver 2023 (ICS USB adapter)",
+        "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"
+      }
+    ],
+    "links": [
+      {
+        "name": "VFS-FR3 Manager support page",
+        "url": "https://www.kopropo.co.jp/supports/view/335"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. The exe filename contains the vendor's own typo ('ManagetSoft', not Manager) - that is correct, do not fix it. English and Japanese manuals plus a default-values .fr3 file ship inside the zip. VFS-FR3 only: KO states it is not backward compatible with VFS-FR2 or earlier. Needs the ICS USB Adapter HS, KO Driver 2023, and a 6.6-8.4 V pack connected to the ESC.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "mst-drift-chassis",
+    "name": "RMX / FXX Drift Chassis",
+    "vendor": "MST",
+    "category": "chassis",
+    "homepage": "https://www.rc-mst.com/support.php",
+    "description": "Build manuals for MST's RWD drift chassis - the RMX line (2.5, 3.0, EX, 4) plus FXX and FRX.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "RMX 4 support page",
+        "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=71"
+      },
+      {
+        "name": "RMX EX support page",
+        "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=69"
+      },
+      {
+        "name": "RMX 2.5 support page",
+        "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=66"
+      },
+      {
+        "name": "RMX 3.0 support page",
+        "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=64"
+      },
+      {
+        "name": "FXX 2.0 support page",
+        "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=62"
+      },
+      {
+        "name": "All MST drift manuals",
+        "url": "https://www.rc-mst.com/support.php"
+      }
+    ],
+    "notes": "Reference card: a chassis kit, not software. MST publishes no PC software of any kind. These deliberately link the per-model SUPPORT PAGES rather than the PDFs: MST serves manuals from opaque upload-timestamp filenames (e.g. 202604080832442a.pdf) that change without notice, whereas the class_sn URLs are stable. Manuals are EN/CN bilingual diagrams.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "onisiki-gyro",
@@ -219,10 +615,114 @@
       {
         "name": "ONI2801 gyro manual (PDF)",
         "url": "https://www.onisiki.com/manuals-setups/onisiki-ONI2801-gyro-manual.pdf"
+      },
+      {
+        "name": "ONI2803 gyro manual (PDF)",
+        "url": "https://www.onisiki.com/manuals-setups/onisiki-ONI2803-gyro-manual.pdf"
+      },
+      {
+        "name": "Hell Blaze program box manual (PDF)",
+        "url": "https://www.onisiki.com/manuals-setups/onisiki-Hell-Blaze-programbox-manual.pdf"
       }
     ],
-    "notes": "Hardware-only device: no downloadable PC configuration software.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no downloadable PC configuration software. Onisiki 403s datacenter IPs (CI) while serving the same URLs fine to residential ones - validate_catalog treats 403 as alive for this reason. Their own manuals index links several PDFs via dev.onisiki.com, a staging host that 403s everywhere; always use www.onisiki.com.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "onisiki-kodama-chassis",
+    "name": "Kodama Drift Chassis",
+    "vendor": "Onisiki",
+    "category": "chassis",
+    "homepage": "https://www.onisiki.com/manuals",
+    "description": "Build manual for the Onisiki Kodama RWD drift chassis.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "Kodama chassis manual (PDF)",
+        "url": "https://www.onisiki.com/manuals-setups/onisiki-kodama-manual.pdf"
+      },
+      {
+        "name": "All Onisiki manuals",
+        "url": "https://www.onisiki.com/manuals"
+      }
+    ],
+    "notes": "Reference card: a chassis kit, not software. Large manual (~39 MB), so it caches slowly on first open. Onisiki 403s datacenter IPs (CI) while serving residential ones fine - validate_catalog treats 403 as alive. Their own index links several PDFs via the dev.onisiki.com staging host, which 403s everywhere; always use www.onisiki.com.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "overdose-drift-chassis",
+    "name": "GALM / Divall Drift Chassis",
+    "vendor": "Overdose",
+    "category": "chassis",
+    "homepage": "https://weld-jp.com/overdose/instruction.htm",
+    "description": "Build manuals for Overdose's premium RWD drift chassis - GALM, GALM ver.2, Divall and XEX.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "GALM ver.2 manual (JP PDF)",
+        "url": "https://weld-jp.com/overdose/galm2/od_galm2_050620.pdf"
+      },
+      {
+        "name": "Divall manual (JP PDF)",
+        "url": "https://weld-jp.com/overdose/divall/divall_instruction.pdf"
+      },
+      {
+        "name": "XEX manual (JP PDF)",
+        "url": "https://weld-jp.com/overdose/xex/xex_instruction.pdf"
+      },
+      {
+        "name": "All Overdose instructions",
+        "url": "https://weld-jp.com/overdose/instruction.htm"
+      }
+    ],
+    "notes": "Reference card: a chassis kit, not software. Overdose makes no programmable electronics, so there is nothing to install. Manuals are Japanese but are diagram-driven exploded views, and large (8-24 MB). The manufacturer is Weld Techniques Factory at weld-jp.com - overdose.co.jp does not resolve and overdoserc.com is an unrelated parts shop. Their index page emits http:// links; the https forms all work and are used here.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "reved-elite-esc",
+    "name": "ELITE Brushless ESC",
+    "vendor": "Rêve D",
+    "category": "esc",
+    "homepage": "https://teamreved.com/product/re-elt",
+    "description": "Rêve D ELITE competition drift ESC. No PC software - programmed from a phone over the optional RE-ELT-BT Bluetooth module.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "ELITE ESC manual (EN PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2025/07/ELITE-V1.0-E-manual-ENG-book-28.07.2025.pdf"
+      },
+      {
+        "name": "ELITE programmable settings (EN PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2025/07/ELITE-V1.0-Programmable-E-manual-ENG-10.07.2025.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software. Rêve D's entire published software catalogue is the RS-ST servo programmer lineage (see reved-rs-st-pro) - there is nothing for the ELITE ESC, the REVOX gyro, or the RS-PGCA programmer itself. Both manuals are genuine English editions, which is unusual for this vendor.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "reved-rdx-chassis",
+    "name": "RDX Drift Chassis",
+    "vendor": "Rêve D",
+    "category": "chassis",
+    "homepage": "https://teamreved.com/product/rkd-rdx",
+    "description": "Build manual, gear chart and setting sheet for the Rêve D RDX competition drift chassis, plus the MC-3 conversion kit.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "RDX build manual (JP PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2023/11/RDX_20231115.pdf"
+      },
+      {
+        "name": "RDX gear chart (PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2023/01/RDX_Gear.pdf"
+      },
+      {
+        "name": "MC-3 conversion kit manual (PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2026/02/mc-3_hp_20260224.pdf"
+      }
+    ],
+    "notes": "Reference card: a chassis kit, not software. The build manual is a 28 MB illustrated exploded view, so it caches slowly on first open. Rêve D publishes no download index and their sitemap 404s, so every document URL is pinned individually and rots if they re-upload. The RDX gear chart pairs well with the Workshop's gearing calculator.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "reved-revox-gyro",
@@ -271,10 +771,58 @@
       {
         "name": "RS-ST instruction manual (EN PDF)",
         "url": "https://teamreved.com/wp-content/uploads/2019/11/Manual_EN.pdf"
+      },
+      {
+        "name": "RS-PGCA/PGCB USB programmer manual (PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2022/07/RS-PGCA_m.pdf"
+      },
+      {
+        "name": "RS-ST programmable setting sheet (PDF)",
+        "url": "https://teamreved.com/wp-content/uploads/2024/06/RS-ST_Setting-Sheet_20240611.pdf"
       }
     ],
-    "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so expect this URL to rot on the next release.",
-    "source_verified": "2026-07-10"
+    "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so this URL may rot on the next release (it had not as of 2026-07-20). This wpdmdl=5274 package is the right one for both RS-ST and RS-ST PRO - Reve D's own PRO product pages link to it. Do NOT switch to the separate 'RS-ST PRO Servo Program system' item (wpdmdl=5073): it never serves bytes, returning HTTP 200 with a WPDM 'file not found' HTML interstitial.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "sanwa-pc-link-manager-3",
+    "name": "PC-LINK MANAGER 3",
+    "vendor": "Sanwa",
+    "category": "radio",
+    "homepage": "https://www.sanwa-denshi.com/rc/car/propo/m12s.html",
+    "description": "Back up model data and update firmware on the Sanwa M12S transmitter over USB.",
+    "os": [
+      "windows"
+    ],
+    "version": "3",
+    "download": {
+      "url": "https://www.sanwa-denshi.co.jp/rc/common/pdf/option1/LinkManager3.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "LinkManager3/LinkManager3.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "drivers": [
+      {
+        "name": "SANWA-M12 USB driver (inside the download)",
+        "url": "https://www.sanwa-denshi.com/rc/car/propo/m12s.html"
+      }
+    ],
+    "links": [
+      {
+        "name": "PC-LINK MANAGER 3 manual (PDF)",
+        "url": "https://sanwa-denshi.com/rc/car/propo/PC-LINK%20MANAGER3appMANUAL.pdf"
+      },
+      {
+        "name": "M12S product page",
+        "url": "https://www.sanwa-denshi.com/rc/car/propo/m12s.html"
+      }
+    ],
+    "notes": "M12S only - the M12 and EXZES Z use PC-LINK MANAGER 2. The zip ships both a portable LinkManager3.exe and a LinkManager3_setup.exe; RC Central runs the portable one, so no admin is needed for the app itself. Installing the bundled SANWA-M12.inf USB driver does need admin and must be done by hand. Requires .NET Framework 4. This is the only Sanwa PC software that exists - the rest of their line has none, and transmitter firmware ships as microSD payloads on one-off news pages. Sanwa's own link is http://; the https form serves the same file and is used here. Deliberately has NO version_check: the URL and page carry no version number, which also makes this the most rot-resistant download in the catalog - but it means a silent in-place update would go unnoticed.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "sanwa-pgs-servos",
@@ -288,10 +836,35 @@
       {
         "name": "Manual (PGS-CLE, EN PDF)",
         "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS_CLE_ENG_Manual.pdf"
+      },
+      {
+        "name": "Manual (PGS-HR, EN PDF)",
+        "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS-HR_ENG_Manual.pdf"
+      },
+      {
+        "name": "Multi Setting Gear manual (EN PDF)",
+        "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/MULTI-SETTING-GEAR_ENG_Manual.pdf"
       }
     ],
-    "notes": "Hardware-only device: no downloadable PC configuration software.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no downloadable PC configuration software. Sanwa publishes no PC software for any product - the site has no software or download section at all, and transmitter firmware ships as a microSD payload linked from one-off news pages. The Multi Setting Gear manual is linked here because the description names that unit as the configuration path.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "sanwa-sgs-02",
+    "name": "SGS-02 Steering Gyro",
+    "vendor": "Sanwa",
+    "category": "gyro",
+    "homepage": "https://www.sanwa-denshi.com/rc/car/servo/",
+    "description": "Sanwa SGS-02 steering gyro. No PC software - gain and mode are set from an SSL-capable Sanwa transmitter.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "SGS-02 manual (EN PDF)",
+        "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/SGS-02_ENG_Manual.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software - Sanwa publishes none for any product. Supersedes the SGS-01/SGS-01D, whose product pages now 404.",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "skyrc-usb-link",
@@ -315,7 +888,7 @@
       "needs_admin": false
     },
     "version_check": {
-      "url": "https://www.skyrc.com/TS120_Aluminum",
+      "url": "https://www.skyrc.com/TS150A_ESC",
       "pattern": "SKYRC[ _]USB[ _]Link[ _]V(\\d+\\.\\d+)"
     },
     "drivers": [],
@@ -323,26 +896,156 @@
       {
         "name": "Toro TS120A ESC manual (PDF)",
         "url": "https://www.skyrc.com/files/32/Toro+TS120A+ESC+Manual.pdf"
+      },
+      {
+        "name": "Toro TS150A ESC manual (PDF)",
+        "url": "https://www.skyrc.com/files/70/TS150A_ESC_Manual.pdf"
       }
     ],
-    "notes": "Portable exe - unzip and run. Linked from the Toro TS120A ESC product page. The versioned filename (download URL and the inner folder) changes each release, so this URL will rot; the app's single-exe scan still resolves the launcher if the pinned path drifts.",
-    "source_verified": "2026-07-12"
+    "notes": "Portable exe - unzip and run. The versioned filename (download URL and the inner folder) changes each release, so this URL will rot; the app's single-exe scan still resolves the launcher if the pinned path drifts. version_check anchors on the TS150A page rather than the TS120A one because SkyRC now marks the TS120A discontinued, though both list the same USB Link build. SkyRC's global downloads hub renders its file table client-side, so it cannot be used as a version_check target.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "srt-d1s-servo",
+    "name": "D1S Drift Servo",
+    "vendor": "SRT",
+    "category": "servo",
+    "homepage": "https://www.srt-rc.com/index.php?catid=3",
+    "description": "SRT D1S high-voltage 1/10 drift steering servo. No PC software - programmed with the SP-MX082 program box.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "D1S servo manual (PDF)",
+        "url": "https://www.srt-rc.com/data/upload/image/20220402/1648861014551232.pdf"
+      },
+      {
+        "name": "SP-MX082 program box manual (PDF)",
+        "url": "https://www.srt-rc.com/data/upload/image/20220606/1654493410303184.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software - SRT's download page is PDF manuals only. One of the few servos marketed explicitly for 1/10 drift. Manual URLs are opaque upload timestamps and will rot silently if SRT re-uploads; the catid=3 downloads index is the stable anchor. Note the vendor domain is srt-rc.com - srt-servo.com and srtservo.com do not resolve.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "yokomo-dp302-gyro",
+    "name": "DP-302 V4 Drift Gyro",
+    "vendor": "Yokomo",
+    "category": "gyro",
+    "homepage": "https://teamyokomo.com/parts/DPP-302V4B/",
+    "description": "Yokomo DP-302 V4 drift counter-steer gyro. No PC software - gain is set on the unit or from a spare transmitter channel.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "DP-302 V4 user manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/DP-302V4_User_manual.pdf"
+      }
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software. Yokomo's only PC software is the SP-USBP servo programmer (see yokomo-sp-usbp); their ESCs and gyros are all set on-unit or by microSD.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "yokomo-drift-chassis",
+    "name": "YD-2 / SD / RD Drift Chassis",
+    "vendor": "Yokomo",
+    "category": "chassis",
+    "homepage": "https://teamyokomo.com/download/",
+    "description": "Build manuals for Yokomo's drift chassis line - the YD-2 family plus the SD and RD competition kits.",
+    "version": "n/a",
+    "links": [
+      {
+        "name": "YD-2 manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2_Manual.pdf"
+      },
+      {
+        "name": "YD-2S manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2S_Manual.pdf"
+      },
+      {
+        "name": "YD-2E manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2E_Manual.pdf"
+      },
+      {
+        "name": "YD-2ZX manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2ZX_Manual.pdf"
+      },
+      {
+        "name": "YD-2SX III manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/YD-2SXIII_Manual.pdf"
+      },
+      {
+        "name": "SD 2.0 manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/SD2.0_Instruction_Manual.pdf"
+      },
+      {
+        "name": "SD 3.0 manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/SD3.0_Instruction_Manual.pdf"
+      },
+      {
+        "name": "RD 1.0 manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/RD1.0_Instruction_Manual.pdf"
+      },
+      {
+        "name": "RD 2.0 manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!03!DRIFT_KIT/RD2.0_Instruction_Manual.pdf"
+      }
+    ],
+    "notes": "Reference card: a chassis kit, not software. The YD-2 is the most widely run competition drift chassis. Manuals are large (15-20 MB) illustrated exploded-view build guides, so they cache slowly on first open. Yokomo's download index does not expose directory listings, so each manual URL is pinned individually; guessing filenames by analogy is unsafe (their 404 is a 41 KB HTML page).",
+    "source_verified": "2026-07-20"
   },
   {
     "id": "yokomo-rpx-esc",
     "name": "RPX-series Competition ESC",
     "vendor": "Yokomo",
     "category": "esc",
-    "homepage": "https://teamyokomo.com/parts/BL-RPX3/",
+    "homepage": "https://teamyokomo.com/parts/BL-RPX3-1/",
     "description": "Yokomo RPX competition/drift ESCs. No Windows PC app - configured with the BL-R26P program card or the Wi-Fi programmer module app.",
     "version": "n/a",
     "links": [
       {
         "name": "BL-RPX3/RPXS instruction manual (PDF)",
         "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX3_RPXS_Instruction_Manual.pdf"
+      },
+      {
+        "name": "BL-RPX4 instruction manual (PDF)",
+        "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX4_Manual.pdf"
       }
     ],
-    "notes": "Hardware-only device: no downloadable PC configuration software.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no downloadable PC configuration software. Firmware ships as a .bin copied to a FAT32 microSD and loaded by the BL-R26P programmer - the PC is only a card reader. The current generation is the BL-RPX4, which has factory Drift Spec variants (DB/DR/DP); the older BL-RPX3 product page is now a soft-404 (HTTP 200 serving a 'product not found' body), so homepage points at the surviving RPX3 V2 page.",
+    "source_verified": "2026-07-20"
+  },
+  {
+    "id": "yokomo-sp-usbp",
+    "name": "USB Servo Programmer (SP-USBP)",
+    "vendor": "Yokomo",
+    "category": "servo",
+    "homepage": "https://teamyokomo.com/parts/SP-USBP/",
+    "description": "Set power, torque, hunting suppression, neutral width and reverse on Yokomo SP-02D / SP-03D drift servos via the SP-USBP adapter.",
+    "os": [
+      "windows"
+    ],
+    "version": "0.7",
+    "download": {
+      "url": "https://teamyokomo.com/users/servo/YOKOMO_V0.7.zip",
+      "archive": "zip",
+      "sha256": null
+    },
+    "install": {
+      "exe_relative_path": "YOKOMO_V0.7.exe",
+      "portable": true,
+      "needs_admin": false
+    },
+    "version_check": {
+      "url": "https://teamyokomo.com/parts/SP-USBP/",
+      "pattern": "YOKOMO_V(\\d+\\.\\d+)\\.zip"
+    },
+    "drivers": [],
+    "links": [
+      {
+        "name": "SP-USBP product page (usage instructions)",
+        "url": "https://teamyokomo.com/parts/SP-USBP/"
+      }
+    ],
+    "notes": "Portable exe - unzip and run, no installer. Covers SP-02DV2 (and A/BL/P/R variants), SP-03DV2A/BL/PA/RA and the MDR-020 series; the SP-02D is Yokomo's RWD-drift-dedicated servo. Yokomo publishes no separate PDF - the product page carries the read/adjust/write instructions. The version is embedded in both the URL and the exe name, so bump them together; version_check scrapes the product page for the zip filename, which catches a download-URL change and a version bump in one go. Note https://teamyokomo.com/users/servo/ itself redirects to the site root - only the exact file path works.",
+    "source_verified": "2026-07-20"
   }
 ]

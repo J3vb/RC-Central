@@ -1,0 +1,16 @@
+{
+    "id": "reved-rdx-chassis",
+    "name": "RDX Drift Chassis",
+    "vendor": "Rêve D",
+    "category": "chassis",
+    "homepage": "https://teamreved.com/product/rkd-rdx",
+    "description": "Build manual, gear chart and setting sheet for the Rêve D RDX competition drift chassis, plus the MC-3 conversion kit.",
+    "version": "n/a",
+    "links": [
+        {"name": "RDX build manual (JP PDF)", "url": "https://teamreved.com/wp-content/uploads/2023/11/RDX_20231115.pdf"},
+        {"name": "RDX gear chart (PDF)", "url": "https://teamreved.com/wp-content/uploads/2023/01/RDX_Gear.pdf"},
+        {"name": "MC-3 conversion kit manual (PDF)", "url": "https://teamreved.com/wp-content/uploads/2026/02/mc-3_hp_20260224.pdf"}
+    ],
+    "notes": "Reference card: a chassis kit, not software. The build manual is a 28 MB illustrated exploded view, so it caches slowly on first open. Rêve D publishes no download index and their sitemap 404s, so every document URL is pinned individually and rots if they re-upload. The RDX gear chart pairs well with the Workshop's gearing calculator.",
+    "source_verified": "2026-07-20"
+}

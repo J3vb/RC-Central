@@ -1,0 +1,15 @@
+{
+    "id": "kopropo-rsx4s-servos",
+    "name": "RSx4S / BSx4S Servos",
+    "vendor": "KO Propo",
+    "category": "servo",
+    "homepage": "https://www.kopropo.co.jp/products/view/30137",
+    "description": "KO Propo RSx4S / BSx4S servos. No PC software - set from an EX-NEXT via REAL TIME ICS, the LCD Expansion Unit 2, or the 4S Servo Model Selector.",
+    "version": "n/a",
+    "links": [
+        {"name": "RSx4S / BSx4S manual (EN/JP PDF)", "url": "https://www.kondokagaku.jp/data_download/BSx4S_RSx4S_manual_V1_3_J_E.pdf"},
+        {"name": "RSx4S support page", "url": "https://www.kopropo.co.jp/supports/view/294"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software. KO states this outright on the product page - unlike the earlier RSx/BSx series, the 4S generation cannot be configured with ICS Servo Manager over a PC. Catalogued so owners stop hunting for software that does not exist; for the PC-programmable earlier servos see kopropo-ics-servo-manager.",
+    "source_verified": "2026-07-20"
+}

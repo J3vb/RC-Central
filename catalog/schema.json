@@ -20,7 +20,7 @@
             "additionalProperties": false,
             "properties": {
                 "url": {"type": "string", "pattern": "^https://"},
-                "archive": {"enum": ["zip", "7z", "exe"]},
+                "archive": {"enum": ["zip", "7z", "rar", "exe"]},
                 "sha256": {"type": ["string", "null"], "pattern": "^[a-fA-F0-9]{64}$"}
             }
         },

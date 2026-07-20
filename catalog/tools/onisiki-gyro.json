@@ -7,8 +7,10 @@
     "description": "Onisiki drift gyro. No PC software - gain is set on the gyro or a spare transmitter channel; tuning uses the ONI4602/ONI4606 LCD program box.",
     "version": "n/a",
     "links": [
-        {"name": "ONI2801 gyro manual (PDF)", "url": "https://www.onisiki.com/manuals-setups/onisiki-ONI2801-gyro-manual.pdf"}
+        {"name": "ONI2801 gyro manual (PDF)", "url": "https://www.onisiki.com/manuals-setups/onisiki-ONI2801-gyro-manual.pdf"},
+        {"name": "ONI2803 gyro manual (PDF)", "url": "https://www.onisiki.com/manuals-setups/onisiki-ONI2803-gyro-manual.pdf"},
+        {"name": "Hell Blaze program box manual (PDF)", "url": "https://www.onisiki.com/manuals-setups/onisiki-Hell-Blaze-programbox-manual.pdf"}
     ],
-    "notes": "Hardware-only device: no downloadable PC configuration software.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no downloadable PC configuration software. Onisiki 403s datacenter IPs (CI) while serving the same URLs fine to residential ones - validate_catalog treats 403 as alive for this reason. Their own manuals index links several PDFs via dev.onisiki.com, a staging host that 403s everywhere; always use www.onisiki.com.",
+    "source_verified": "2026-07-20"
 }

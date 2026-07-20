@@ -1,0 +1,15 @@
+{
+    "id": "reved-elite-esc",
+    "name": "ELITE Brushless ESC",
+    "vendor": "Rêve D",
+    "category": "esc",
+    "homepage": "https://teamreved.com/product/re-elt",
+    "description": "Rêve D ELITE competition drift ESC. No PC software - programmed from a phone over the optional RE-ELT-BT Bluetooth module.",
+    "version": "n/a",
+    "links": [
+        {"name": "ELITE ESC manual (EN PDF)", "url": "https://teamreved.com/wp-content/uploads/2025/07/ELITE-V1.0-E-manual-ENG-book-28.07.2025.pdf"},
+        {"name": "ELITE programmable settings (EN PDF)", "url": "https://teamreved.com/wp-content/uploads/2025/07/ELITE-V1.0-Programmable-E-manual-ENG-10.07.2025.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software. Rêve D's entire published software catalogue is the RS-ST servo programmer lineage (see reved-rs-st-pro) - there is nothing for the ELITE ESC, the REVOX gyro, or the RS-PGCA programmer itself. Both manuals are genuine English editions, which is unusual for this vendor.",
+    "source_verified": "2026-07-20"
+}

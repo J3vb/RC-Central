@@ -3,12 +3,13 @@
     "name": "RPX-series Competition ESC",
     "vendor": "Yokomo",
     "category": "esc",
-    "homepage": "https://teamyokomo.com/parts/BL-RPX3/",
+    "homepage": "https://teamyokomo.com/parts/BL-RPX3-1/",
     "description": "Yokomo RPX competition/drift ESCs. No Windows PC app - configured with the BL-R26P program card or the Wi-Fi programmer module app.",
     "version": "n/a",
     "links": [
-        {"name": "BL-RPX3/RPXS instruction manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX3_RPXS_Instruction_Manual.pdf"}
+        {"name": "BL-RPX3/RPXS instruction manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX3_RPXS_Instruction_Manual.pdf"},
+        {"name": "BL-RPX4 instruction manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/BL-RPX4_Manual.pdf"}
     ],
-    "notes": "Hardware-only device: no downloadable PC configuration software.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no downloadable PC configuration software. Firmware ships as a .bin copied to a FAT32 microSD and loaded by the BL-R26P programmer - the PC is only a card reader. The current generation is the BL-RPX4, which has factory Drift Spec variants (DB/DR/DP); the older BL-RPX3 product page is now a soft-404 (HTTP 200 serving a 'product not found' body), so homepage points at the surviving RPX3 V2 page.",
+    "source_verified": "2026-07-20"
 }

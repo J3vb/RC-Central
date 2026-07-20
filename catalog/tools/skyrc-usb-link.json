@@ -18,13 +18,14 @@
         "needs_admin": false
     },
     "version_check": {
-        "url": "https://www.skyrc.com/TS120_Aluminum",
+        "url": "https://www.skyrc.com/TS150A_ESC",
         "pattern": "SKYRC[ _]USB[ _]Link[ _]V(\\d+\\.\\d+)"
     },
     "drivers": [],
     "links": [
-        {"name": "Toro TS120A ESC manual (PDF)", "url": "https://www.skyrc.com/files/32/Toro+TS120A+ESC+Manual.pdf"}
+        {"name": "Toro TS120A ESC manual (PDF)", "url": "https://www.skyrc.com/files/32/Toro+TS120A+ESC+Manual.pdf"},
+        {"name": "Toro TS150A ESC manual (PDF)", "url": "https://www.skyrc.com/files/70/TS150A_ESC_Manual.pdf"}
     ],
-    "notes": "Portable exe - unzip and run. Linked from the Toro TS120A ESC product page. The versioned filename (download URL and the inner folder) changes each release, so this URL will rot; the app's single-exe scan still resolves the launcher if the pinned path drifts.",
-    "source_verified": "2026-07-12"
+    "notes": "Portable exe - unzip and run. The versioned filename (download URL and the inner folder) changes each release, so this URL will rot; the app's single-exe scan still resolves the launcher if the pinned path drifts. version_check anchors on the TS150A page rather than the TS120A one because SkyRC now marks the TS120A discontinued, though both list the same USB Link build. SkyRC's global downloads hub renders its file table client-side, so it cannot be used as a version_check target.",
+    "source_verified": "2026-07-20"
 }

@@ -1,0 +1,15 @@
+{
+    "id": "onisiki-kodama-chassis",
+    "name": "Kodama Drift Chassis",
+    "vendor": "Onisiki",
+    "category": "chassis",
+    "homepage": "https://www.onisiki.com/manuals",
+    "description": "Build manual for the Onisiki Kodama RWD drift chassis.",
+    "version": "n/a",
+    "links": [
+        {"name": "Kodama chassis manual (PDF)", "url": "https://www.onisiki.com/manuals-setups/onisiki-kodama-manual.pdf"},
+        {"name": "All Onisiki manuals", "url": "https://www.onisiki.com/manuals"}
+    ],
+    "notes": "Reference card: a chassis kit, not software. Large manual (~39 MB), so it caches slowly on first open. Onisiki 403s datacenter IPs (CI) while serving residential ones fine - validate_catalog treats 403 as alive. Their own index links several PDFs via the dev.onisiki.com staging host, which 403s everywhere; always use www.onisiki.com.",
+    "source_verified": "2026-07-20"
+}

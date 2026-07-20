@@ -1,0 +1,14 @@
+{
+    "id": "sanwa-sgs-02",
+    "name": "SGS-02 Steering Gyro",
+    "vendor": "Sanwa",
+    "category": "gyro",
+    "homepage": "https://www.sanwa-denshi.com/rc/car/servo/",
+    "description": "Sanwa SGS-02 steering gyro. No PC software - gain and mode are set from an SSL-capable Sanwa transmitter.",
+    "version": "n/a",
+    "links": [
+        {"name": "SGS-02 manual (EN PDF)", "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/SGS-02_ENG_Manual.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software - Sanwa publishes none for any product. Supersedes the SGS-01/SGS-01D, whose product pages now 404.",
+    "source_verified": "2026-07-20"
+}

@@ -23,8 +23,9 @@
     },
     "drivers": [],
     "links": [
-        {"name": "AGF-SP USB program card instructions", "url": "https://www.agfrc.com/index.php?id=2550"}
+        {"name": "AGF-SPV3 USB program card instructions", "url": "https://www.agfrc.com/index.php?id=2550"},
+        {"name": "AGFRC software downloads index", "url": "https://www.agfrc.com/index.php?id=DOWNLOAD&cate=software"}
     ],
-    "notes": "Bare portable exe (AGF-SP V4 build) - no installer, run directly. AGFRC serves it under an opaque hashed filename that changes when re-uploaded, so both the download URL and exe_relative_path rot together (the single-exe scan still resolves the launcher). A separate legacy build exists for the older AGF-SPV2 card.",
-    "source_verified": "2026-07-12"
+    "notes": "Bare portable exe (AGF-SP V4 build) - no installer, run directly. AGFRC serves it under an opaque hashed filename that changes when re-uploaded, so both the download URL and exe_relative_path rot together (the single-exe scan still resolves the launcher); as of 2026-07-20 it had not rotted and the pinned sha256 still matches. AGFRC publishes no manual for the SPV4 card - the linked instructions cover the older SPV3, which is why they are labelled as such. A separate legacy build exists for the AGF-SPV2 card.",
+    "source_verified": "2026-07-20"
 }

@@ -23,8 +23,9 @@
     },
     "drivers": [],
     "links": [
-        {"name": "Noble NB4 user manual (PDF)", "url": "https://www.flysky-cn.com/s/Noble_NB4_User_Manual-20250512-EN.pdf"}
+        {"name": "Noble NB4 user manual (PDF)", "url": "https://www.flysky-cn.com/s/Noble_NB4_User_Manual-20250512-EN.pdf"},
+        {"name": "NB4 firmware release notes (PDF)", "url": "https://www.flysky-cn.com/s/Release_Notes_For_Noble_NB4_Transmitter_Firmware-20250430.pdf"}
     ],
-    "notes": "Bare portable exe (self-contained firmware updater) - no installer, run directly. STD/global build; an FCC (US) variant also exists. USB flashing may trigger an antivirus warning (vendor says this is expected). The download URL redirects to a Squarespace static host whose token changes if FlySky re-uploads.",
-    "source_verified": "2026-07-12"
+    "notes": "Bare portable exe (self-contained firmware updater) - no installer, run directly. STD/global build; an FCC (US) variant also exists. USB flashing may trigger an antivirus warning (vendor says this is expected). The download URL redirects to a Squarespace static host whose token changes if FlySky re-uploads (it had not as of 2026-07-20, and the pinned sha256 still matches). Do not add FlySky's 'Quick Start Guide' link: it resolves to a Chinese-language 2019 doc for the original Noble, not the NB4.",
+    "source_verified": "2026-07-20"
 }

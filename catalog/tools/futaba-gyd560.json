@@ -1,0 +1,34 @@
+{
+    "id": "futaba-gyd560",
+    "name": "GYD560 Gyro Updater",
+    "vendor": "Futaba",
+    "category": "gyro",
+    "homepage": "https://futabausa.com/product/gyd560/",
+    "description": "Update the firmware on the Futaba GYD560 drift counter-steer gyro over a CIU-2 / CIU-3 USB interface.",
+    "os": ["windows"],
+    "version": "2.0",
+    "download": {
+        "url": "https://futabausa.com/wp-content/uploads/2026/05/GYD560_Ver_2_0-Eng.zip",
+        "archive": "zip",
+        "sha256": "407febc7400b59e9359d42b3cc4385be969ea325648817756fcd88cefcad7f9a"
+    },
+    "install": {
+        "exe_relative_path": "Updater(Highspeed).exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://futabausa.com/product-support/software-downloads/",
+        "pattern": "GYD560[\\s\\S]{0,400}?Version (\\d+\\.\\d+)"
+    },
+    "drivers": [
+        {"name": "CIU-2 / CIU-3 USB driver (FTDI CDM 2.12.10)", "url": "https://futabausa.com/wp-content/uploads/2018/10/CIU-2_v2.12.10_ENG.zip"}
+    ],
+    "links": [
+        {"name": "GYD560 product page", "url": "https://futabausa.com/product/gyd560/"},
+        {"name": "Futaba software downloads index", "url": "https://futabausa.com/product-support/software-downloads/"},
+        {"name": "CIU-2 / CIU-3 driver instructions (EN PDF)", "url": "https://futabausa.com/wp-content/uploads/2023/07/Driver-2_12_10_ENG.pdf"}
+    ],
+    "notes": "The successor to the GYD550 and the only drift gyro with real Windows software. The download is a ZIP INSIDE A ZIP: the outer holds GYD560_Ver_2_0.zip plus the English update manual, and installer._unwrap_nested_zip flattens it so the updater lands at the tool dir root. Two updaters ship (Highspeed/Lowspeed) and both contain 'Update', which installer._find_exe's skip-list rejects - exe_relative_path must stay pinned or install fails with ExeNotFound. Requires a CIU-2 or CIU-3 interface (driver offered as a driver action; Windows usually installs the FTDI bridge itself). A transmitter-side update package also exists for T10PX/T10PXR/T10XCR/T6PV owners who have no CIU-3. Futaba's WordPress URL embeds both the upload month and the version, and WordPress appends '-1' on filename collisions, so version_check anchors on the software index page instead.",
+    "source_verified": "2026-07-20"
+}

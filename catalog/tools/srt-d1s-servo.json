@@ -1,0 +1,15 @@
+{
+    "id": "srt-d1s-servo",
+    "name": "D1S Drift Servo",
+    "vendor": "SRT",
+    "category": "servo",
+    "homepage": "https://www.srt-rc.com/index.php?catid=3",
+    "description": "SRT D1S high-voltage 1/10 drift steering servo. No PC software - programmed with the SP-MX082 program box.",
+    "version": "n/a",
+    "links": [
+        {"name": "D1S servo manual (PDF)", "url": "https://www.srt-rc.com/data/upload/image/20220402/1648861014551232.pdf"},
+        {"name": "SP-MX082 program box manual (PDF)", "url": "https://www.srt-rc.com/data/upload/image/20220606/1654493410303184.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software - SRT's download page is PDF manuals only. One of the few servos marketed explicitly for 1/10 drift. Manual URLs are opaque upload timestamps and will rot silently if SRT re-uploads; the catid=3 downloads index is the stable anchor. Note the vendor domain is srt-rc.com - srt-servo.com and srtservo.com do not resolve.",
+    "source_verified": "2026-07-20"
+}

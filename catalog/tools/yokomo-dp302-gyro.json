@@ -1,0 +1,14 @@
+{
+    "id": "yokomo-dp302-gyro",
+    "name": "DP-302 V4 Drift Gyro",
+    "vendor": "Yokomo",
+    "category": "gyro",
+    "homepage": "https://teamyokomo.com/parts/DPP-302V4B/",
+    "description": "Yokomo DP-302 V4 drift counter-steer gyro. No PC software - gain is set on the unit or from a spare transmitter channel.",
+    "version": "n/a",
+    "links": [
+        {"name": "DP-302 V4 user manual (PDF)", "url": "https://teamyokomo.com/downloadfiles/!02!MANUAL/!02!ELECTRONICS/DP-302V4_User_manual.pdf"}
+    ],
+    "notes": "Hardware-only device: no downloadable PC configuration software. Yokomo's only PC software is the SP-USBP servo programmer (see yokomo-sp-usbp); their ESCs and gyros are all set on-unit or by microSD.",
+    "source_verified": "2026-07-20"
+}

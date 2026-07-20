@@ -1,0 +1,32 @@
+{
+    "id": "kopropo-vfs-fr3-manager",
+    "name": "VFS-FR3 Manager",
+    "vendor": "KO Propo",
+    "category": "esc",
+    "homepage": "https://www.kopropo.co.jp/supports/view/335",
+    "description": "Adjust drive frequency, brake, drag brake and throttle curve on the KO Propo VFS-FR3 ESC.",
+    "os": ["windows"],
+    "version": "1.0.1",
+    "download": {
+        "url": "https://www.kondokagaku.jp/data_download/VFS-FR3_Manager_V1_0_1.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "VFS-FR3_Manager_V1_0_1/FR3_ManagetSoft_Ver101.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.kopropo.co.jp/supports/view/335",
+        "pattern": "VFS-FR3 Manager Ver(\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [
+        {"name": "KO Driver 2023 (ICS USB adapter)", "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"}
+    ],
+    "links": [
+        {"name": "VFS-FR3 Manager support page", "url": "https://www.kopropo.co.jp/supports/view/335"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. The exe filename contains the vendor's own typo ('ManagetSoft', not Manager) - that is correct, do not fix it. English and Japanese manuals plus a default-values .fr3 file ship inside the zip. VFS-FR3 only: KO states it is not backward compatible with VFS-FR2 or earlier. Needs the ICS USB Adapter HS, KO Driver 2023, and a 6.6-8.4 V pack connected to the ESC.",
+    "source_verified": "2026-07-20"
+}

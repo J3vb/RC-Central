@@ -1,0 +1,27 @@
+{
+    "id": "flysky-receiver-updater",
+    "name": "Receiver Upgrade Updater",
+    "vendor": "FlySky",
+    "category": "radio",
+    "homepage": "https://www.flysky-cn.com/nb4-xiazai",
+    "description": "Update the AFHDS3 RF firmware on FlySky surface receivers (FGr4, FGr4S, FGr4P, FTr-series and others).",
+    "os": ["windows"],
+    "version": "1.0.15",
+    "download": {
+        "url": "https://www.flysky-cn.com/s/Flysky-Reciver-Upgrade-Updater-V1015_EN.rar",
+        "archive": "rar",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "Flysky Reciver Upgrade Updater V1.0.15_EN/Flysky Reciver Upgrade Updater V1.0.15_EN.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "drivers": [],
+    "links": [
+        {"name": "NB4 download page", "url": "https://www.flysky-cn.com/nb4-xiazai"},
+        {"name": "AFHDS3 RF firmware update instructions", "url": "https://www.flysky-cn.com/journal/2022/3/11/operation-instructions-for-updating-afhds3-rf-library-firmware"}
+    ],
+    "notes": "Ships as a .rar - unpacked with Windows' bundled bsdtar (System32/tar.exe), no extra dependency. Portable Qt app, no installer. 'Reciver' is FlySky's own spelling in both the URL and the folder name; do not correct it. The exe name contains 'Updater', which installer._find_exe's skip-list rejects, so exe_relative_path must stay pinned. FGr4/FGr4S/FGr4P are the surface receivers paired with NB4-class drift radios. Deliberately has NO version_check: FlySky only ever prints the compressed 4-digit form (V1015) and never a dotted one, and is_newer('1015', '1.0.15') is True - so any regex here would report this tool permanently outdated. Self-hosted (302 to a Squarespace static host); the separate 'downgrade' build is Google-Drive hosted and deliberately not catalogued.",
+    "source_verified": "2026-07-20"
+}

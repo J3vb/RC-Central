@@ -1,0 +1,19 @@
+{
+    "id": "mst-drift-chassis",
+    "name": "RMX / FXX Drift Chassis",
+    "vendor": "MST",
+    "category": "chassis",
+    "homepage": "https://www.rc-mst.com/support.php",
+    "description": "Build manuals for MST's RWD drift chassis - the RMX line (2.5, 3.0, EX, 4) plus FXX and FRX.",
+    "version": "n/a",
+    "links": [
+        {"name": "RMX 4 support page", "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=71"},
+        {"name": "RMX EX support page", "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=69"},
+        {"name": "RMX 2.5 support page", "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=66"},
+        {"name": "RMX 3.0 support page", "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=64"},
+        {"name": "FXX 2.0 support page", "url": "https://www.rc-mst.com/support.php?class_sn=2&class_sn2=62"},
+        {"name": "All MST drift manuals", "url": "https://www.rc-mst.com/support.php"}
+    ],
+    "notes": "Reference card: a chassis kit, not software. MST publishes no PC software of any kind. These deliberately link the per-model SUPPORT PAGES rather than the PDFs: MST serves manuals from opaque upload-timestamp filenames (e.g. 202604080832442a.pdf) that change without notice, whereas the class_sn URLs are stable. Manuals are EN/CN bilingual diagrams.",
+    "source_verified": "2026-07-20"
+}

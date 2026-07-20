@@ -1,0 +1,32 @@
+{
+    "id": "gforce-usb-link",
+    "name": "G-Force USB Link",
+    "vendor": "G-Force",
+    "category": "esc",
+    "homepage": "https://www.gforce-hobby.jp/download/software/index.html",
+    "description": "Configure G-Force TS-series brushless ESCs and update the PROGBOX, over the G0017 PROGBOX USB link.",
+    "os": ["windows"],
+    "version": "2.08",
+    "download": {
+        "url": "https://www.gforce-hobby.jp/software/GFORCE%20USB%20Link%20V2.08.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "GFORCE USB Link V2.08/GFORCE USB Link V2.08.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.gforce-hobby.jp/download/software/index.html",
+        "pattern": "G-Force Link \\(Ver\\.(\\d+\\.\\d+)\\)"
+    },
+    "drivers": [],
+    "links": [
+        {"name": "G-Force software downloads index", "url": "https://www.gforce-hobby.jp/download/software/index.html"},
+        {"name": "TS120A R2 ESC manual (JP PDF)", "url": "https://www.gforce-hobby.jp/manual_pdf/TS120R2-manual.pdf"},
+        {"name": "PROGBOX manual (JP PDF)", "url": "https://www.gforce-hobby.jp/manual_pdf/GFORCE_PROGBOX_Ver0.8.pdf"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. The archive holds TWO exes (the main app and USBLINK/GFUsbLink_V2.exe), so exe_relative_path must stay pinned - the single-exe fallback scan cannot disambiguate them. Both the folder and exe names contain spaces. UI ships EN/JP/CN/DE resources; the manuals are Japanese. Requires the PROGBOX (G0017) and a data-capable micro-USB cable. G-Force keeps superseded versions online, so a stale URL degrades to an older build rather than a 404.",
+    "source_verified": "2026-07-20"
+}

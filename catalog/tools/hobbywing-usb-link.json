@@ -24,9 +24,9 @@
     },
     "drivers": [],
     "links": [
-        {"name": "USB Link software / support page", "url": "https://hobbywing.com/en/service/application?id=1"},
+        {"name": "USB Link software user manual (EN PDF)", "url": "https://hobbywing.oss-cn-shenzhen.aliyuncs.com/pdf/enhw-20-usb.pdf"},
         {"name": "XeRun XR10 Justock ESC manual (PDF)", "url": "https://www.hobbywing.com/en/uploads/file/20221012/705a865b5f96846c156633191af766d3.pdf"}
     ],
-    "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release.",
-    "source_verified": "2026-07-10"
+    "notes": "Zip contains an Inno Setup installer (asInvoker, per-user, no UAC); RC Central runs it silently into its tools dir. The installed app itself requires admin, so launching shows a UAC prompt. Download URL is versioned and will rot on the next release. The support page is already reachable via homepage and version_check, so links[0] carries the actual 9-page software manual instead (first-party, on Hobbywing's own OSS bucket).",
+    "source_verified": "2026-07-20"
 }

@@ -23,8 +23,10 @@
     },
     "drivers": [],
     "links": [
-        {"name": "RS-ST instruction manual (EN PDF)", "url": "https://teamreved.com/wp-content/uploads/2019/11/Manual_EN.pdf"}
+        {"name": "RS-ST instruction manual (EN PDF)", "url": "https://teamreved.com/wp-content/uploads/2019/11/Manual_EN.pdf"},
+        {"name": "RS-PGCA/PGCB USB programmer manual (PDF)", "url": "https://teamreved.com/wp-content/uploads/2022/07/RS-PGCA_m.pdf"},
+        {"name": "RS-ST programmable setting sheet (PDF)", "url": "https://teamreved.com/wp-content/uploads/2024/06/RS-ST_Setting-Sheet_20240611.pdf"}
     ],
-    "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so expect this URL to rot on the next release.",
-    "source_verified": "2026-07-10"
+    "notes": "Windows only. Portable exe - unzip and run, no installer. The download page slug and wpdmdl id change per version, so this URL may rot on the next release (it had not as of 2026-07-20). This wpdmdl=5274 package is the right one for both RS-ST and RS-ST PRO - Reve D's own PRO product pages link to it. Do NOT switch to the separate 'RS-ST PRO Servo Program system' item (wpdmdl=5073): it never serves bytes, returning HTTP 200 with a WPDM 'file not found' HTML interstitial.",
+    "source_verified": "2026-07-20"
 }

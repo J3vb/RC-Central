@@ -1,0 +1,28 @@
+{
+    "id": "kopropo-ex-next-updater",
+    "name": "EX-NEXT Updater",
+    "vendor": "KO Propo",
+    "category": "radio",
+    "homepage": "https://www.kopropo.co.jp/supports/view/340",
+    "description": "Flash firmware to the KO Propo EX-NEXT transmitter's master and Xpansion units.",
+    "os": ["windows"],
+    "version": "1.00",
+    "download": {
+        "url": "https://www.kopropo.co.jp/upload/materials/UpDater_for_EX_NEXT_V1_00_Download.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "UpDater_for_EX-NEXT_V1.00-Download/EX_Next_UpDater_V1_00_01.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "drivers": [
+        {"name": "KO Driver 2023 (ICS USB adapter)", "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"}
+    ],
+    "links": [
+        {"name": "EX-NEXT updater support page (firmware files)", "url": "https://www.kopropo.co.jp/supports/view/340"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. English and Japanese manuals ship inside the zip. Deliberately has NO version_check: the support page advertises the EX-NEXT *firmware* version (3.02+), not this updater app, which has stayed at V1.00 since 2021 - a version_check there would report the tool permanently outdated. Firmware payloads are separate downloads from the same page. Needs the ICS USB Adapter HS (#61028, red label - the black #61018 does not work). The exe name contains 'UpDater', which installer._find_exe's skip-list would reject, so exe_relative_path must stay pinned.",
+    "source_verified": "2026-07-20"
+}

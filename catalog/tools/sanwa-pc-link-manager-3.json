@@ -1,0 +1,29 @@
+{
+    "id": "sanwa-pc-link-manager-3",
+    "name": "PC-LINK MANAGER 3",
+    "vendor": "Sanwa",
+    "category": "radio",
+    "homepage": "https://www.sanwa-denshi.com/rc/car/propo/m12s.html",
+    "description": "Back up model data and update firmware on the Sanwa M12S transmitter over USB.",
+    "os": ["windows"],
+    "version": "3",
+    "download": {
+        "url": "https://www.sanwa-denshi.co.jp/rc/common/pdf/option1/LinkManager3.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "LinkManager3/LinkManager3.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "drivers": [
+        {"name": "SANWA-M12 USB driver (inside the download)", "url": "https://www.sanwa-denshi.com/rc/car/propo/m12s.html"}
+    ],
+    "links": [
+        {"name": "PC-LINK MANAGER 3 manual (PDF)", "url": "https://sanwa-denshi.com/rc/car/propo/PC-LINK%20MANAGER3appMANUAL.pdf"},
+        {"name": "M12S product page", "url": "https://www.sanwa-denshi.com/rc/car/propo/m12s.html"}
+    ],
+    "notes": "M12S only - the M12 and EXZES Z use PC-LINK MANAGER 2. The zip ships both a portable LinkManager3.exe and a LinkManager3_setup.exe; RC Central runs the portable one, so no admin is needed for the app itself. Installing the bundled SANWA-M12.inf USB driver does need admin and must be done by hand. Requires .NET Framework 4. This is the only Sanwa PC software that exists - the rest of their line has none, and transmitter firmware ships as microSD payloads on one-off news pages. Sanwa's own link is http://; the https form serves the same file and is used here. Deliberately has NO version_check: the URL and page carry no version number, which also makes this the most rot-resistant download in the catalog - but it means a silent in-place update would go unnoticed.",
+    "source_verified": "2026-07-20"
+}

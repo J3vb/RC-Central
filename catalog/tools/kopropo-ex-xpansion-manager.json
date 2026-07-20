@@ -1,0 +1,32 @@
+{
+    "id": "kopropo-ex-xpansion-manager",
+    "name": "EX-Xpansion Manager",
+    "vendor": "KO Propo",
+    "category": "radio",
+    "homepage": "https://www.kopropo.co.jp/supports/view/267",
+    "description": "Edit, back up and restore model data for KO Propo EX-RR / EX-2 / EX-LDT transmitters fitted with the EXP-104 Xpansion unit.",
+    "os": ["windows"],
+    "version": "2.12",
+    "download": {
+        "url": "https://www.kopropo.co.jp/upload/materials/XpansionManagerV2_12.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "EX-XpansionManager_20190627/EX-XpansionManagerV2_1_2_1.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.kopropo.co.jp/supports/view/267",
+        "pattern": "V(\\d+\\.\\d+) - KOPROPO"
+    },
+    "drivers": [
+        {"name": "KO Driver 2023 (ICS USB adapter)", "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"}
+    ],
+    "links": [
+        {"name": "EX-Xpansion Manager support page", "url": "https://www.kopropo.co.jp/supports/view/267"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. The zip ships en-US and ja-JP resource DLLs, so the UI is genuinely bilingual. Note the folder version (V2.12) and the exe's own build string (V2_1_2_1) differ - exe_relative_path uses the exe's. Requires the EXP-104S Xpansion unit, the ICS USB Adapter HS and KO Driver. Not for EX-NEXT: that radio uses its own updater and backup manager.",
+    "source_verified": "2026-07-20"
+}

@@ -171,6 +171,89 @@ def test_install_scans_when_relative_path_missing(sandbox):
     assert installer.install(tool).name == "FakeTool.exe"
 
 
+def test_extract_unwraps_single_nested_zip(tmp_path):
+    # Futaba's GYD560 package is a zip whose payload is another zip plus a PDF, so
+    # the exe is one level below anything exe_relative_path can address.
+    inner = tmp_path / "inner.zip"
+    with zipfile.ZipFile(inner, "w") as z:
+        z.writestr("Updater(Highspeed).exe", b"MZ fake exe")
+        z.writestr("GYD560.bin", b"\x00")
+    outer = tmp_path / "outer.zip"
+    with zipfile.ZipFile(outer, "w") as z:
+        z.writestr("GYD560_Ver_2_0.zip", inner.read_bytes())
+        z.writestr("GYD560_Up_V2.0(E)_A4.pdf", b"%PDF-1.4")
+    dest = tmp_path / "dest"
+
+    installer._extract(outer, dest)
+
+    assert (dest / "Updater(Highspeed).exe").read_bytes() == b"MZ fake exe"
+    assert not (dest / "GYD560_Ver_2_0.zip").exists()  # husk removed
+    assert (dest / "GYD560_Up_V2.0(E)_A4.pdf").exists()  # siblings survive
+
+
+def test_extract_leaves_nested_zip_alone_when_outer_has_an_exe(tmp_path):
+    # An archive that legitimately bundles a zip beside its app must not be unwrapped:
+    # unwrapping would scatter the payload into the tool dir next to the real exe.
+    inner = tmp_path / "payload.zip"
+    with zipfile.ZipFile(inner, "w") as z:
+        z.writestr("firmware.bin", b"\x00")
+    outer = tmp_path / "outer.zip"
+    with zipfile.ZipFile(outer, "w") as z:
+        z.writestr("RealTool.exe", b"MZ")
+        z.writestr("payload.zip", inner.read_bytes())
+    dest = tmp_path / "dest"
+
+    installer._extract(outer, dest)
+
+    assert (dest / "payload.zip").exists()
+    assert not (dest / "firmware.bin").exists()
+
+
+def test_runtime_archive_list_matches_schema():
+    # catalog._valid() rejects the WHOLE catalog if one entry fails, so an archive
+    # value allowed by the CI-only schema but missing from the runtime tuple would
+    # silently strand every user on their cached copy.
+    from app import catalog as catalog_mod
+
+    schema = json.loads((ROOT / "catalog" / "schema.json").read_text(encoding="utf-8"))
+    allowed = schema["properties"]["download"]["properties"]["archive"]["enum"]
+    assert set(catalog_mod._ARCHIVES) == set(allowed)
+
+
+def test_real_catalog_passes_the_runtime_shape_check():
+    # the bundled catalog is what ships; if it can't survive _valid() the app falls
+    # back to a stale cache instead of showing the entries we just added.
+    from app import catalog as catalog_mod
+
+    tools = json.loads((ROOT / "catalog" / "catalog.json").read_text(encoding="utf-8"))
+    rejected = [t.get("id") for t in tools if not catalog_mod._valid_tool(t)]
+    assert rejected == []
+    assert catalog_mod._valid(tools)
+
+
+def test_extract_dispatches_rar_to_bsdtar(tmp_path, monkeypatch):
+    # libarchive reads RAR but cannot write it, so there is no way to build a real
+    # fixture - assert the dispatch instead, and cover the CLI's absence below.
+    seen = {}
+    monkeypatch.setattr(
+        installer, "_extract_rar", lambda archive, dest: seen.update(archive=archive, dest=dest)
+    )
+    archive = tmp_path / "download.rar"
+    archive.write_bytes(b"Rar!\x1a\x07\x01\x00")
+
+    installer._extract(archive, tmp_path / "dest")
+
+    assert seen["archive"] == archive
+
+
+def test_extract_rar_without_bsdtar_explains_itself(tmp_path, monkeypatch):
+    # Windows ships tar.exe from 10 1803 on; if it is somehow absent the user must get
+    # an actionable sentence, not a FileNotFoundError traceback.
+    monkeypatch.setattr(installer, "_bsdtar", lambda: tmp_path / "nope" / "tar.exe")
+    with pytest.raises(RuntimeError, match="vendor's site"):
+        installer._extract_rar(tmp_path / "download.rar", tmp_path / "dest")
+
+
 def test_hash_mismatch_raises(sandbox):
     tool = _tool()
     tool["download"]["sha256"] = "0" * 64

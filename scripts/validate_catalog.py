@@ -74,6 +74,15 @@ def main() -> int:
                 problem = _check_url(url)
                 if problem:
                     failures.append(f"{f.name}: {url} -> {problem}")
+            # homepage is where users land from the Website button, so a dead one is a
+            # real (if quieter) failure than a dead download. NOTE this catches hard
+            # deaths only - 404, DNS, a gone domain. It canNOT catch a soft 404, where
+            # the vendor serves HTTP 200 with a "product not found" page: that is
+            # exactly what yokomo-rpx-esc did, and no status-based check will see it.
+            if tool.get("homepage"):
+                problem = _check_url(tool["homepage"], expect_file=False)
+                if problem:
+                    failures.append(f"{f.name}: {tool['homepage']} -> {problem}")
             for link in tool.get("links", []):
                 problem = _check_url(link["url"], expect_file=False)
                 if problem:

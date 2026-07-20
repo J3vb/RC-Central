@@ -1,0 +1,33 @@
+{
+    "id": "kopropo-ics-servo-manager",
+    "name": "ICS Servo Manager",
+    "vendor": "KO Propo",
+    "category": "servo",
+    "homepage": "https://www.kopropo.co.jp/supports/view/62",
+    "description": "Set power, torque, punch, neutral and dead band on KO Propo RSx/BSx series servos over the ICS USB adapter.",
+    "os": ["windows"],
+    "version": "2.0.1.0",
+    "download": {
+        "url": "https://www.kopropo.co.jp/app/webroot/js/kcfinder/upload/images/sys/2014/01/IcsServoManagerV2010.zip",
+        "archive": "zip",
+        "sha256": null
+    },
+    "install": {
+        "exe_relative_path": "IcsServoManagerV2010/IcsServoManager.exe",
+        "portable": true,
+        "needs_admin": false
+    },
+    "version_check": {
+        "url": "https://www.kopropo.co.jp/supports/view/62",
+        "pattern": "Ver(?:\\.)?(\\d+\\.\\d+\\.\\d+\\.\\d+)"
+    },
+    "drivers": [
+        {"name": "KO Driver 2023 (ICS USB adapter)", "url": "https://www.kondokagaku.jp/data_download/KO_Driver2023.zip"}
+    ],
+    "links": [
+        {"name": "ICS Servo Manager support page", "url": "https://www.kopropo.co.jp/supports/view/62"},
+        {"name": "RSx4S/BSx4S servo manual (EN/JP PDF)", "url": "https://www.kondokagaku.jp/data_download/BSx4S_RSx4S_manual_V1_3_J_E.pdf"}
+    ],
+    "notes": "Portable exe - unzip and run, no installer. Covers RSx3/RSx2/RSx-one10/RSx-12 and BSx3/BSx2; the newer RSx4S/BSx4S are NOT PC-programmable (KO says so outright - use the Servo Model Selector or EX-NEXT real-time ICS). Requires the ICS USB Adapter HS plus KO Driver 2023, offered as a driver action. English and Japanese manuals ship inside the zip. KO publishes across two upload roots and the wrong one 404s with an HTML body, so do not hand-edit this path.",
+    "source_verified": "2026-07-20"
+}

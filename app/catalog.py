@@ -21,7 +21,11 @@ def _bundled_tools_dir() -> Path:
     return base / "catalog" / "tools"
 
 
-_ARCHIVES = ("zip", "7z", "exe")
+# keep in sync with catalog/schema.json's download.archive enum: the schema runs
+# only in CI, this runs on every launch, and _valid() rejects the WHOLE catalog if
+# any one entry fails - so a value allowed there but missing here silently strands
+# every user on their cached copy.
+_ARCHIVES = ("zip", "7z", "rar", "exe")
 
 
 def _valid_tool(t) -> bool:

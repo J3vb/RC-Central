@@ -7,8 +7,10 @@
     "description": "Sanwa PGS programmable drift/touring servos. No PC software - set with the Multi Setting Gear unit or wirelessly from an SSL transmitter.",
     "version": "n/a",
     "links": [
-        {"name": "Manual (PGS-CLE, EN PDF)", "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS_CLE_ENG_Manual.pdf"}
+        {"name": "Manual (PGS-CLE, EN PDF)", "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS_CLE_ENG_Manual.pdf"},
+        {"name": "Manual (PGS-HR, EN PDF)", "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/PGS-HR_ENG_Manual.pdf"},
+        {"name": "Multi Setting Gear manual (EN PDF)", "url": "https://sanwa-denshi.com/rc/Manual/Servo_Gyro/MULTI-SETTING-GEAR_ENG_Manual.pdf"}
     ],
-    "notes": "Hardware-only device: no downloadable PC configuration software.",
-    "source_verified": "2026-07-12"
+    "notes": "Hardware-only device: no downloadable PC configuration software. Sanwa publishes no PC software for any product - the site has no software or download section at all, and transmitter firmware ships as a microSD payload linked from one-off news pages. The Multi Setting Gear manual is linked here because the description names that unit as the configuration path.",
+    "source_verified": "2026-07-20"
 }
