@@ -13,7 +13,7 @@ utilities. Pick a tool from the catalog, click Install, click Launch. No hunting
 through vendor download pages. It also bundles a gearing calculator, a drift
 tuning guide, and a car garage for tracking your setups.
 
-![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](docs/screenshots/tools-tab.png)
+![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](screenshots/tools-tab.png)
 
 **Status: beta.** The catalog covers 12 entries: 7 installable tools — servo
 programmers (Rêve D, AGFRC), ESC suites (Hobbywing, SkyRC, Acuvance), and
