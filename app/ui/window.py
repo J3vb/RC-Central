@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from app import __version__, catalog
 
-from app.ui.common import _ACCENT, _settings, app_icon
+from app.ui.common import _ACCENT, _settings, _show_status, app_icon
 from app.ui.manuals import ManualsTab
 from app.ui.settings import SettingsTab
 from app.ui.tools import ToolsTab
@@ -128,7 +128,7 @@ class MainWindow(QMainWindow):
         if self.tools_tab is not None:
             self.tools_tab.set_catalog(fresh)
         self.manuals_tab.set_catalog(fresh)
-        self.statusBar().showMessage("Catalog updated", 5000)
+        _show_status(self, "Catalog updated", 5000)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         settings = _settings()
