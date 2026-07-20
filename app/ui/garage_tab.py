@@ -116,6 +116,10 @@ class GarageTab(QWidget):
     # Emitted after a "Restore all": car files on disk changed under possibly-unchanged
     # ids, so the Gearing/Tuning sub-tabs must force-reload past their same-id guards.
     garage_restored = Signal()
+    # Emitted when a Save seeded gearing from the car's chassis. Same problem as above
+    # (data changed under an unchanged id) but a distinct cause, so it gets its own
+    # signal rather than borrowing garage_restored's — only Gearing needs to react.
+    gearing_seeded = Signal()
 
     def __init__(self):
         super().__init__()
@@ -306,7 +310,9 @@ class GarageTab(QWidget):
         # Start from the stored car (not new_car()) and overlay only the fields the
         # form edits, so values with no widget — the whole gearing block and presets
         # (owned by the Gearing sub-tab) and any field added later — survive a Save
-        # instead of being reset to their new_car() defaults.
+        # instead of being reset to their new_car() defaults. The single exception is
+        # _on_save's garage.apply_chassis_defaults call, which may seed gearing from a
+        # newly picked chassis — and only ever on a car whose gearing is untouched.
         car = (self.current_id and garage.load_car(self.current_id)) or garage.new_car()
         if self.current_id:
             car["id"] = self.current_id
@@ -363,12 +369,21 @@ class GarageTab(QWidget):
                 break
 
     def _on_save(self) -> None:
-        saved = garage.save_car(self._form_to_car())
+        car = self._form_to_car()
+        seeded = garage.apply_chassis_defaults(car)
+        saved = garage.save_car(car)
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
-        _show_status(self, f"Saved {saved['name']}", 5000)
+        if seeded:
+            _show_status(self, f"Saved {saved['name']} — applied {saved['chassis']} gearing", 6000)
+        else:
+            _show_status(self, f"Saved {saved['name']}", 5000)
         self.car_selected.emit(saved["id"])  # covers create and rename alike
+        if seeded:
+            # the car's gearing changed under an unchanged id, which GearTab's same-id
+            # guard would otherwise ignore — same situation as a garage restore
+            self.gearing_seeded.emit()
 
     def _on_duplicate(self) -> None:
         if not self.current_id:  # nothing open to clone

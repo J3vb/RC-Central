@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from app import parts
 from app.paths import data_dir
 
 DATA_DIR = data_dir()
@@ -41,6 +42,42 @@ def new_car(name: str = "New Car") -> dict:
         "presets": [],  # named gearing snapshots; see add_preset()
         "notes": "",
     }
+
+
+# the gearing fields a chassis may seed; also the ones checked for "has the user
+# touched this?", so we only ever decline when we would actually overwrite something
+_SEEDABLE = ("internal_ratio", "spur", "pinion")
+
+
+def gearing_is_untouched(car: dict) -> bool:
+    """Whether a car's gearing is still exactly as new_car() left it.
+
+    Compared against a fresh new_car() rather than hardcoded numbers so this can't drift
+    if the defaults change. A non-None ``fdr`` means the Gear Calculator has been used
+    and saved on this car, which counts as touched even if the inputs happen to match.
+    """
+    gearing = car.get("gearing") or {}
+    if gearing.get("fdr") is not None:
+        return False
+    defaults = new_car()["gearing"]
+    return all(gearing.get(key) == defaults[key] for key in _SEEDABLE)
+
+
+def apply_chassis_defaults(car: dict) -> bool:
+    """Seed gearing from the car's chassis, but only if the user never touched it.
+
+    Returns whether anything was written, so the UI can tell the Gearing tab to re-read
+    (its usual same-id guard would otherwise ignore a change under an unchanged car id).
+
+    Never overwrites: a car whose gearing differs from the defaults in any seedable
+    field is left completely alone. A chassis we have no verified data for is a no-op
+    too - see parts.CHASSIS_GEARING for why an entry may be deliberately absent.
+    """
+    defaults = parts.CHASSIS_GEARING.get((car.get("chassis") or "").strip())
+    if not defaults or not gearing_is_untouched(car):
+        return False
+    car.setdefault("gearing", {}).update(defaults)
+    return True
 
 
 def list_presets(car: dict) -> list[dict]:

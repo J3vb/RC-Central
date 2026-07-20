@@ -40,7 +40,14 @@ class GearTab(QWidget):
         self.spur.setRange(1, 200)
         self.spur.setValue(87)
         self.internal_ratio = QDoubleSpinBox()
-        self.internal_ratio.setRange(1.0, 5.0)
+        # Ceiling is 12.0, not 5.0: mid-motor drift chassis really do run this high -
+        # MST's own setup sheets give FXX 2.0 6.873 and FRX 8.182 - and a QDoubleSpinBox
+        # clamps silently, so the old 5.0 quietly produced a wrong FDR for those cars.
+        # 3 decimals for the same reason: those ratios are the product of gear stages and
+        # need 3dp, and the widget's value is written straight back by _spinbox_gearing,
+        # so 2dp would silently round a vendor figure down on the next save.
+        self.internal_ratio.setDecimals(3)
+        self.internal_ratio.setRange(1.0, 12.0)
         self.internal_ratio.setSingleStep(0.1)
         self.internal_ratio.setValue(1.9)
         self.tire = QDoubleSpinBox()

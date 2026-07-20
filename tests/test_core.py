@@ -1642,6 +1642,59 @@ def test_garage_tab_part_combos_keep_free_text_and_learn_it(monkeypatch, tmp_pat
     assert tab.chassis.currentText() == "One-off carbon tub"
 
 
+def test_garage_tab_save_seeds_gearing_from_chassis(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+    fired = []
+    tab.gearing_seeded.connect(lambda: fired.append(True))
+
+    tab.name.setText("Fresh build")
+    tab.chassis.setCurrentText("Yokomo YD-2")
+    tab._on_save()
+
+    saved = garage.load_car(tab.current_id)
+    assert saved["gearing"]["internal_ratio"] == 2.6  # not new_car()'s generic 1.9
+    assert saved["gearing"]["spur"] == 84
+    assert saved["gearing"]["pinion"] == 20
+    assert fired == [True]  # Gearing must be told to re-read past its same-id guard
+
+    # a second save must not re-seed: the gearing is no longer untouched
+    fired.clear()
+    tab._on_save()
+    assert fired == []
+
+
+def test_garage_tab_save_leaves_tuned_gearing_alone(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    # a car the user has already geared by hand, then names a chassis afterwards
+    car = garage.new_car("Tuned")
+    car["gearing"]["pinion"] = 31
+    car = garage.save_car(car)
+    tab._reload_list()
+    tab.open_car(car["id"])  # _select_id alone blocks signals, so current_id stays unset
+    tab.chassis.setCurrentText("Yokomo YD-2")
+    tab._on_save()
+
+    saved = garage.load_car(car["id"])
+    assert saved["chassis"] == "Yokomo YD-2"  # the spec field still updates
+    assert saved["gearing"]["pinion"] == 31  # ...but their gearing is untouched
+    assert saved["gearing"]["internal_ratio"] == 1.9
 
 
 def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
@@ -2211,6 +2264,45 @@ def test_settings_about_button(monkeypatch):
     assert "MIT" in text
     assert "github.com/J3vb/RC-Central" in text
 
+
+def test_workshop_chassis_seed_reaches_the_gearing_tab(monkeypatch, tmp_path):
+    # The end-to-end path this feature exists for: pick a chassis in Garage, and the
+    # Gearing sub-tab shows that chassis's ratio without the user switching tabs.
+    # GearTab re-seeds only when the car *id* changes, so this only works if the
+    # gearing_seeded signal forces it past that guard.
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtWidgets import QApplication
+
+    import app.ui.common
+    from app import garage
+    from app.ui.workshop import WorkshopTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
+    _ = QApplication.instance() or QApplication([])
+
+    car = garage.save_car(garage.new_car("Seed me"))
+    tab = WorkshopTab()
+    tab.car_combo.setCurrentIndex(tab.car_combo.findData(car["id"]))
+    assert tab.gear.internal_ratio.value() == 1.9  # generic default before the pick
+
+    tab.garage.chassis.setCurrentText("Rêve D RDX")
+    tab.garage._on_save()
+
+    assert tab.gear.internal_ratio.value() == 2.6  # Rêve D's printed "2nd RATIO"
+
+    # and a mid-motor chassis must not be clamped by the spinbox ceiling
+    other = garage.save_car(garage.new_car("Mid motor"))
+    tab.car_combo.setCurrentIndex(tab.car_combo.findData(other["id"]))
+    tab.garage.chassis.setCurrentText("MST FRX")
+    tab.garage._on_save()
+    assert tab.gear.internal_ratio.value() == pytest.approx(8.182, abs=0.001)
 
 
 def test_workshop_active_car_sync(monkeypatch, tmp_path):
