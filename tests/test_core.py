@@ -3056,3 +3056,68 @@ def test_setup_diagram_panel_renders(monkeypatch, tmp_path):
     tab.setup_panel.resize(320, 480)
     pixmap = tab.setup_panel.grab()
     assert not pixmap.isNull() and pixmap.width() > 0
+
+
+def test_setup_panel_drift_marks(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    assert tab.setup_panel._dirty == set()  # no base saved -> nothing marked
+    tab.name.setText("Drifter")
+    tab._setup_fields["camber_front"].setText("-2.0")
+    tab._on_save_base()
+    assert tab.setup_panel._dirty == set()  # base == current right after saving it
+
+    tab._setup_fields["camber_front"].setText("-3.5")  # drift away from base
+    assert tab.setup_panel._dirty == {"camber_front"}
+    assert "●" in tab.setup_panel._boxes["camber_front"].caption.text()
+
+    tab._on_apply_base()  # back to base -> the mark clears
+    assert tab.setup_panel._dirty == set()
+    assert "●" not in tab.setup_panel._boxes["camber_front"].caption.text()
+
+
+def test_setup_panel_focus_highlight(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QFocusEvent
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    # drive the events directly: real keyboard focus is unreliable offscreen
+    edit = tab._setup_fields["toe_rear"]
+    QApplication.sendEvent(edit, QFocusEvent(QEvent.Type.FocusIn))
+    assert tab.setup_panel._focused_key == "toe_rear"
+    QApplication.sendEvent(edit, QFocusEvent(QEvent.Type.FocusOut))
+    assert tab.setup_panel._focused_key is None
+
+
+def test_setup_panel_tooltips_carry_tuning_advice(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tip = tab._setup_fields["toe_front"].toolTip()
+    assert "If understeering" in tip and "If oversteering" in tip
+    # camber is deliberately unmapped (the chart's row is about camber links);
+    # its tooltip is just the full field label
+    assert tab._setup_fields["camber_front"].toolTip() == "Camber front (°)"

@@ -309,6 +309,7 @@ class GarageTab(QWidget):
         for key, edit in self._setup_fields.items():
             edit.setText(str(setup.get(key) or ""))
         self.apply_base_btn.setEnabled(car.get("base_setup") is not None)
+        self.setup_panel.set_base(car.get("base_setup"))  # refresh the drift marks
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
@@ -419,6 +420,8 @@ class GarageTab(QWidget):
         self._reload_list()
         self._select_id(saved["id"])
         self.apply_base_btn.setEnabled(True)
+        # the one save path that skips _fill_form, so refresh the drift marks here
+        self.setup_panel.set_base(saved.get("base_setup"))
         _show_status(self, f"Saved base setup for {saved['name']}", 5000)
         self.car_selected.emit(saved["id"])
 
