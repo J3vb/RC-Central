@@ -183,6 +183,36 @@ class GarageTab(QWidget):
         }
         self.notes = QPlainTextEdit()
 
+        # Chassis setup: string-valued like the spec fields, so any unit or notation
+        # from a manual ("5.5", "-2°", "#300") is kept verbatim. Front/rear pairs
+        # share a form row to keep the section compact; the fields stay separate in
+        # the model (see garage._SETUP_LABELS).
+        self._setup_fields = {key: QLineEdit() for key, _ in garage._SETUP_LABELS}
+        for key, edit in self._setup_fields.items():
+            if key.endswith("_front"):
+                edit.setPlaceholderText("front")
+            elif key.endswith("_rear"):
+                edit.setPlaceholderText("rear")
+        self.save_base_btn = QPushButton("Save as base")
+        self.save_base_btn.setToolTip(
+            "Snapshot the setup values above as this car's base setup — e.g. the "
+            "factory sheet from the manual — so you can return to them any time."
+        )
+        self.save_base_btn.clicked.connect(self._on_save_base)
+        self.apply_base_btn = QPushButton("Apply base")
+        self.apply_base_btn.setToolTip("Set the fields back to the saved base setup.")
+        self.apply_base_btn.clicked.connect(self._on_apply_base)
+        base_row = QHBoxLayout()
+        base_row.addWidget(self.save_base_btn)
+        base_row.addWidget(self.apply_base_btn)
+        base_row.addStretch(1)
+
+        def _pair(front_key: str, rear_key: str) -> QHBoxLayout:
+            row = QHBoxLayout()
+            row.addWidget(self._setup_fields[front_key])
+            row.addWidget(self._setup_fields[rear_key])
+            return row
+
         # Gearing (pinion/spur/…) is edited on the Gearing sub-tab, not here; the
         # form only overlays spec fields, so a car's gearing block rides through Save.
         form = QFormLayout()
@@ -192,6 +222,15 @@ class GarageTab(QWidget):
         form.addRow("ESC", self.esc)
         form.addRow("Servo", self.servo)
         form.addRow("Tires", self.tires)
+        form.addRow(QLabel("<b>Chassis setup</b>"))
+        form.addRow("Ride height (mm)", _pair("ride_height_front", "ride_height_rear"))
+        form.addRow("Camber (°)", _pair("camber_front", "camber_rear"))
+        form.addRow("Toe (°)", _pair("toe_front", "toe_rear"))
+        form.addRow("Caster (°)", self._setup_fields["caster"])
+        form.addRow("Springs", _pair("spring_front", "spring_rear"))
+        form.addRow("Shock oil", _pair("shock_oil_front", "shock_oil_rear"))
+        form.addRow("Rear diff", self._setup_fields["rear_diff"])
+        form.addRow("", base_row)
         form.addRow("Notes", self.notes)
 
         save_btn = QPushButton("&Save")
@@ -292,6 +331,10 @@ class GarageTab(QWidget):
         self.name.setText(car.get("name", ""))
         for field, combo in self._part_fields.items():
             combo.setCurrentText(car.get(field, ""))
+        setup = car.get("setup") or {}  # absent on cars saved before the setup block
+        for key, edit in self._setup_fields.items():
+            edit.setText(str(setup.get(key) or ""))
+        self.apply_base_btn.setEnabled(car.get("base_setup") is not None)
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
@@ -310,9 +353,10 @@ class GarageTab(QWidget):
         # Start from the stored car (not new_car()) and overlay only the fields the
         # form edits, so values with no widget — the whole gearing block and presets
         # (owned by the Gearing sub-tab) and any field added later — survive a Save
-        # instead of being reset to their new_car() defaults. The single exception is
-        # _on_save's garage.apply_chassis_defaults call, which may seed gearing from a
-        # newly picked chassis — and only ever on a car whose gearing is untouched.
+        # instead of being reset to their new_car() defaults. The exceptions are
+        # _on_save's garage.apply_chassis_defaults / apply_chassis_setup calls, which
+        # may seed gearing or setup from a newly picked chassis — and only ever on a
+        # car whose corresponding block is untouched.
         car = (self.current_id and garage.load_car(self.current_id)) or garage.new_car()
         if self.current_id:
             car["id"] = self.current_id
@@ -320,6 +364,7 @@ class GarageTab(QWidget):
             {
                 "name": self.name.text().strip() or "Unnamed",
                 **{f: c.currentText().strip() for f, c in self._part_fields.items()},
+                "setup": {k: e.text().strip() for k, e in self._setup_fields.items()},
                 "notes": self.notes.toPlainText(),
                 "log": self._current_log,  # the log is edited in-form before Save
             }
@@ -371,12 +416,21 @@ class GarageTab(QWidget):
     def _on_save(self) -> None:
         car = self._form_to_car()
         seeded = garage.apply_chassis_defaults(car)
+        setup_seeded = garage.apply_chassis_setup(car)
         saved = garage.save_car(car)
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
-        if seeded:
-            _show_status(self, f"Saved {saved['name']} — applied {saved['chassis']} gearing", 6000)
+        if setup_seeded:
+            # seeding changed setup values behind the form's back; show them
+            self._fill_form(saved)
+        applied = [w for w, s in (("gearing", seeded), ("base setup", setup_seeded)) if s]
+        if applied:
+            _show_status(
+                self,
+                f"Saved {saved['name']} — applied {saved['chassis']} " + " + ".join(applied),
+                6000,
+            )
         else:
             _show_status(self, f"Saved {saved['name']}", 5000)
         self.car_selected.emit(saved["id"])  # covers create and rename alike
@@ -384,6 +438,27 @@ class GarageTab(QWidget):
             # the car's gearing changed under an unchanged id, which GearTab's same-id
             # guard would otherwise ignore — same situation as a garage restore
             self.gearing_seeded.emit()
+
+    def _on_save_base(self) -> None:
+        saved = garage.save_car(garage.save_base_setup(self._form_to_car()))
+        self.current_id = saved["id"]
+        self._reload_list()
+        self._select_id(saved["id"])
+        self.apply_base_btn.setEnabled(True)
+        _show_status(self, f"Saved base setup for {saved['name']}", 5000)
+        self.car_selected.emit(saved["id"])
+
+    def _on_apply_base(self) -> None:
+        car = self._form_to_car()
+        if not garage.apply_base_setup(car):  # no base saved yet
+            return
+        saved = garage.save_car(car)
+        self.current_id = saved["id"]
+        self._fill_form(saved)
+        self._reload_list()
+        self._select_id(saved["id"])
+        _show_status(self, f"Applied base setup to {saved['name']}", 5000)
+        self.car_selected.emit(saved["id"])
 
     def _on_duplicate(self) -> None:
         if not self.current_id:  # nothing open to clone
@@ -421,7 +496,7 @@ class GarageTab(QWidget):
             return
         name = self.name.text().strip() or "this car"
         if QMessageBox.question(
-            self, "Delete", f"Delete '{name}' and everything saved with it (specs, gearing, presets, log)?"
+            self, "Delete", f"Delete '{name}' and everything saved with it (specs, gearing, setup, presets, log)?"
         ) != QMessageBox.StandardButton.Yes:
             return
         garage.delete_car(self.current_id)

@@ -17,6 +17,27 @@ DATA_DIR = data_dir()
 GARAGE_DIR = DATA_DIR / "garage"
 
 
+# The chassis-setup fields, in display order, shared by the Garage form, the
+# exported spec sheet and the compare view. String-valued on purpose: vendors mix
+# units and notations ("5.5", "-2°", "#300", "yellow spring"), and a wrong forced
+# unit is worse than free text. Front/rear are separate fields so they can seed
+# and diff independently even though the form pairs them on one row.
+_SETUP_LABELS = (
+    ("ride_height_front", "Ride height front (mm)"),
+    ("ride_height_rear", "Ride height rear (mm)"),
+    ("camber_front", "Camber front (°)"),
+    ("camber_rear", "Camber rear (°)"),
+    ("toe_front", "Toe front (°)"),
+    ("toe_rear", "Toe rear (°)"),
+    ("caster", "Caster (°)"),
+    ("spring_front", "Spring front"),
+    ("spring_rear", "Spring rear"),
+    ("shock_oil_front", "Shock oil front"),
+    ("shock_oil_rear", "Shock oil rear"),
+    ("rear_diff", "Rear diff"),
+)
+
+
 def new_car(name: str = "New Car") -> dict:
     """A blank in-memory spec sheet with a fresh id. Not persisted until save_car()."""
     return {
@@ -38,6 +59,8 @@ def new_car(name: str = "New Car") -> dict:
             "rollout_mm": None,
             "top_speed_kmh": None,
         },
+        "setup": {key: "" for key, _ in _SETUP_LABELS},
+        "base_setup": None,  # snapshot to return to; see save_base_setup()
         "log": [],  # run/maintenance history; see new_log_entry()
         "presets": [],  # named gearing snapshots; see add_preset()
         "notes": "",
@@ -77,6 +100,46 @@ def apply_chassis_defaults(car: dict) -> bool:
     if not defaults or not gearing_is_untouched(car):
         return False
     car.setdefault("gearing", {}).update(defaults)
+    return True
+
+
+def setup_is_untouched(car: dict) -> bool:
+    """Whether every chassis-setup field is still blank.
+
+    A car saved before the setup block existed has no "setup" key, which counts as
+    untouched — seeding it can't overwrite anything the user entered.
+    """
+    setup = car.get("setup") or {}
+    return not any(str(setup.get(key) or "").strip() for key, _ in _SETUP_LABELS)
+
+
+def apply_chassis_setup(car: dict) -> bool:
+    """Seed the setup block from the chassis' factory sheet, only if untouched.
+
+    Returns whether anything was written. Same contract as apply_chassis_defaults:
+    never overwrites a single user-entered field, and a chassis without verified
+    vendor data is a no-op — see parts.CHASSIS_SETUP for why entries may be absent.
+    """
+    defaults = parts.CHASSIS_SETUP.get((car.get("chassis") or "").strip())
+    if not defaults or not setup_is_untouched(car):
+        return False
+    setup = car.setdefault("setup", {key: "" for key, _ in _SETUP_LABELS})
+    setup.update(defaults)
+    return True
+
+
+def save_base_setup(car: dict) -> dict:
+    """Snapshot the car's current setup as its base; apply_base_setup returns to it."""
+    car["base_setup"] = copy.deepcopy(car.get("setup") or {})
+    return car
+
+
+def apply_base_setup(car: dict) -> bool:
+    """Copy the saved base setup back onto car['setup']. No-op without a saved base."""
+    base = car.get("base_setup")
+    if base is None:
+        return False
+    car.setdefault("setup", {}).update(copy.deepcopy(base))
     return True
 
 
@@ -178,6 +241,17 @@ def format_spec_sheet(car: dict) -> str:
         lines.append("Gearing:")
         lines.extend(geared)
 
+    setup = car.get("setup", {})
+    set_rows = [
+        f"  {label}: {str(setup[key]).strip()}"
+        for key, label in _SETUP_LABELS
+        if str(setup.get(key) or "").strip()
+    ]
+    if set_rows:
+        lines.append("")
+        lines.append("Chassis setup:")
+        lines.extend(set_rows)
+
     notes = str(car.get("notes", "")).strip()
     if notes:
         lines.append("")
@@ -207,7 +281,7 @@ def _values_equal(x, y) -> bool:
 def diff_cars(a: dict, b: dict) -> list[tuple[str, str, str, bool]]:
     """Per-field (label, value_a, value_b, differs) for a side-by-side compare view.
 
-    Same field order as format_spec_sheet: name, spec fields, then gearing. Values
+    Same field order as format_spec_sheet: name, spec fields, gearing, then setup. Values
     render via _fmt; `differs` compares the raw values (see _values_equal) so
     numerically-equal numbers of different types aren't flagged.
     """
@@ -217,6 +291,9 @@ def diff_cars(a: dict, b: dict) -> list[tuple[str, str, str, bool]]:
     ga, gb = a.get("gearing", {}), b.get("gearing", {})
     for key, label in _GEARING_LABELS:
         rows.append((label, ga.get(key), gb.get(key)))
+    sa, sb = a.get("setup", {}), b.get("setup", {})
+    for key, label in _SETUP_LABELS:
+        rows.append((label, sa.get(key), sb.get(key)))
     return [(label, _fmt(va), _fmt(vb), not _values_equal(va, vb)) for label, va, vb in rows]
 
 

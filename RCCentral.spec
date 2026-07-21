@@ -18,7 +18,9 @@ a = Analysis(
         ("catalog", "catalog"),
         ("app/assets", "app/assets"),
     ],
-    hiddenimports=[],
+    # QtPdf/QtPdfWidgets are imported behind a try/except (app/ui/pdf_viewer.py),
+    # so name them explicitly to be sure the Qt6Pdf libs get collected.
+    hiddenimports=["PySide6.QtPdf", "PySide6.QtPdfWidgets"],
 )
 
 pyz = PYZ(a.pure)

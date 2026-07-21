@@ -111,3 +111,55 @@ def test_gearing_is_untouched_tracks_new_car_rather_than_hardcoded_numbers():
     car = garage.new_car()
     car["gearing"]["spur"] += 1
     assert garage.gearing_is_untouched(car) is False
+
+
+# --- chassis-seeded base setup ---------------------------------------------------
+
+_FAKE_SETUP = {"Yokomo YD-2": {"ride_height_front": "5.0", "rear_diff": "Ball diff"}}
+
+
+def test_every_setup_chassis_is_a_real_chassis_name():
+    # same invariant as the gearing map: a typo would silently never match
+    unknown = set(parts.CHASSIS_SETUP) - set(parts.CHASSIS)
+    assert unknown == set()
+
+
+def test_setup_defaults_use_only_known_setup_fields():
+    known = {key for key, _ in garage._SETUP_LABELS}
+    for name, seed in parts.CHASSIS_SETUP.items():
+        assert set(seed) <= known, name
+        assert all(isinstance(v, str) and v.strip() for v in seed.values()), name
+
+
+def test_apply_chassis_setup_seeds_an_untouched_car(monkeypatch):
+    monkeypatch.setattr(parts, "CHASSIS_SETUP", _FAKE_SETUP)
+    car = garage.new_car("Fresh")
+    car["chassis"] = "Yokomo YD-2"
+    assert garage.apply_chassis_setup(car)
+    assert car["setup"]["ride_height_front"] == "5.0"
+    assert car["setup"]["rear_diff"] == "Ball diff"
+    assert car["setup"]["camber_front"] == ""  # unstated fields stay blank
+
+
+def test_apply_chassis_setup_never_overwrites_a_touched_field(monkeypatch):
+    monkeypatch.setattr(parts, "CHASSIS_SETUP", _FAKE_SETUP)
+    car = garage.new_car("Tweaked")
+    car["chassis"] = "Yokomo YD-2"
+    car["setup"]["camber_front"] = "-3"  # any user-entered value blocks seeding entirely
+    assert not garage.apply_chassis_setup(car)
+    assert car["setup"]["ride_height_front"] == ""
+
+
+def test_apply_chassis_setup_seeds_a_car_predating_the_setup_block(monkeypatch):
+    monkeypatch.setattr(parts, "CHASSIS_SETUP", _FAKE_SETUP)
+    car = {"name": "Old", "chassis": "Yokomo YD-2"}  # saved before the block existed
+    assert garage.apply_chassis_setup(car)
+    assert car["setup"]["ride_height_front"] == "5.0"
+
+
+def test_apply_chassis_setup_is_a_noop_without_verified_data(monkeypatch):
+    monkeypatch.setattr(parts, "CHASSIS_SETUP", _FAKE_SETUP)
+    car = garage.new_car("Unknown chassis")
+    car["chassis"] = "MST RMX 2.5"  # not in the (fake) map
+    assert not garage.apply_chassis_setup(car)
+    assert garage.setup_is_untouched(car)
