@@ -287,3 +287,43 @@ def test_diff_cars_handles_missing_setup_block():
     rows = garage.diff_cars({"name": "Old"}, garage.new_car("New"))
     diff = next(r for r in rows if r[0] == "Rear diff")
     assert diff[1] == "" and diff[2] == ""  # no KeyError; both render blank
+
+
+def test_new_car_has_empty_setup_presets():
+    assert garage.new_car("Fresh")["setup_presets"] == []
+
+
+def test_add_setup_preset_snapshots_current_setup():
+    car = garage.new_car("Presetful")
+    car["setup"]["camber_front"] = "-2"
+    garage.add_setup_preset(car, "carpet")
+    car["setup"]["camber_front"] = "-3"  # mutate after: preset must be a deep copy
+    assert garage.list_setup_presets(car)[0]["setup"]["camber_front"] == "-2"
+
+
+def test_apply_setup_preset_restores_setup():
+    car = garage.new_car("Switcher")
+    car["setup"]["rear_diff"] = "Spool"
+    garage.add_setup_preset(car, "carpet")
+    car["setup"]["rear_diff"] = "Ball diff"
+    garage.add_setup_preset(car, "asphalt")
+    garage.apply_setup_preset(car, "carpet")
+    assert car["setup"]["rear_diff"] == "Spool"
+
+
+def test_add_setup_preset_same_name_replaces():
+    car = garage.new_car("Dupe")
+    garage.add_setup_preset(car, "carpet")
+    garage.add_setup_preset(car, "carpet")
+    assert len(garage.list_setup_presets(car)) == 1
+
+
+def test_delete_setup_preset():
+    car = garage.new_car("Trim")
+    garage.add_setup_preset(car, "carpet")
+    garage.delete_setup_preset(car, "carpet")
+    assert garage.list_setup_presets(car) == []
+
+
+def test_list_setup_presets_missing_key_returns_empty():
+    assert garage.list_setup_presets({}) == []  # a car saved before they existed

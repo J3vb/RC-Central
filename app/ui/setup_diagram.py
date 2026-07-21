@@ -12,6 +12,7 @@ plus a dot on its caption (you see what you've drifted from your baseline).
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
+    QComboBox,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -193,10 +194,33 @@ class SetupDiagramPanel(QWidget):
         )
         self.apply_base_btn = QPushButton("Apply base")
         self.apply_base_btn.setToolTip("Set the fields back to the saved base setup.")
+        self.factory_btn = QPushButton("Factory")
+        self.factory_btn.setToolTip(
+            "Fill the fields from this chassis' verified factory sheet (doesn't save)."
+        )
+        self.factory_btn.setEnabled(False)  # GarageTab enables it per chassis
         base_row = QHBoxLayout()
         base_row.addWidget(self.save_base_btn)
         base_row.addWidget(self.apply_base_btn)
+        base_row.addWidget(self.factory_btn)
         base_row.addStretch(1)
+
+        # Named full-setup snapshots, mirroring the Gear tab's preset row: picking
+        # from the combo applies (activated only fires on user picks), Save… asks
+        # for a name, Del removes the selected one.
+        self.preset_combo = QComboBox()
+        self.preset_combo.setToolTip("Apply a saved setup preset.")
+        self.save_preset_btn = QPushButton("Save…")
+        self.save_preset_btn.setToolTip("Save the current setup as a named preset.")
+        self.save_preset_btn.setAccessibleName("Save setup preset")
+        self.del_preset_btn = QPushButton("Del")
+        self.del_preset_btn.setToolTip("Delete the selected setup preset.")
+        self.del_preset_btn.setAccessibleName("Delete setup preset")
+        preset_row = QHBoxLayout()
+        preset_row.addWidget(QLabel("Preset"))
+        preset_row.addWidget(self.preset_combo, 1)
+        preset_row.addWidget(self.save_preset_btn)
+        preset_row.addWidget(self.del_preset_btn)
 
         self._grid = QGridLayout(self)
         self._grid.setHorizontalSpacing(6)
@@ -206,12 +230,20 @@ class SetupDiagramPanel(QWidget):
             self._grid.addWidget(self._boxes[left], row, 0)
             self._grid.addWidget(self._boxes[right], row, 2)
         self._grid.addLayout(base_row, 7, 0, 1, 3)
+        self._grid.addLayout(preset_row, 8, 0, 1, 3)
         for col in range(3):
             self._grid.setColumnStretch(col, 1)
         self._grid.setColumnMinimumWidth(1, 100)  # room for the car + leader lines
         for row in range(1, 7):
             self._grid.setRowStretch(row, 1)
         self._restyle_captions()
+
+    def set_presets(self, presets: list[dict]) -> None:
+        """Repopulate the preset combo (placeholder first, name as item data)."""
+        self.preset_combo.clear()
+        self.preset_combo.addItem("— preset —", None)
+        for p in presets:
+            self.preset_combo.addItem(p.get("name", "preset"), p.get("name"))
 
     # -- drift-from-base marks ----------------------------------------------------
 

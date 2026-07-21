@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QListWidget,
@@ -191,9 +192,16 @@ class GarageTab(QWidget):
         self.setup_panel = SetupDiagramPanel()
         self.setup_panel.save_base_btn.clicked.connect(self._on_save_base)
         self.setup_panel.apply_base_btn.clicked.connect(self._on_apply_base)
+        self.setup_panel.factory_btn.clicked.connect(self._on_factory_setup)
+        self.setup_panel.preset_combo.activated.connect(self._on_apply_setup_preset)
+        self.setup_panel.save_preset_btn.clicked.connect(self._on_save_setup_preset)
+        self.setup_panel.del_preset_btn.clicked.connect(self._on_delete_setup_preset)
         self._setup_fields = self.setup_panel.fields
         self.save_base_btn = self.setup_panel.save_base_btn
         self.apply_base_btn = self.setup_panel.apply_base_btn
+        self.setup_preset_combo = self.setup_panel.preset_combo
+        # editable combo: currentTextChanged fires for typing AND programmatic sets
+        self.chassis.currentTextChanged.connect(self._update_factory_enabled)
 
         # Gearing (pinion/spur/…) is edited on the Gearing sub-tab, not here; the
         # form only overlays spec fields, so a car's gearing block rides through Save.
@@ -310,6 +318,8 @@ class GarageTab(QWidget):
             edit.setText(str(setup.get(key) or ""))
         self.apply_base_btn.setEnabled(car.get("base_setup") is not None)
         self.setup_panel.set_base(car.get("base_setup"))  # refresh the drift marks
+        self.setup_panel.set_presets(garage.list_setup_presets(car))
+        self._update_factory_enabled()
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
@@ -436,6 +446,62 @@ class GarageTab(QWidget):
         self._select_id(saved["id"])
         _show_status(self, f"Applied base setup to {saved['name']}", 5000)
         self.car_selected.emit(saved["id"])
+
+    def _on_save_setup_preset(self) -> None:
+        name, ok = QInputDialog.getText(self, "Save setup preset", "Preset name:")
+        if not ok or not name.strip():
+            return
+        saved = garage.save_car(garage.add_setup_preset(self._form_to_car(), name.strip()))
+        self.current_id = saved["id"]
+        self._reload_list()
+        self._select_id(saved["id"])
+        self._fill_form(saved)  # repopulates the preset combo
+        _show_status(self, f"Saved setup preset {name.strip()}", 5000)
+        self.car_selected.emit(saved["id"])
+
+    def _on_apply_setup_preset(self) -> None:
+        name = self.setup_preset_combo.currentData()
+        if not name:  # the "— preset —" placeholder
+            return
+        saved = garage.save_car(garage.apply_setup_preset(self._form_to_car(), name))
+        self.current_id = saved["id"]
+        self._fill_form(saved)
+        self._reload_list()
+        self._select_id(saved["id"])
+        _show_status(self, f"Applied setup preset {name}", 5000)
+        self.car_selected.emit(saved["id"])
+
+    def _on_delete_setup_preset(self) -> None:
+        name = self.setup_preset_combo.currentData()
+        if not name:
+            return
+        saved = garage.save_car(garage.delete_setup_preset(self._form_to_car(), name))
+        self.current_id = saved["id"]
+        self._reload_list()
+        self._select_id(saved["id"])
+        self._fill_form(saved)
+        _show_status(self, f"Deleted setup preset {name}", 5000)
+        self.car_selected.emit(saved["id"])
+
+    def _update_factory_enabled(self) -> None:
+        chassis = self.chassis.currentText().strip()
+        self.setup_panel.factory_btn.setEnabled(chassis in parts.CHASSIS_SETUP)
+
+    def _on_factory_setup(self) -> None:
+        """Fill the setup fields from the chassis' factory sheet (form-only: the
+        values land in the boxes and are persisted by the next Save, like typing)."""
+        defaults = parts.CHASSIS_SETUP.get(self.chassis.currentText().strip())
+        if not defaults:
+            return
+        if any(e.text().strip() for e in self._setup_fields.values()):
+            if QMessageBox.question(
+                self, "Factory setup", "Replace the current setup values with the factory sheet?"
+            ) != QMessageBox.StandardButton.Yes:
+                return
+        for key, value in defaults.items():  # a partial sheet leaves other fields alone
+            if key in self._setup_fields:
+                self._setup_fields[key].setText(str(value))
+        _show_status(self, "Factory setup filled in — Save to keep it", 6000)
 
     def _on_duplicate(self) -> None:
         if not self.current_id:  # nothing open to clone

@@ -63,6 +63,7 @@ def new_car(name: str = "New Car") -> dict:
         "base_setup": None,  # snapshot to return to; see save_base_setup()
         "log": [],  # run/maintenance history; see new_log_entry()
         "presets": [],  # named gearing snapshots; see add_preset()
+        "setup_presets": [],  # named chassis-setup snapshots; see add_setup_preset()
         "notes": "",
     }
 
@@ -168,6 +169,40 @@ def apply_preset(car: dict, name: str) -> dict:
 def delete_preset(car: dict, name: str) -> dict:
     """Remove the named preset. No-op if absent."""
     presets = car.get("presets")
+    if presets:
+        presets[:] = [p for p in presets if p.get("name") != name]
+    return car
+
+
+# Setup presets mirror the gearing presets above 1:1 ("carpet" vs "asphalt" full
+# setups); the base setup stays its own separate snapshot on top of these.
+
+
+def list_setup_presets(car: dict) -> list[dict]:
+    """Named setup snapshots on a car (empty for cars saved before they existed)."""
+    return car.get("setup_presets", [])
+
+
+def add_setup_preset(car: dict, name: str) -> dict:
+    """Snapshot the car's current setup under name, replacing any preset with that name."""
+    presets = car.setdefault("setup_presets", [])
+    presets[:] = [p for p in presets if p.get("name") != name]
+    presets.append({"name": name, "setup": copy.deepcopy(car.get("setup", {}))})
+    return car
+
+
+def apply_setup_preset(car: dict, name: str) -> dict:
+    """Copy a named preset's setup onto car['setup']. No-op if name is unknown."""
+    for p in car.get("setup_presets", []):
+        if p.get("name") == name:
+            car.setdefault("setup", {}).update(copy.deepcopy(p["setup"]))
+            break
+    return car
+
+
+def delete_setup_preset(car: dict, name: str) -> dict:
+    """Remove the named setup preset. No-op if absent."""
+    presets = car.get("setup_presets")
     if presets:
         presets[:] = [p for p in presets if p.get("name") != name]
     return car

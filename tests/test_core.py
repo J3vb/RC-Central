@@ -3121,3 +3121,79 @@ def test_setup_panel_tooltips_carry_tuning_advice(monkeypatch, tmp_path):
     # camber is deliberately unmapped (the chart's row is about camber links);
     # its tooltip is just the full field label
     assert tab._setup_fields["camber_front"].toolTip() == "Camber front (°)"
+
+
+def test_garage_tab_setup_presets_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QInputDialog
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Preset Rig")
+    tab._setup_fields["rear_diff"].setText("Spool")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("street", True))
+    tab._on_save_setup_preset()
+    saved = garage.list_cars()[0]
+    assert garage.list_setup_presets(saved)[0]["name"] == "street"
+    # the combo repopulated: placeholder + the new preset, name as data
+    assert tab.setup_preset_combo.count() == 2
+    assert tab.setup_preset_combo.itemData(1) == "street"
+
+    tab._setup_fields["rear_diff"].setText("Ball diff")  # drift, then apply preset
+    tab.setup_preset_combo.setCurrentIndex(1)
+    tab._on_apply_setup_preset()
+    assert tab._setup_fields["rear_diff"].text() == "Spool"
+    assert garage.list_cars()[0]["setup"]["rear_diff"] == "Spool"
+
+    tab.setup_preset_combo.setCurrentIndex(1)
+    tab._on_delete_setup_preset()
+    assert garage.list_setup_presets(garage.list_cars()[0]) == []
+    assert tab.setup_preset_combo.count() == 1  # just the placeholder again
+
+
+def test_garage_tab_factory_button(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage, parts
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    monkeypatch.setattr(
+        parts, "CHASSIS_SETUP", {"Yokomo YD-2": {"ride_height_front": "5.0"}}
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    assert not tab.setup_panel.factory_btn.isEnabled()  # no chassis picked
+    tab.chassis.setCurrentText("MST RMX 2.5")  # chassis without verified data
+    assert not tab.setup_panel.factory_btn.isEnabled()
+    tab.chassis.setCurrentText("Yokomo YD-2")
+    assert tab.setup_panel.factory_btn.isEnabled()
+
+    # all fields empty -> fills without asking (question would raise if called)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
+    )
+    tab._on_factory_setup()
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
+    assert tab._setup_fields["camber_front"].text() == ""  # partial sheet
+    assert garage.list_cars() == []  # form-only: nothing saved yet
+
+    # with values present it asks; declining leaves the fields alone
+    tab._setup_fields["ride_height_front"].setText("7.0")
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No
+    )
+    tab._on_factory_setup()
+    assert tab._setup_fields["ride_height_front"].text() == "7.0"
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    tab._on_factory_setup()
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
