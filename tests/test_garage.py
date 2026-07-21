@@ -212,3 +212,78 @@ def test_delete_preset():
 
 def test_list_presets_missing_key_returns_empty():
     assert garage.list_presets({}) == []  # a car saved before presets existed
+
+
+def test_new_car_has_blank_setup_and_no_base():
+    car = garage.new_car("Fresh")
+    assert set(car["setup"]) == {key for key, _ in garage._SETUP_LABELS}
+    assert all(v == "" for v in car["setup"].values())
+    assert car["base_setup"] is None
+    assert garage.setup_is_untouched(car)
+
+
+def test_setup_is_untouched_tolerates_cars_predating_the_block():
+    # a car saved before the setup block existed has no key at all
+    assert garage.setup_is_untouched({"name": "Old"})
+    touched = garage.new_car("T")
+    touched["setup"]["camber_front"] = "-2"
+    assert not garage.setup_is_untouched(touched)
+
+
+def test_save_base_setup_snapshots_and_apply_restores():
+    car = garage.new_car("Based")
+    car["setup"]["ride_height_front"] = "5.0"
+    garage.save_base_setup(car)
+    car["setup"]["ride_height_front"] = "6.5"  # drift away from base…
+    assert garage.apply_base_setup(car)
+    assert car["setup"]["ride_height_front"] == "5.0"  # …and return
+
+
+def test_save_base_setup_is_a_deep_copy():
+    car = garage.new_car("Deep")
+    car["setup"]["toe_rear"] = "2.0"
+    garage.save_base_setup(car)
+    car["setup"]["toe_rear"] = "3.0"  # mutating current must not follow into the base
+    assert car["base_setup"]["toe_rear"] == "2.0"
+
+
+def test_apply_base_setup_is_a_noop_without_a_saved_base():
+    car = garage.new_car("Baseless")
+    car["setup"]["camber_rear"] = "-1.5"
+    assert not garage.apply_base_setup(car)
+    assert car["setup"]["camber_rear"] == "-1.5"  # untouched by the no-op
+
+
+def test_base_setup_survives_save_roundtrip(garage_sandbox):
+    car = garage.new_car("Persistent")
+    car["setup"]["spring_front"] = "yellow"
+    garage.save_base_setup(car)
+    garage.save_car(car)
+    loaded = garage.load_car(car["id"])
+    assert loaded["base_setup"]["spring_front"] == "yellow"
+
+
+def test_format_spec_sheet_includes_setup_and_skips_blanks():
+    car = garage.new_car("Sheeted")
+    car["setup"]["camber_front"] = "-2°"
+    sheet = garage.format_spec_sheet(car)
+    assert "Chassis setup:" in sheet
+    assert "Camber front (°): -2°" in sheet
+    assert "Toe front" not in sheet  # blank fields are skipped
+
+    blank = garage.new_car("Blank")
+    assert "Chassis setup:" not in garage.format_spec_sheet(blank)
+
+
+def test_diff_cars_includes_setup_fields():
+    a = garage.new_car("A")
+    b = garage.new_car("A")
+    b["setup"]["rear_diff"] = "Spool"
+    rows = garage.diff_cars(a, b)
+    assert [label for label, _va, _vb, differs in rows if differs] == ["Rear diff"]
+
+
+def test_diff_cars_handles_missing_setup_block():
+    rows = garage.diff_cars({"name": "Old"}, garage.new_car("New"))
+    diff = next(r for r in rows if r[0] == "Rear diff")
+    assert diff[1] == "" and diff[2] == ""  # no KeyError; both render blank

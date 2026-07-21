@@ -183,6 +183,22 @@ CHASSIS_GEARING = {
 }
 
 
+# Factory base setup per chassis, keyed by the exact strings in CHASSIS above.
+# Values are partial dicts over the garage._SETUP_LABELS keys, string-valued
+# verbatim as printed (units and all), e.g.:
+#   "Some Chassis": {"ride_height_front": "5.0 mm", "rear_diff": "Ball diff"},
+#
+# THE RULE (same as CHASSIS_GEARING): a chassis appears here only with values read
+# off an official vendor setup sheet, quoted verbatim; omit any value the sheet
+# does not state. A wrong "factory" camber silently misleads every base setup
+# seeded from it, so a missing entry is always better than an inferred one.
+#
+# Empty so far: the 2026-07 sweep could not verify any vendor's printed base-setup
+# sheet (the gearing sweep only covered drivetrain figures). Add entries here as
+# manuals are verified; garage.apply_chassis_setup picks them up with no other change.
+CHASSIS_SETUP: dict[str, dict[str, str]] = {}
+
+
 def suggestions(field: str, cars: Iterable[dict] = ()) -> list[str]:
     """Curated names for a spec field, plus every distinct value already in the garage.
 

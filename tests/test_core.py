@@ -2977,3 +2977,60 @@ def test_valid_rejects_path_traversal_id():
     # non-string id/name (corrupt or hostile catalog) must not crash the shape check
     assert catalog._valid([{"id": 5, "name": "x"}]) is False
     assert catalog._valid([{"id": "ok-id", "name": None}]) is False
+
+
+def test_garage_tab_setup_fields_save_base_and_apply_base(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Setup Rig")
+    tab._setup_fields["ride_height_front"].setText("5.0")
+    tab._setup_fields["rear_diff"].setText("Spool")
+    assert not tab.apply_base_btn.isEnabled()  # no base saved yet
+    tab._on_save()
+
+    saved = garage.list_cars()[0]
+    assert saved["setup"]["ride_height_front"] == "5.0"
+    assert saved["setup"]["rear_diff"] == "Spool"
+    assert saved["base_setup"] is None  # Save alone never snapshots a base
+
+    tab._on_save_base()  # snapshot the current values as the base…
+    assert tab.apply_base_btn.isEnabled()
+    tab._setup_fields["ride_height_front"].setText("7.5")  # …drift away…
+    tab._on_apply_base()  # …and return
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
+    assert garage.list_cars()[0]["setup"]["ride_height_front"] == "5.0"
+
+
+def test_garage_tab_save_seeds_setup_from_chassis(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage, parts
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    monkeypatch.setattr(
+        parts, "CHASSIS_SETUP", {"Yokomo YD-2": {"ride_height_front": "5.0"}}
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Seeded")
+    tab.chassis.setCurrentText("Yokomo YD-2")
+    tab._on_save()
+    # the seeded value is stored AND shown in the form (it changed behind the form's back)
+    assert garage.list_cars()[0]["setup"]["ride_height_front"] == "5.0"
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
+
+    # a later save must not re-seed over an edit
+    tab._setup_fields["ride_height_front"].setText("6.0")
+    tab._on_save()
+    assert garage.list_cars()[0]["setup"]["ride_height_front"] == "6.0"
