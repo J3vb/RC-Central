@@ -199,10 +199,16 @@ class SetupDiagramPanel(QWidget):
             "Fill the fields from this chassis' verified factory sheet (doesn't save)."
         )
         self.factory_btn.setEnabled(False)  # GarageTab enables it per chassis
+        self.reset_btn = QPushButton("Reset")
+        self.reset_btn.setToolTip(
+            "Reset the setup values to this chassis' factory settings, or blank "
+            "if none are known (doesn't save)."
+        )
         base_row = QHBoxLayout()
         base_row.addWidget(self.save_base_btn)
         base_row.addWidget(self.apply_base_btn)
         base_row.addWidget(self.factory_btn)
+        base_row.addWidget(self.reset_btn)
         base_row.addStretch(1)
 
         # Named full-setup snapshots, mirroring the Gear tab's preset row: picking

@@ -193,6 +193,7 @@ class GarageTab(QWidget):
         self.setup_panel.save_base_btn.clicked.connect(self._on_save_base)
         self.setup_panel.apply_base_btn.clicked.connect(self._on_apply_base)
         self.setup_panel.factory_btn.clicked.connect(self._on_factory_setup)
+        self.setup_panel.reset_btn.clicked.connect(self._on_reset_setup)
         self.setup_panel.preset_combo.activated.connect(self._on_apply_setup_preset)
         self.setup_panel.save_preset_btn.clicked.connect(self._on_save_setup_preset)
         self.setup_panel.del_preset_btn.clicked.connect(self._on_delete_setup_preset)
@@ -499,6 +500,36 @@ class GarageTab(QWidget):
         self._fill_form(saved)
         _show_status(self, f"Deleted setup preset {name}", 5000)
         self.car_selected.emit(saved["id"])
+
+    def _on_reset_setup(self) -> None:
+        """Reset every setup field to its default: the chassis' verified factory
+        value where one exists, blank otherwise. Form-only, like the Factory fill:
+        nothing persists until the next Save (which then logs the changes)."""
+        chassis = self.chassis.currentText().strip()
+        defaults = parts.CHASSIS_SETUP.get(chassis) or {}
+        targets = {
+            key: str(defaults.get(key, "")).strip() for key in self._setup_fields
+        }
+        if all(e.text().strip() == targets[k] for k, e in self._setup_fields.items()):
+            return  # already at the default state, don't bother asking
+        prompt = (
+            f"Reset all setup values to the {chassis} factory settings?"
+            if defaults
+            else "Clear all setup values back to blank?"
+        )
+        if QMessageBox.question(
+            self, "Reset setup", prompt
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        for key, edit in self._setup_fields.items():
+            edit.setText(targets[key])
+        _show_status(
+            self,
+            f"Reset to {chassis} factory setup — Save to keep it"
+            if defaults
+            else "Setup cleared — Save to keep it",
+            6000,
+        )
 
     def _update_factory_enabled(self) -> None:
         chassis = self.chassis.currentText().strip()

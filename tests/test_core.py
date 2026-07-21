@@ -3310,3 +3310,90 @@ def test_garage_tab_save_keeps_log_entries_written_by_other_tabs(monkeypatch, tm
     tab.log_table.setCurrentCell(0, 0)
     tab._on_remove_log()
     assert garage.load_car(car_id)["log"] == []
+
+
+def test_garage_tab_reset_setup_clears_fields(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    # all fields blank: no dialog, no-op (question would raise if called)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
+    )
+    tab._on_reset_setup()
+
+    tab.name.setText("Resettable")
+    tab._setup_fields["camber_front"].setText("-2.0")
+    tab._setup_fields["rear_diff"].setText("Spool")
+    tab._on_save()
+
+    # declining keeps the values
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No
+    )
+    tab._on_reset_setup()
+    assert tab._setup_fields["camber_front"].text() == "-2.0"
+
+    # confirming clears the form but not the saved car until the next Save
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    tab._on_reset_setup()
+    assert all(not e.text() for e in tab._setup_fields.values())
+    assert garage.list_cars()[0]["setup"]["camber_front"] == "-2.0"
+
+    tab._on_save()  # persisting the reset also logs the cleared values
+    saved = garage.list_cars()[0]
+    assert saved["setup"]["camber_front"] == ""
+    notes = {e["note"] for e in saved["log"] if e["kind"] == "Setup"}
+    assert "Camber front (°): -2.0 → —" in notes
+
+
+def test_garage_tab_reset_uses_factory_defaults(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage, parts
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    monkeypatch.setattr(
+        parts,
+        "CHASSIS_SETUP",
+        {"Yokomo YD-2": {"ride_height_front": "5.0", "rear_diff": "Ball diff"}},
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+    tab.chassis.setCurrentText("Yokomo YD-2")
+
+    tab._setup_fields["ride_height_front"].setText("7.0")
+    tab._setup_fields["camber_front"].setText("-3.0")  # not in the factory sheet
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    tab._on_reset_setup()
+    # stated keys reset to the factory value, everything else to blank
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
+    assert tab._setup_fields["rear_diff"].text() == "Ball diff"
+    assert tab._setup_fields["camber_front"].text() == ""
+
+    # already at the default state: silent no-op (dialog would raise)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
+    )
+    tab._on_reset_setup()
+
+    # a chassis without verified data still resets to all-blank
+    tab.chassis.setCurrentText("MST RMX 2.5")
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    tab._on_reset_setup()
+    assert all(not e.text() for e in tab._setup_fields.values())
