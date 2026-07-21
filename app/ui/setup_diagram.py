@@ -201,7 +201,8 @@ class SetupDiagramPanel(QWidget):
         self.factory_btn.setEnabled(False)  # GarageTab enables it per chassis
         self.reset_btn = QPushButton("Reset")
         self.reset_btn.setToolTip(
-            "Clear every setup value back to blank (doesn't save)."
+            "Reset the setup values to this chassis' factory settings, or blank "
+            "if none are known (doesn't save)."
         )
         base_row = QHBoxLayout()
         base_row.addWidget(self.save_base_btn)

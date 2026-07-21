@@ -502,18 +502,34 @@ class GarageTab(QWidget):
         self.car_selected.emit(saved["id"])
 
     def _on_reset_setup(self) -> None:
-        """Clear every setup field back to the blank new-car default. Form-only,
-        like the Factory fill: nothing persists until the next Save (which then
-        logs the cleared values as change history)."""
-        if not any(e.text().strip() for e in self._setup_fields.values()):
-            return  # nothing to clear, don't bother asking
+        """Reset every setup field to its default: the chassis' verified factory
+        value where one exists, blank otherwise. Form-only, like the Factory fill:
+        nothing persists until the next Save (which then logs the changes)."""
+        chassis = self.chassis.currentText().strip()
+        defaults = parts.CHASSIS_SETUP.get(chassis) or {}
+        targets = {
+            key: str(defaults.get(key, "")).strip() for key in self._setup_fields
+        }
+        if all(e.text().strip() == targets[k] for k, e in self._setup_fields.items()):
+            return  # already at the default state, don't bother asking
+        prompt = (
+            f"Reset all setup values to the {chassis} factory settings?"
+            if defaults
+            else "Clear all setup values back to blank?"
+        )
         if QMessageBox.question(
-            self, "Reset setup", "Clear all setup values back to blank?"
+            self, "Reset setup", prompt
         ) != QMessageBox.StandardButton.Yes:
             return
-        for edit in self._setup_fields.values():
-            edit.clear()
-        _show_status(self, "Setup cleared — Save to keep it", 6000)
+        for key, edit in self._setup_fields.items():
+            edit.setText(targets[key])
+        _show_status(
+            self,
+            f"Reset to {chassis} factory setup — Save to keep it"
+            if defaults
+            else "Setup cleared — Save to keep it",
+            6000,
+        )
 
     def _update_factory_enabled(self) -> None:
         chassis = self.chassis.currentText().strip()
