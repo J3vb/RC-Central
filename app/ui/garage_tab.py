@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from app import backup, garage, parts
 from app.ui.common import _ACCENT, _show_status
+from app.ui.setup_diagram import SetupDiagramPanel
 
 
 def _part_combo() -> QComboBox:
@@ -183,35 +184,16 @@ class GarageTab(QWidget):
         }
         self.notes = QPlainTextEdit()
 
-        # Chassis setup: string-valued like the spec fields, so any unit or notation
-        # from a manual ("5.5", "-2°", "#300") is kept verbatim. Front/rear pairs
-        # share a form row to keep the section compact; the fields stay separate in
-        # the model (see garage._SETUP_LABELS).
-        self._setup_fields = {key: QLineEdit() for key, _ in garage._SETUP_LABELS}
-        for key, edit in self._setup_fields.items():
-            if key.endswith("_front"):
-                edit.setPlaceholderText("front")
-            elif key.endswith("_rear"):
-                edit.setPlaceholderText("rear")
-        self.save_base_btn = QPushButton("Save as base")
-        self.save_base_btn.setToolTip(
-            "Snapshot the setup values above as this car's base setup — e.g. the "
-            "factory sheet from the manual — so you can return to them any time."
-        )
-        self.save_base_btn.clicked.connect(self._on_save_base)
-        self.apply_base_btn = QPushButton("Apply base")
-        self.apply_base_btn.setToolTip("Set the fields back to the saved base setup.")
-        self.apply_base_btn.clicked.connect(self._on_apply_base)
-        base_row = QHBoxLayout()
-        base_row.addWidget(self.save_base_btn)
-        base_row.addWidget(self.apply_base_btn)
-        base_row.addStretch(1)
-
-        def _pair(front_key: str, rear_key: str) -> QHBoxLayout:
-            row = QHBoxLayout()
-            row.addWidget(self._setup_fields[front_key])
-            row.addWidget(self._setup_fields[rear_key])
-            return row
+        # Chassis setup is edited on the diagram panel (third column, below): value
+        # boxes around a car schematic. Aliases keep _fill_form/_form_to_car, the
+        # base-setup handlers and the tests addressing the setup UI exactly as when
+        # these were plain form rows.
+        self.setup_panel = SetupDiagramPanel()
+        self.setup_panel.save_base_btn.clicked.connect(self._on_save_base)
+        self.setup_panel.apply_base_btn.clicked.connect(self._on_apply_base)
+        self._setup_fields = self.setup_panel.fields
+        self.save_base_btn = self.setup_panel.save_base_btn
+        self.apply_base_btn = self.setup_panel.apply_base_btn
 
         # Gearing (pinion/spur/…) is edited on the Gearing sub-tab, not here; the
         # form only overlays spec fields, so a car's gearing block rides through Save.
@@ -222,15 +204,6 @@ class GarageTab(QWidget):
         form.addRow("ESC", self.esc)
         form.addRow("Servo", self.servo)
         form.addRow("Tires", self.tires)
-        form.addRow(QLabel("<b>Chassis setup</b>"))
-        form.addRow("Ride height (mm)", _pair("ride_height_front", "ride_height_rear"))
-        form.addRow("Camber (°)", _pair("camber_front", "camber_rear"))
-        form.addRow("Toe (°)", _pair("toe_front", "toe_rear"))
-        form.addRow("Caster (°)", self._setup_fields["caster"])
-        form.addRow("Springs", _pair("spring_front", "spring_rear"))
-        form.addRow("Shock oil", _pair("shock_oil_front", "shock_oil_rear"))
-        form.addRow("Rear diff", self._setup_fields["rear_diff"])
-        form.addRow("", base_row)
         form.addRow("Notes", self.notes)
 
         save_btn = QPushButton("&Save")
@@ -277,6 +250,7 @@ class GarageTab(QWidget):
         layout = QHBoxLayout(self)
         layout.addLayout(left, 1)
         layout.addLayout(right, 2)
+        layout.addWidget(self.setup_panel, 1)
 
         self._blank_form()
         self._reload_list()

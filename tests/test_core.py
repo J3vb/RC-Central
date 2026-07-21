@@ -3034,3 +3034,25 @@ def test_garage_tab_save_seeds_setup_from_chassis(monkeypatch, tmp_path):
     tab._setup_fields["ride_height_front"].setText("6.0")
     tab._on_save()
     assert garage.list_cars()[0]["setup"]["ride_height_front"] == "6.0"
+
+
+def test_setup_diagram_panel_renders(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    # every setup field has a box on the diagram, and the aliases point at them
+    assert set(tab.setup_panel.fields) == {k for k, _ in garage._SETUP_LABELS}
+    assert tab._setup_fields is tab.setup_panel.fields
+
+    # grab() runs the full paintEvent (car schematic + leader lines); a real size
+    # first, so the layout is realised and the drawing branch actually executes
+    tab.setup_panel.resize(320, 480)
+    pixmap = tab.setup_panel.grab()
+    assert not pixmap.isNull() and pixmap.width() > 0

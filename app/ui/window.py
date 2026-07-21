@@ -37,7 +37,7 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"RC Central v{__version__}")
         self.setWindowIcon(app_icon())
-        self.resize(760, 500)
+        self.resize(920, 520)  # wide enough for the Garage's setup-diagram column
         self.setMinimumSize(640, 420)
 
         # An update is only swapped in on quit once the user has explicitly asked
