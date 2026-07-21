@@ -327,3 +327,78 @@ def test_delete_setup_preset():
 
 def test_list_setup_presets_missing_key_returns_empty():
     assert garage.list_setup_presets({}) == []  # a car saved before they existed
+
+
+def test_save_logs_setup_change(garage_sandbox):
+    car = garage.save_car(garage.new_car("Tracked"))
+    car["setup"]["camber_front"] = "-3"
+    garage.save_car(car)
+    entry = car["log"][-1]
+    assert entry["kind"] == "Setup"
+    assert entry["note"] == "Camber front (°): — → -3"
+    assert entry["date"]  # dated like every log entry
+
+
+def test_save_logs_gearing_input_and_spec_changes(garage_sandbox):
+    car = garage.save_car(garage.new_car("Tracked"))
+    car["gearing"]["kv"] = 4500
+    car["motor"] = "Acuvance Agile"
+    garage.save_car(car)
+    notes = {(e["kind"], e["note"]) for e in car["log"]}
+    assert ("Gearing", "Motor Kv: 3000 → 4500") in notes
+    assert ("Spec", "Motor: — → Acuvance Agile") in notes
+
+
+def test_save_ignores_numeric_type_and_computed_changes(garage_sandbox):
+    car = garage.save_car(garage.new_car("Quiet"))
+    car["gearing"]["tire_diameter_mm"] = 60  # int vs the stored 60.0
+    car["gearing"]["fdr"] = 7.51  # computed fields are untracked
+    car["gearing"]["rollout_mm"] = 55.2
+    garage.save_car(car)
+    assert car["log"] == []
+
+
+def test_first_save_and_no_change_save_log_nothing(garage_sandbox):
+    car = garage.new_car("Silent")
+    car["setup"]["toe_rear"] = "2.0"  # set before the first save
+    garage.save_car(car)
+    assert car["log"] == []
+    garage.save_car(car)  # nothing changed since
+    assert car["log"] == []
+
+
+def test_save_logs_changes_in_deterministic_order_after_manual_entries(garage_sandbox):
+    car = garage.new_car("Ordered")
+    car["log"].append(garage.new_log_entry("Run", "practice"))
+    garage.save_car(car)
+    car["setup"]["camber_front"] = "-2"  # setup group comes AFTER gearing…
+    car["gearing"]["pinion"] = 24  # …despite being modified "first" here
+    garage.save_car(car)
+    assert [e["kind"] for e in car["log"]] == ["Run", "Gearing", "Setup"]
+
+
+def test_save_logs_value_cleared_as_dash(garage_sandbox):
+    car = garage.new_car("Cleared")
+    car["setup"]["rear_diff"] = "Spool"
+    garage.save_car(car)
+    car["setup"]["rear_diff"] = ""
+    garage.save_car(car)
+    assert car["log"][-1]["note"] == "Rear diff: Spool → —"
+
+
+def test_save_is_quiet_for_sparse_pre_era_cars(garage_sandbox):
+    # a hand-written car predating the gearing/setup blocks: missing keys must
+    # compare equal to the blanks the full car dict would hold
+    sparse = {"id": "abc123", "name": "Old"}
+    garage.GARAGE_DIR.mkdir(parents=True, exist_ok=True)
+    (garage.GARAGE_DIR / "abc123.json").write_text(json.dumps(sparse), encoding="utf-8")
+    car = {"id": "abc123", "name": "Old", "setup": {}, "gearing": {}}
+    garage.save_car(car)
+    assert car.get("log", []) == []
+
+
+def test_save_survives_corrupt_existing_file(garage_sandbox):
+    car = garage.save_car(garage.new_car("Mangled"))
+    garage._car_file(car["id"]).write_text("{not json", encoding="utf-8")
+    garage.save_car(car)  # must not raise; the corrupt file just yields no diff
+    assert garage.load_car(car["id"])["name"] == "Mangled"

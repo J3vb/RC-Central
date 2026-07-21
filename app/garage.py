@@ -256,6 +256,18 @@ _SPEC_LABELS = (
     ("tires", "Tires"),
 )
 
+# The gearing fields the USER sets (change-history tracks these; the computed
+# fdr/rollout/top-speed trio would only echo them as noise). kv/cells labels
+# match the Gear tab's form.
+_GEARING_INPUT_LABELS = (
+    ("pinion", "Pinion"),
+    ("spur", "Spur"),
+    ("internal_ratio", "Internal ratio"),
+    ("tire_diameter_mm", "Tire diameter (mm)"),
+    ("kv", "Motor Kv"),
+    ("cells", "Battery cells (S)"),
+)
+
 
 def format_spec_sheet(car: dict) -> str:
     """Render a car as a shareable plain-text spec sheet. Skips empty fields."""
@@ -313,6 +325,32 @@ def _values_equal(x, y) -> bool:
     return _fmt(x) == _fmt(y)
 
 
+def _tracked_changes(old: dict, new: dict) -> list[dict]:
+    """One dated log entry per tracked field whose persisted value changed.
+
+    Tracked: spec fields, gearing inputs, chassis setup — in that deterministic
+    order. Comparison goes through _values_equal so 60 vs 60.0 (and a missing key
+    vs "") never logs; either side blank renders as an em dash in the note.
+    """
+    groups = (
+        ("Spec", _SPEC_LABELS, lambda car: car),
+        ("Gearing", _GEARING_INPUT_LABELS, lambda car: car.get("gearing") or {}),
+        ("Setup", _SETUP_LABELS, lambda car: car.get("setup") or {}),
+    )
+    entries = []
+    for kind, labels, block in groups:
+        old_block, new_block = block(old), block(new)
+        for key, label in labels:
+            old_v, new_v = old_block.get(key), new_block.get(key)
+            if not _values_equal(old_v, new_v):
+                note = (
+                    f"{label}: {_fmt(old_v).strip() or '—'}"
+                    f" → {_fmt(new_v).strip() or '—'}"
+                )
+                entries.append(new_log_entry(kind, note))
+    return entries
+
+
 def diff_cars(a: dict, b: dict) -> list[tuple[str, str, str, bool]]:
     """Per-field (label, value_a, value_b, differs) for a side-by-side compare view.
 
@@ -333,8 +371,21 @@ def diff_cars(a: dict, b: dict) -> list[tuple[str, str, str, bool]]:
 
 
 def save_car(car: dict) -> dict:
-    """Persist a spec sheet. Assigns an id if missing, stamps updated_at, returns the car."""
+    """Persist a spec sheet. Assigns an id if missing, stamps updated_at, returns the car.
+
+    Change history: every save diffs the tracked fields against the car's file on
+    disk and appends one dated log entry per change (see _tracked_changes). A first
+    save, an import/duplicate (fresh id) or a restore (bypasses save_car) logs
+    nothing.
+    """
     car.setdefault("id", uuid.uuid4().hex)
+    try:
+        old = load_car(car["id"])
+    except (ValueError, OSError):
+        # a corrupt existing file must not fail the save that would replace it
+        old = None
+    if old is not None:
+        car.setdefault("log", []).extend(_tracked_changes(old, car))
     car["updated_at"] = datetime.now(timezone.utc).isoformat()
     GARAGE_DIR.mkdir(parents=True, exist_ok=True)
     # Write to a temp file then atomically rename, so a crash mid-write can't leave a
