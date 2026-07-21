@@ -17,7 +17,9 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage
-from app.ui.common import _ACCENT, _ACTIVE_CAR_KEY, _settings, _show_status
+from app.ui.common import (
+    _accent, _ACTIVE_CAR_KEY, _GAP, _MARGIN, _on_accent, _settings, _show_status,
+)
 
 
 # (setting, action if understeering, action if oversteering) — transcribed from the
@@ -293,14 +295,19 @@ class _ChassisGuide(_AccordionTable):
             radio.toggled.connect(self._highlight)
 
         controls = QHBoxLayout()
+        controls.setSpacing(_GAP)
         controls.addWidget(self.search, 1)
         controls.addWidget(QLabel("Symptom:"))
         controls.addWidget(self.radio_both)
         controls.addWidget(self.radio_under)
         controls.addWidget(self.radio_over)
 
+        caption = QLabel("Drift chassis tuning effects — click a setting for details")
+        caption.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Drift chassis tuning effects — click a setting for details"))
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
+        layout.addWidget(caption)
         layout.addLayout(controls)
         layout.addWidget(self.table)
 
@@ -321,8 +328,8 @@ class _ChassisGuide(_AccordionTable):
                 if item is None:  # the spanned explanation row has no symptom cells
                     continue
                 if col == col_on:
-                    item.setBackground(QColor(_ACCENT))
-                    item.setForeground(QColor("white"))  # readable on accent in both themes
+                    item.setBackground(QColor(_accent()))
+                    item.setForeground(QColor(_on_accent()))  # readable on any accent
                 else:
                     # clear back to theme defaults (None removes the explicit brush)
                     item.setData(Qt.ItemDataRole.BackgroundRole, None)
@@ -349,7 +356,10 @@ class _OilGuide(QWidget):
 
         note = QLabel("Approximate — scales differ by brand; check your oil maker's own chart.")
         note.setWordWrap(True)
+        note.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
         layout.addWidget(note)
         layout.addWidget(self.table)
 
@@ -364,8 +374,12 @@ class _GyroGuide(_AccordionTable):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table.resizeRowsToContents()
 
+        caption = QLabel("Drift gyro troubleshooting — click a symptom for details")
+        caption.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         layout = QVBoxLayout(self)
-        layout.addWidget(QLabel("Drift gyro troubleshooting — click a symptom for details"))
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
+        layout.addWidget(caption)
         layout.addWidget(self.table)
 
 
@@ -384,6 +398,7 @@ class _TuningLog(QWidget):
         self._car_id: str | None = None  # the Workshop's active car
 
         self.hint = QLabel("Create or select a car in the Garage first.")
+        self.hint.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         self.note = QLineEdit()
         self.note.setPlaceholderText("e.g. front springs softer → better turn-in")
         self.add_btn = QPushButton("Add")
@@ -395,6 +410,7 @@ class _TuningLog(QWidget):
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.table.horizontalHeader().setStretchLastSection(True)
+        self.table.setAlternatingRowColors(True)
 
         # connect only now that self.table exists (same trap as _CompareDialog)
         self.add_btn.clicked.connect(self._add)
@@ -402,9 +418,12 @@ class _TuningLog(QWidget):
         self.delete_btn.clicked.connect(self._delete)
 
         entry_row = QHBoxLayout()
+        entry_row.setSpacing(_GAP)
         entry_row.addWidget(self.note, 1)
         entry_row.addWidget(self.add_btn)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
         layout.addWidget(self.hint)
         layout.addLayout(entry_row)
         layout.addWidget(self.table)
@@ -485,4 +504,5 @@ class TuningTab(QWidget):
         self.mylog = _TuningLog()
         self.subtabs.addTab(self.mylog, "My Log")
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, _GAP, 0, 0)  # pages pad themselves; just air below the bar
         layout.addWidget(self.subtabs)

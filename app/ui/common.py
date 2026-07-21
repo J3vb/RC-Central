@@ -5,8 +5,8 @@ import threading
 from pathlib import Path
 
 from PySide6.QtCore import QObject, QSettings, Qt, QUrl, Signal
-from PySide6.QtGui import QDesktopServices, QIcon
-from PySide6.QtWidgets import QMainWindow, QProgressBar, QToolButton, QWidget
+from PySide6.QtGui import QColor, QDesktopServices, QIcon
+from PySide6.QtWidgets import QLabel, QMainWindow, QProgressBar, QToolButton, QWidget
 
 
 def _asset_path(name: str) -> Path:
@@ -48,9 +48,44 @@ def _link_button(text: str, url: str | None) -> QToolButton:
     return btn
 
 
-# The one accent colour, shared by both palettes and the update banner so they
-# can never drift apart (see _dark_palette / _light_palette / _build_update_banner).
+# The default accent colour. The live accent is user-customizable (Settings ▸
+# Appearance) and read via _accent(); every consumer reads at render/apply time,
+# so the palettes, banner, and item highlights can never drift apart.
 _ACCENT = "#1f6feb"
+_ACCENT_KEY = "accent_color"
+
+
+def _accent() -> str:
+    """The accent colour: the user's stored pick, or the default. A junk stored
+    value (hand-edited registry) falls back to the default rather than breaking
+    every highlight in the app."""
+    stored = _settings().value(_ACCENT_KEY, "")
+    return stored if stored and QColor(stored).isValid() else _ACCENT
+
+
+def _on_accent() -> str:
+    """Black or white, whichever reads on the current accent — light accents need
+    dark text on selections, the banner, and highlighted table cells."""
+    return "#000000" if QColor(_accent()).lightnessF() >= 0.6 else "#ffffff"
+
+# Muted secondary text (hints, captions, empty states). One literal that reads on
+# both themes' backgrounds; the stylesheet applies it to QLabel#mutedLabel.
+_MUTED = "#8a8f98"
+
+# Spacing system: pane-edge margins and the gap between controls, applied to every
+# tab's layouts. Inner control padding comes from the app stylesheet (theme._QSS),
+# so code sets layout geometry only and the two can't fight over the same pixels.
+_MARGIN = 12
+_GAP = 8
+
+
+def _section_label(text: str) -> QLabel:
+    """A bold section-header label — the one hierarchy marker shared across tabs."""
+    label = QLabel(text)
+    font = label.font()
+    font.setBold(True)
+    label.setFont(font)
+    return label
 
 # QSettings identity and the persisted preference keys/defaults, defined once so a
 # reader and a writer can't disagree on the org/app pair, a key string, or a default.

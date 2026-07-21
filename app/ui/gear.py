@@ -20,7 +20,10 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage, gearing
-from app.ui.common import _ACCENT, _ACTIVE_CAR_KEY, _settings, _show_status
+from app.ui.common import (
+    _accent, _ACTIVE_CAR_KEY, _GAP, _MARGIN, _on_accent, _section_label, _settings,
+    _show_status,
+)
 
 
 class GearTab(QWidget):
@@ -76,6 +79,10 @@ class GearTab(QWidget):
         self.rollout_out = QLabel()
         self.kmh_out = QLabel()
         self.mph_out = QLabel()
+        for lbl in (self.fdr_out, self.rollout_out, self.kmh_out, self.mph_out):
+            font = lbl.font()  # bold: the computed results are the tab's payoff
+            font.setBold(True)
+            lbl.setFont(font)
 
         # Reverse-solve: enter a target rollout or FDR, get the nearest whole-tooth
         # pinion. FDR is how setups are usually shared, rollout how tire wear is chased.
@@ -98,6 +105,10 @@ class GearTab(QWidget):
         )
 
         form = QFormLayout()
+        form.setHorizontalSpacing(_MARGIN)
+        form.setVerticalSpacing(6)
+        # numeric spin boxes at their natural width, not stretched across the tab
+        form.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.FieldsStayAtSizeHint)
         form.addRow("Pinion (teeth)", self.pinion)
         form.addRow("Spur (teeth)", self.spur)
         form.addRow("Internal ratio", self.internal_ratio)
@@ -106,13 +117,14 @@ class GearTab(QWidget):
         form.addRow("Battery cells (S)", self.cells)
         form.addRow("Target rollout (mm)", rollout_row)
         form.addRow("Target FDR", fdr_row)
-        form.addRow(QLabel("<b>Results</b>"))
+        form.addRow(_section_label("Results"))
         form.addRow("Final drive ratio", self.fdr_out)
         form.addRow("Rollout (mm)", self.rollout_out)
         form.addRow("Top speed (km/h)", self.kmh_out)
         form.addRow("Top speed (mph)", self.mph_out)
 
         self.hint = QLabel("Create or select a car in the Garage to save gearing and presets.")
+        self.hint.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
 
         # Named gearing presets for the active car (moved here from the Garage form
         # with the gearing dedupe). activated fires only on user picks, never on
@@ -124,6 +136,7 @@ class GearTab(QWidget):
         self.del_preset_btn = QPushButton("Delete preset")
         self.del_preset_btn.clicked.connect(self._on_delete_preset)
         preset_row = QHBoxLayout()
+        preset_row.setSpacing(_GAP)
         preset_row.addWidget(QLabel("Preset"))
         preset_row.addWidget(self.preset_combo, 1)
         preset_row.addWidget(self.save_preset_btn)
@@ -135,6 +148,7 @@ class GearTab(QWidget):
         sweep_btn = QPushButton("Pinion sweep…")
         sweep_btn.clicked.connect(self._open_sweep)
         btn_row = QHBoxLayout()
+        btn_row.setSpacing(_GAP)
         btn_row.addWidget(self.save_btn, 1)
         btn_row.addWidget(sweep_btn)
 
@@ -144,6 +158,8 @@ class GearTab(QWidget):
         )
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
         layout.addLayout(form)
         layout.addWidget(self.hint)
         layout.addLayout(preset_row)
@@ -436,7 +452,7 @@ class _GearChartPanel(QWidget):
             box.setValue(settings.value(key, default, type=int))  # clamps to range
 
         controls = QHBoxLayout()
-        controls.addWidget(QLabel("<b>Gear ratio chart</b>"))
+        controls.addWidget(_section_label("Gear ratio chart"))
         controls.addSpacing(16)
         controls.addWidget(QLabel("Pinion"))
         controls.addWidget(self.pinion_min)
@@ -496,6 +512,6 @@ class _GearChartPanel(QWidget):
                     font = item.font()
                     font.setBold(True)
                     item.setFont(font)
-                    item.setBackground(QColor(_ACCENT))
-                    item.setForeground(QColor("white"))  # readable on accent in both themes
+                    item.setBackground(QColor(_accent()))
+                    item.setForeground(QColor(_on_accent()))  # readable on any accent
                 self.table.setItem(row, col, item)

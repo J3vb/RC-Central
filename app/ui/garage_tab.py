@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import backup, garage, parts
-from app.ui.common import _ACCENT, _show_status
+from app.ui.common import _accent, _GAP, _MARGIN, _on_accent, _section_label, _show_status
 from app.ui.setup_diagram import SetupDiagramPanel
 
 
@@ -101,8 +101,8 @@ class _CompareDialog(QDialog):
             for col, text in ((1, va), (2, vb)):
                 item = QTableWidgetItem(text)
                 if differs:
-                    item.setBackground(QColor(_ACCENT))
-                    item.setForeground(QColor("white"))  # readable on accent in both themes
+                    item.setBackground(QColor(_accent()))
+                    item.setForeground(QColor(_on_accent()))  # readable on any accent
                 self.table.setItem(r, col, item)
         self.table.resizeColumnsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)
@@ -135,6 +135,7 @@ class GarageTab(QWidget):
         self.list = QListWidget()
         self.list.currentItemChanged.connect(self._on_select)
         self.empty_hint = QLabel("No cars yet — click New to add your first car.")
+        self.empty_hint.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         new_btn = QPushButton("&New")
         new_btn.clicked.connect(self._on_new)
         import_btn = QPushButton("&Import…")
@@ -145,12 +146,21 @@ class GarageTab(QWidget):
         del_btn.clicked.connect(self._on_delete)
         self.compare_btn = QPushButton("Compare…")
         self.compare_btn.clicked.connect(self._on_compare)
-        left_buttons = QHBoxLayout()
-        left_buttons.addWidget(new_btn)
-        left_buttons.addWidget(import_btn)
-        left_buttons.addWidget(dup_btn)
-        left_buttons.addWidget(del_btn)
-        left_buttons.addWidget(self.compare_btn)
+        # Two grouped rows instead of a five-button wall the narrow column clips:
+        # create-ish actions on one, destructive + read-only on the other.
+        left_buttons = QVBoxLayout()
+        left_buttons.setSpacing(4)
+        create_row = QHBoxLayout()
+        create_row.setSpacing(4)
+        create_row.addWidget(new_btn)
+        create_row.addWidget(import_btn)
+        create_row.addWidget(dup_btn)
+        act_row = QHBoxLayout()
+        act_row.setSpacing(4)
+        act_row.addWidget(del_btn)
+        act_row.addWidget(self.compare_btn)
+        left_buttons.addLayout(create_row)
+        left_buttons.addLayout(act_row)
 
         # Whole-garage actions (all cars), distinct from the per-car form buttons.
         backup_btn = QPushButton("Back up all…")
@@ -158,10 +168,12 @@ class GarageTab(QWidget):
         restore_btn = QPushButton("Restore all…")
         restore_btn.clicked.connect(self._on_restore)
         backup_row = QHBoxLayout()
+        backup_row.setSpacing(_GAP)
         backup_row.addWidget(backup_btn)
         backup_row.addWidget(restore_btn)
 
         left = QVBoxLayout()
+        left.setSpacing(_GAP)
         left.addWidget(self.search)
         left.addWidget(self.list)
         left.addWidget(self.empty_hint)
@@ -184,6 +196,9 @@ class GarageTab(QWidget):
             "tires": self.tires,
         }
         self.notes = QPlainTextEdit()
+        # ~5 lines: notes are an aside — the freed vertical space goes to the run/
+        # maintenance log table below, which is what actually grows over time.
+        self.notes.setMaximumHeight(110)
 
         # Chassis setup is edited on the diagram panel (third column, below): value
         # boxes around a car schematic. Aliases keep _fill_form/_form_to_car, the
@@ -207,6 +222,8 @@ class GarageTab(QWidget):
         # Gearing (pinion/spur/…) is edited on the Gearing sub-tab, not here; the
         # form only overlays spec fields, so a car's gearing block rides through Save.
         form = QFormLayout()
+        form.setHorizontalSpacing(_MARGIN)
+        form.setVerticalSpacing(6)
         form.addRow("Name", self.name)
         form.addRow("Chassis", self.chassis)
         form.addRow("Motor", self.motor)
@@ -222,6 +239,7 @@ class GarageTab(QWidget):
         copy_btn = QPushButton("Copy")
         copy_btn.clicked.connect(self._on_copy)
         form_buttons = QHBoxLayout()
+        form_buttons.setSpacing(_GAP)
         form_buttons.addWidget(save_btn)
         form_buttons.addWidget(export_btn)
         form_buttons.addWidget(copy_btn)
@@ -234,6 +252,7 @@ class GarageTab(QWidget):
         self.log_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         self.log_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         self.log_table.horizontalHeader().setStretchLastSection(True)
+        self.log_table.setAlternatingRowColors(True)
         self.log_kind = QComboBox()
         self.log_kind.addItems(("Run", "Maintenance"))
         self.log_note = QLineEdit()
@@ -244,22 +263,28 @@ class GarageTab(QWidget):
         remove_log_btn = QPushButton("Delete selected")
         remove_log_btn.clicked.connect(self._on_remove_log)
         log_add_row = QHBoxLayout()
+        log_add_row.setSpacing(_GAP)
         log_add_row.addWidget(self.log_kind)
         log_add_row.addWidget(self.log_note, 1)
         log_add_row.addWidget(add_log_btn)
         log_add_row.addWidget(remove_log_btn)
 
         right = QVBoxLayout()
+        right.setSpacing(_GAP)
         right.addLayout(form)
         right.addLayout(form_buttons)
-        right.addWidget(QLabel("<b>Run / maintenance log</b>"))
+        right.addWidget(_section_label("Run / maintenance log"))
         right.addWidget(self.log_table)
         right.addLayout(log_add_row)
 
         layout = QHBoxLayout(self)
-        layout.addLayout(left, 1)
-        layout.addLayout(right, 2)
-        layout.addWidget(self.setup_panel, 1)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_MARGIN)  # column gutters breathe a little wider than _GAP
+        # 4:7:5, not 1:2:1 — the extra goes to the setup panel so its four-button
+        # row ("Save as base" … "Reset") fits at the default window width
+        layout.addLayout(left, 4)
+        layout.addLayout(right, 7)
+        layout.addWidget(self.setup_panel, 5)
 
         self._blank_form()
         self._reload_list()
@@ -324,6 +349,7 @@ class GarageTab(QWidget):
         self.notes.setPlainText(car.get("notes", ""))
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
+        self.setup_panel.show_value_starts()  # long values show their head, not tail
 
     def _fill_log_table(self) -> None:
         self.log_table.setRowCount(len(self._current_log))
@@ -523,6 +549,7 @@ class GarageTab(QWidget):
             return
         for key, edit in self._setup_fields.items():
             edit.setText(targets[key])
+        self.setup_panel.show_value_starts()  # long values show their head, not tail
         _show_status(
             self,
             f"Reset to {chassis} factory setup — Save to keep it"
@@ -549,6 +576,7 @@ class GarageTab(QWidget):
         for key, value in defaults.items():  # a partial sheet leaves other fields alone
             if key in self._setup_fields:
                 self._setup_fields[key].setText(str(value))
+        self.setup_panel.show_value_starts()  # long values show their head, not tail
         _show_status(self, "Factory setup filled in — Save to keep it", 6000)
 
     def _on_duplicate(self) -> None:

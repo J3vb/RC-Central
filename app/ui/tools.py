@@ -23,7 +23,9 @@ from PySide6.QtWidgets import (
 )
 
 from app import catalog, installer, launcher
-from app.ui.common import _CATEGORY_LABELS, _DownloadTab, _is_software, _link_button
+from app.ui.common import (
+    _CATEGORY_LABELS, _DownloadTab, _GAP, _is_software, _link_button, _MARGIN,
+)
 
 log = logging.getLogger(__name__)
 
@@ -41,6 +43,7 @@ class ToolsTab(_DownloadTab):
         self.table.setHorizontalHeaderLabels(self.COLS)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
 
         # Live filter: a search box and a category dropdown, both feeding one pass.
         self.search = QLineEdit()
@@ -52,7 +55,9 @@ class ToolsTab(_DownloadTab):
         # Count of installed tools with a newer catalog version, kept in sync with
         # the per-row Update buttons (see _refresh_summary).
         self.update_summary = QLabel()
+        self.update_summary.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         controls = QHBoxLayout()
+        controls.setSpacing(_GAP)
         controls.addWidget(self.search, 1)
         controls.addWidget(self.category_filter)
         controls.addWidget(self.update_summary)
@@ -62,6 +67,8 @@ class ToolsTab(_DownloadTab):
         self.progress.hide()  # hidden before set_catalog so its in-flight guard reads idle
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
         layout.addLayout(controls)
         layout.addWidget(self.table)
         layout.addWidget(self.progress)

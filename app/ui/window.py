@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from app import __version__, catalog
 
-from app.ui.common import _ACCENT, _settings, _show_status, app_icon
+from app.ui.common import _accent, _on_accent, _settings, _show_status, app_icon
 from app.ui.manuals import ManualsTab
 from app.ui.settings import SettingsTab
 from app.ui.tools import ToolsTab
@@ -37,8 +37,10 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle(f"RC Central v{__version__}")
         self.setWindowIcon(app_icon())
-        self.resize(920, 520)  # wide enough for the Garage's setup-diagram column
-        self.setMinimumSize(640, 420)
+        # User-tuned default; also the floor — every tab lays out clean at this
+        # size and shrinking below it clips the Garage's three-column layout.
+        self.resize(1075, 791)
+        self.setMinimumSize(1075, 791)
 
         # An update is only swapped in on quit once the user has explicitly asked
         # for it via the banner; dismissing leaves the download unused.
@@ -51,6 +53,9 @@ class MainWindow(QMainWindow):
         self._catalog = tools
 
         self.tabs = QTabWidget()
+        # the stylesheet gives this one bar larger, bolder tabs than the sub-tab
+        # bars nested inside pages (see theme._QSS's #mainTabs rule)
+        self.tabs.setObjectName("mainTabs")
         self.workshop_tab = WorkshopTab()
         self.manuals_tab = ManualsTab(tools)
         self.settings_tab = SettingsTab()
@@ -140,10 +145,6 @@ class MainWindow(QMainWindow):
         banner = QToolBar("Update")
         banner.setMovable(False)
         banner.setFloatable(False)
-        banner.setStyleSheet(
-            f"QToolBar {{ background: {_ACCENT}; border: none; padding: 4px 8px; spacing: 8px; }}"
-            "QToolBar QLabel { color: white; }"
-        )
         self.update_label = QLabel()
         spacer = QWidget()
         spacer.setSizePolicy(
@@ -160,6 +161,24 @@ class MainWindow(QMainWindow):
         self.addToolBar(Qt.ToolBarArea.TopToolBarArea, banner)
         banner.hide()
         self.update_banner = banner
+        self._apply_banner_style()
+
+    def _apply_banner_style(self) -> None:
+        """(Re)paint the banner from the live accent. A widget-level sheet, so it
+        overrides the app stylesheet's QToolBar rules; text/buttons use the
+        black-or-white that reads on the accent. SettingsTab calls this again
+        when the user picks a new accent colour."""
+        fg = _on_accent()
+        tint = "255,255,255" if fg == "#ffffff" else "0,0,0"
+        self.update_banner.setStyleSheet(
+            f"QToolBar {{ background: {_accent()}; border: none; padding: 6px 10px; spacing: 8px; }}"
+            f"QToolBar QLabel {{ color: {fg}; }}"
+            f"QToolBar QPushButton {{ background: rgba({tint},0.16);"
+            f" border: 1px solid rgba({tint},0.5); border-radius: 4px;"
+            f" color: {fg}; padding: 4px 12px; }}"
+            f"QToolBar QPushButton:hover {{ background: rgba({tint},0.28); }}"
+            f"QToolBar QPushButton:pressed {{ background: rgba({tint},0.10); }}"
+        )
 
     def _show_update_banner(self, version: str) -> None:
         pretty = version or "A new version"

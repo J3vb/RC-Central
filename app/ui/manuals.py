@@ -24,10 +24,12 @@ from app.ui import pdf_viewer
 from app.ui.common import (
     _CATEGORY_LABELS,
     _DownloadTab,
+    _GAP,
     _InstallSignals,
     _is_pdf,
     _is_software,
     _link_button,
+    _MARGIN,
 )
 
 log = logging.getLogger(__name__)
@@ -53,6 +55,7 @@ class ManualsTab(_DownloadTab):
         self.table.setHorizontalHeaderLabels(self.COLS)
         self.table.verticalHeader().hide()
         self.table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.table.setAlternatingRowColors(True)
 
         # Live filter: a search box and a category dropdown, both feeding one pass.
         self.search = QLineEdit()
@@ -62,10 +65,13 @@ class ManualsTab(_DownloadTab):
         self.category_filter = QComboBox()  # populated per-catalog in set_catalog
         self.category_filter.currentIndexChanged.connect(self._apply_filter)
         controls = QHBoxLayout()
+        controls.setSpacing(_GAP)
         controls.addWidget(self.search, 1)
         controls.addWidget(self.category_filter)
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
         layout.addLayout(controls)
         layout.addWidget(self.table)
 

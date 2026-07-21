@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage
-from app.ui.common import _ACTIVE_CAR_KEY, _settings
+from app.ui.common import _ACTIVE_CAR_KEY, _GAP, _MARGIN, _settings
 from app.ui.garage_tab import GarageTab
 from app.ui.gear import GearTab
 from app.ui.tuning import TuningTab
@@ -33,6 +33,7 @@ class WorkshopTab(QWidget):
 
         self.car_combo = QComboBox()
         header = QHBoxLayout()
+        header.setSpacing(_GAP)
         header.addWidget(QLabel("Car:"))
         header.addWidget(self.car_combo, 1)
 
@@ -42,6 +43,8 @@ class WorkshopTab(QWidget):
         self.subtabs.addTab(self.tuning, "Tuning")
 
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
+        layout.setSpacing(_GAP)
         layout.addLayout(header)
         layout.addWidget(self.subtabs)
 

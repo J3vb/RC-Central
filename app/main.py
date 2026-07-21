@@ -18,6 +18,11 @@ def main() -> None:
     logsetup.init()  # first line: nothing logged after here should be missed
     app = QApplication(sys.argv)
     app.setWindowIcon(app_icon())
+    # 10pt (system family kept): the platform 9pt default reads small on modern
+    # displays, and every layout is size-tolerant so nothing depends on 9pt metrics.
+    font = app.font()
+    font.setPointSize(10)
+    app.setFont(font)
     settings = _settings()
     apply_theme(app, settings.value(_DARK_MODE_KEY, _DARK_MODE_DEFAULT, type=bool))
     updater.cleanup()

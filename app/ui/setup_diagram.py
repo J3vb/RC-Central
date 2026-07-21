@@ -23,7 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import garage
-from app.ui.common import _ACCENT
+from app.ui.common import _accent
 from app.ui.tuning import _TUNING_ROWS, _TUNING_TIPS
 
 # Compact captions (with units) for the boxes around the drawing; keyed like
@@ -148,10 +148,19 @@ class _FieldBox(QWidget):
         layout.addWidget(self.caption)
         layout.addWidget(self.edit)
 
+    def show_value_start(self) -> None:
+        """Scroll the edit back to the value's start. Programmatic fills leave the
+        cursor at the end, so a value wider than the box shows its tail ("...dy
+        on)" instead of "5 mm (bo..."; a textChanged hook can't fix it because
+        setText with an identical value emits nothing. Callers invoke this after
+        every bulk fill; a box the user is typing in is left alone."""
+        if not self.edit.hasFocus():
+            self.edit.setCursorPosition(0)
+
     def set_drifted(self, drifted: bool) -> None:
         """Append/remove the accent dot marking a value that differs from base."""
         if drifted:
-            self.caption.setText(f'{self._text} <span style="color:{_ACCENT}">●</span>')
+            self.caption.setText(f'{self._text} <span style="color:{_accent()}">●</span>')
         else:
             self.caption.setText(self._text)
 
@@ -166,6 +175,9 @@ class SetupDiagramPanel(QWidget):
 
     def __init__(self):
         super().__init__()
+        # the stylesheet gives this panel's four-button row tighter padding so
+        # "Save as base" … "Reset" fit the column at the default window width
+        self.setObjectName("setupPanel")
         self.setMinimumWidth(280)
         self._boxes: dict[str, _FieldBox] = {}
         captions = dict(garage._SETUP_LABELS)  # full labels as fallback captions
@@ -237,8 +249,11 @@ class SetupDiagramPanel(QWidget):
             self._grid.addWidget(self._boxes[right], row, 2)
         self._grid.addLayout(base_row, 7, 0, 1, 3)
         self._grid.addLayout(preset_row, 8, 0, 1, 3)
-        for col in range(3):
-            self._grid.setColumnStretch(col, 1)
+        # Field columns get a bigger share than the car column: factory values are
+        # text ("Kit D1-SSF1"), not just numbers, and clip in narrower boxes.
+        self._grid.setColumnStretch(0, 3)
+        self._grid.setColumnStretch(1, 2)
+        self._grid.setColumnStretch(2, 3)
         self._grid.setColumnMinimumWidth(1, 100)  # room for the car + leader lines
         for row in range(1, 7):
             self._grid.setRowStretch(row, 1)
@@ -250,6 +265,11 @@ class SetupDiagramPanel(QWidget):
         self.preset_combo.addItem("— preset —", None)
         for p in presets:
             self.preset_combo.addItem(p.get("name", "preset"), p.get("name"))
+
+    def show_value_starts(self) -> None:
+        """Scroll every field box to its value's start (see _FieldBox.show_value_start)."""
+        for box in self._boxes.values():
+            box.show_value_start()
 
     # -- drift-from-base marks ----------------------------------------------------
 
@@ -340,7 +360,7 @@ class SetupDiagramPanel(QWidget):
         outline = QPen(palette.windowText().color(), 1.2)
         subtle = QPen(palette.mid().color(), 1)
         arm_pen = QPen(palette.mid().color(), 1.4)
-        accent = QColor(_ACCENT)
+        accent = QColor(_accent())
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 

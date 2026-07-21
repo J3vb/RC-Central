@@ -3397,3 +3397,41 @@ def test_garage_tab_reset_uses_factory_defaults(monkeypatch, tmp_path):
     )
     tab._on_reset_setup()
     assert all(not e.text() for e in tab._setup_fields.values())
+
+
+def test_accent_setting_overrides_palette_and_tracks_readability(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtCore import QSettings
+    from PySide6.QtGui import QPalette
+
+    from app.ui import common, theme
+    import app.ui.common
+
+    ini = tmp_path / "settings.ini"
+    monkeypatch.setattr(
+        app.ui.common,
+        "QSettings",
+        lambda *a, **k: QSettings(str(ini), QSettings.Format.IniFormat),
+    )
+
+    # unset -> the default accent, with white on-accent text (dark blue)
+    assert common._accent() == common._ACCENT
+    assert common._on_accent() == "#ffffff"
+
+    # a stored pick wins, and both palettes' Highlight follow it live
+    common._settings().setValue(common._ACCENT_KEY, "#ff0000")
+    assert common._accent() == "#ff0000"
+    for palette in (theme._dark_palette(), theme._light_palette()):
+        assert palette.color(QPalette.ColorRole.Highlight).name() == "#ff0000"
+
+    # a light accent flips selected/banner text to black for readability
+    common._settings().setValue(common._ACCENT_KEY, "#ffee88")
+    assert common._on_accent() == "#000000"
+    assert (
+        theme._dark_palette().color(QPalette.ColorRole.HighlightedText).name()
+        == "#000000"
+    )
+
+    # junk (hand-edited registry) falls back to the default instead of breaking
+    common._settings().setValue(common._ACCENT_KEY, "not-a-colour")
+    assert common._accent() == common._ACCENT
