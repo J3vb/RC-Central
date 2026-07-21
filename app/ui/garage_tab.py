@@ -193,6 +193,7 @@ class GarageTab(QWidget):
         self.setup_panel.save_base_btn.clicked.connect(self._on_save_base)
         self.setup_panel.apply_base_btn.clicked.connect(self._on_apply_base)
         self.setup_panel.factory_btn.clicked.connect(self._on_factory_setup)
+        self.setup_panel.reset_btn.clicked.connect(self._on_reset_setup)
         self.setup_panel.preset_combo.activated.connect(self._on_apply_setup_preset)
         self.setup_panel.save_preset_btn.clicked.connect(self._on_save_setup_preset)
         self.setup_panel.del_preset_btn.clicked.connect(self._on_delete_setup_preset)
@@ -499,6 +500,20 @@ class GarageTab(QWidget):
         self._fill_form(saved)
         _show_status(self, f"Deleted setup preset {name}", 5000)
         self.car_selected.emit(saved["id"])
+
+    def _on_reset_setup(self) -> None:
+        """Clear every setup field back to the blank new-car default. Form-only,
+        like the Factory fill: nothing persists until the next Save (which then
+        logs the cleared values as change history)."""
+        if not any(e.text().strip() for e in self._setup_fields.values()):
+            return  # nothing to clear, don't bother asking
+        if QMessageBox.question(
+            self, "Reset setup", "Clear all setup values back to blank?"
+        ) != QMessageBox.StandardButton.Yes:
+            return
+        for edit in self._setup_fields.values():
+            edit.clear()
+        _show_status(self, "Setup cleared — Save to keep it", 6000)
 
     def _update_factory_enabled(self) -> None:
         chassis = self.chassis.currentText().strip()
