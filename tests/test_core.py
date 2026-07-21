@@ -3197,3 +3197,84 @@ def test_garage_tab_factory_button(monkeypatch, tmp_path):
     )
     tab._on_factory_setup()
     assert tab._setup_fields["ride_height_front"].text() == "5.0"
+
+
+def test_garage_tab_save_shows_change_history_in_log(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Historied")
+    tab._on_save()  # first save: nothing tracked yet
+    assert tab.log_table.rowCount() == 0
+
+    tab._setup_fields["camber_front"].setText("-2.5")
+    tab._on_save()
+    assert tab.log_table.rowCount() == 1  # the auto entry appears immediately
+    assert tab.log_table.item(0, 1).text() == "Setup"
+    assert "Camber front (°)" in tab.log_table.item(0, 2).text()
+
+    tab._on_save()  # no further edits: entry survives, no duplicates
+    assert tab.log_table.rowCount() == 1
+    assert len(garage.list_cars()[0]["log"]) == 1
+
+    tab._setup_fields["toe_rear"].setText("2.0")
+    tab._on_save_base()  # the other no-_fill_form save path also refreshes
+    assert tab.log_table.rowCount() == 2
+
+
+def test_gear_tab_save_logs_gearing_change(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.gear import GearTab
+    import app.ui.common
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    car = garage.save_car(garage.new_car("Geared"))
+    app.ui.common._settings().setValue(app.ui.common._ACTIVE_CAR_KEY, car["id"])
+
+    tab = GearTab()
+    tab._load_active_car(force=True)
+    tab.pinion.setValue(30)
+    tab._save_to_car()
+    log = garage.load_car(car["id"])["log"]
+    assert [e["kind"] for e in log] == ["Gearing"]
+    assert log[0]["note"] == "Pinion: 22 → 30"
+
+    tab._save_to_car()  # identical save: no new entry
+    assert len(garage.load_car(car["id"])["log"]) == 1
+
+
+def test_garage_tab_manual_log_entries_coexist_with_history(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Mixed")
+    tab._setup_fields["rear_diff"].setText("Spool")
+    tab._on_save()  # first save creates the file: no history entry
+    tab._on_save()  # second save has no edits: still none
+    before = tab.log_table.rowCount()
+
+    tab.log_note.setText("first practice run")
+    tab._on_add_log()  # adds exactly one manual row
+    assert tab.log_table.rowCount() == before + 1
+
+    tab.log_table.setCurrentCell(tab.log_table.rowCount() - 1, 0)
+    tab._on_remove_log()  # and removes exactly that one
+    assert tab.log_table.rowCount() == before

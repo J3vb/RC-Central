@@ -406,6 +406,10 @@ class GarageTab(QWidget):
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
+        # save_car may have appended change-history entries; show them and keep
+        # _current_log a faithful copy (not an alias) of what's on disk
+        self._current_log = list(saved.get("log", []))
+        self._fill_log_table()
         if setup_seeded:
             # seeding changed setup values behind the form's back; show them
             self._fill_form(saved)
@@ -430,8 +434,11 @@ class GarageTab(QWidget):
         self._reload_list()
         self._select_id(saved["id"])
         self.apply_base_btn.setEnabled(True)
-        # the one save path that skips _fill_form, so refresh the drift marks here
+        # this save path skips _fill_form, so refresh the drift marks and the
+        # log view (save_car may have appended change-history entries) here
         self.setup_panel.set_base(saved.get("base_setup"))
+        self._current_log = list(saved.get("log", []))
+        self._fill_log_table()
         _show_status(self, f"Saved base setup for {saved['name']}", 5000)
         self.car_selected.emit(saved["id"])
 
