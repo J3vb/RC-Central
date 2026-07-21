@@ -3278,3 +3278,35 @@ def test_garage_tab_manual_log_entries_coexist_with_history(monkeypatch, tmp_pat
     tab.log_table.setCurrentCell(tab.log_table.rowCount() - 1, 0)
     tab._on_remove_log()  # and removes exactly that one
     assert tab.log_table.rowCount() == before
+
+
+def test_garage_tab_save_keeps_log_entries_written_by_other_tabs(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Shared")
+    tab._on_save()
+    car_id = tab.current_id
+
+    # another tab (Gearing save, Tuning note) writes to the same car's log while
+    # the Garage form still holds its pre-write snapshot
+    car = garage.load_car(car_id)
+    car.setdefault("log", []).append(garage.new_log_entry("Tuning", "less rebound"))
+    garage.save_car(car)
+
+    tab._on_save()  # a Garage save must not clobber the entry it never saw
+    kinds = [e["kind"] for e in garage.load_car(car_id)["log"]]
+    assert kinds == ["Tuning"]
+    assert tab.log_table.rowCount() == 1  # and the table caught up with it
+
+    # deleting by row removes exactly the selected entry, id-based on disk
+    tab.log_table.setCurrentCell(0, 0)
+    tab._on_remove_log()
+    assert garage.load_car(car_id)["log"] == []

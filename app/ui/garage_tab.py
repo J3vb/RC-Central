@@ -327,7 +327,9 @@ class GarageTab(QWidget):
     def _fill_log_table(self) -> None:
         self.log_table.setRowCount(len(self._current_log))
         for row, entry in enumerate(self._current_log):
-            date = str(entry.get("date", ""))[:10]  # YYYY-MM-DD from the ISO stamp
+            # YYYY-MM-DD HH:MM from the ISO stamp — the time matters now that
+            # change-history entries can land several times a day
+            date = str(entry.get("date", ""))[:16].replace("T", " ")
             self.log_table.setItem(row, 0, QTableWidgetItem(date))
             self.log_table.setItem(row, 1, QTableWidgetItem(entry.get("kind", "")))
             self.log_table.setItem(row, 2, QTableWidgetItem(entry.get("note", "")))
@@ -345,13 +347,21 @@ class GarageTab(QWidget):
         car = (self.current_id and garage.load_car(self.current_id)) or garage.new_car()
         if self.current_id:
             car["id"] = self.current_id
+        # The log is union-merged rather than overlaid: entries other tabs wrote to
+        # disk while this form held the car (a Gearing save's history, a Tuning
+        # note) must survive a Garage Save. Disk order first, then any form-only
+        # additions not saved yet. Deletions don't need reconciling here —
+        # _on_remove_log writes them through to disk immediately.
+        disk_log = car.get("log", [])
+        known = {e.get("id") for e in disk_log}
+        merged = disk_log + [e for e in self._current_log if e.get("id") not in known]
         car.update(
             {
                 "name": self.name.text().strip() or "Unnamed",
                 **{f: c.currentText().strip() for f, c in self._part_fields.items()},
                 "setup": {k: e.text().strip() for k, e in self._setup_fields.items()},
                 "notes": self.notes.toPlainText(),
-                "log": self._current_log,  # the log is edited in-form before Save
+                "log": merged,
             }
         )
         return car
@@ -650,6 +660,15 @@ class GarageTab(QWidget):
         row = self.log_table.currentRow()
         if not 0 <= row < len(self._current_log):
             return
-        del self._current_log[row]
-        self._on_save()
+        entry_id = self._current_log[row].get("id")
+        car = self.current_id and garage.load_car(self.current_id)
+        if car:
+            # Write-through delete by id against fresh disk state (mirrors the
+            # Tuning log): entries other tabs added meanwhile survive, and the
+            # deleted one is gone from disk so _form_to_car can't merge it back.
+            car["log"] = [e for e in car.get("log", []) if e.get("id") != entry_id]
+            saved = garage.save_car(car)
+            self._current_log = list(saved.get("log", []))
+        else:  # unsaved new car: the log only exists in the form
+            del self._current_log[row]
         self._fill_log_table()
