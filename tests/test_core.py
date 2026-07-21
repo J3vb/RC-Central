@@ -3034,3 +3034,279 @@ def test_garage_tab_save_seeds_setup_from_chassis(monkeypatch, tmp_path):
     tab._setup_fields["ride_height_front"].setText("6.0")
     tab._on_save()
     assert garage.list_cars()[0]["setup"]["ride_height_front"] == "6.0"
+
+
+def test_setup_diagram_panel_renders(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    # every setup field has a box on the diagram, and the aliases point at them
+    assert set(tab.setup_panel.fields) == {k for k, _ in garage._SETUP_LABELS}
+    assert tab._setup_fields is tab.setup_panel.fields
+
+    # grab() runs the full paintEvent (car schematic + leader lines); a real size
+    # first, so the layout is realised and the drawing branch actually executes
+    tab.setup_panel.resize(320, 480)
+    pixmap = tab.setup_panel.grab()
+    assert not pixmap.isNull() and pixmap.width() > 0
+
+
+def test_setup_panel_drift_marks(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    assert tab.setup_panel._dirty == set()  # no base saved -> nothing marked
+    tab.name.setText("Drifter")
+    tab._setup_fields["camber_front"].setText("-2.0")
+    tab._on_save_base()
+    assert tab.setup_panel._dirty == set()  # base == current right after saving it
+
+    tab._setup_fields["camber_front"].setText("-3.5")  # drift away from base
+    assert tab.setup_panel._dirty == {"camber_front"}
+    assert "●" in tab.setup_panel._boxes["camber_front"].caption.text()
+
+    tab._on_apply_base()  # back to base -> the mark clears
+    assert tab.setup_panel._dirty == set()
+    assert "●" not in tab.setup_panel._boxes["camber_front"].caption.text()
+
+
+def test_setup_panel_focus_highlight(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+    from PySide6.QtCore import QEvent
+    from PySide6.QtGui import QFocusEvent
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    # drive the events directly: real keyboard focus is unreliable offscreen
+    edit = tab._setup_fields["toe_rear"]
+    QApplication.sendEvent(edit, QFocusEvent(QEvent.Type.FocusIn))
+    assert tab.setup_panel._focused_key == "toe_rear"
+    QApplication.sendEvent(edit, QFocusEvent(QEvent.Type.FocusOut))
+    assert tab.setup_panel._focused_key is None
+
+
+def test_setup_panel_tooltips_carry_tuning_advice(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tip = tab._setup_fields["toe_front"].toolTip()
+    assert "If understeering" in tip and "If oversteering" in tip
+    # camber is deliberately unmapped (the chart's row is about camber links);
+    # its tooltip is just the full field label
+    assert tab._setup_fields["camber_front"].toolTip() == "Camber front (°)"
+
+
+def test_garage_tab_setup_presets_roundtrip(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QInputDialog
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Preset Rig")
+    tab._setup_fields["rear_diff"].setText("Spool")
+    monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("street", True))
+    tab._on_save_setup_preset()
+    saved = garage.list_cars()[0]
+    assert garage.list_setup_presets(saved)[0]["name"] == "street"
+    # the combo repopulated: placeholder + the new preset, name as data
+    assert tab.setup_preset_combo.count() == 2
+    assert tab.setup_preset_combo.itemData(1) == "street"
+
+    tab._setup_fields["rear_diff"].setText("Ball diff")  # drift, then apply preset
+    tab.setup_preset_combo.setCurrentIndex(1)
+    tab._on_apply_setup_preset()
+    assert tab._setup_fields["rear_diff"].text() == "Spool"
+    assert garage.list_cars()[0]["setup"]["rear_diff"] == "Spool"
+
+    tab.setup_preset_combo.setCurrentIndex(1)
+    tab._on_delete_setup_preset()
+    assert garage.list_setup_presets(garage.list_cars()[0]) == []
+    assert tab.setup_preset_combo.count() == 1  # just the placeholder again
+
+
+def test_garage_tab_factory_button(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage, parts
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    monkeypatch.setattr(
+        parts, "CHASSIS_SETUP", {"Yokomo YD-2": {"ride_height_front": "5.0"}}
+    )
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    assert not tab.setup_panel.factory_btn.isEnabled()  # no chassis picked
+    tab.chassis.setCurrentText("MST RMX 2.5")  # chassis without verified data
+    assert not tab.setup_panel.factory_btn.isEnabled()
+    tab.chassis.setCurrentText("Yokomo YD-2")
+    assert tab.setup_panel.factory_btn.isEnabled()
+
+    # all fields empty -> fills without asking (question would raise if called)
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
+    )
+    tab._on_factory_setup()
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
+    assert tab._setup_fields["camber_front"].text() == ""  # partial sheet
+    assert garage.list_cars() == []  # form-only: nothing saved yet
+
+    # with values present it asks; declining leaves the fields alone
+    tab._setup_fields["ride_height_front"].setText("7.0")
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.No
+    )
+    tab._on_factory_setup()
+    assert tab._setup_fields["ride_height_front"].text() == "7.0"
+    monkeypatch.setattr(
+        QMessageBox, "question", lambda *a, **k: QMessageBox.StandardButton.Yes
+    )
+    tab._on_factory_setup()
+    assert tab._setup_fields["ride_height_front"].text() == "5.0"
+
+
+def test_garage_tab_save_shows_change_history_in_log(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Historied")
+    tab._on_save()  # first save: nothing tracked yet
+    assert tab.log_table.rowCount() == 0
+
+    tab._setup_fields["camber_front"].setText("-2.5")
+    tab._on_save()
+    assert tab.log_table.rowCount() == 1  # the auto entry appears immediately
+    assert tab.log_table.item(0, 1).text() == "Setup"
+    assert "Camber front (°)" in tab.log_table.item(0, 2).text()
+
+    tab._on_save()  # no further edits: entry survives, no duplicates
+    assert tab.log_table.rowCount() == 1
+    assert len(garage.list_cars()[0]["log"]) == 1
+
+    tab._setup_fields["toe_rear"].setText("2.0")
+    tab._on_save_base()  # the other no-_fill_form save path also refreshes
+    assert tab.log_table.rowCount() == 2
+
+
+def test_gear_tab_save_logs_gearing_change(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.gear import GearTab
+    import app.ui.common
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    car = garage.save_car(garage.new_car("Geared"))
+    app.ui.common._settings().setValue(app.ui.common._ACTIVE_CAR_KEY, car["id"])
+
+    tab = GearTab()
+    tab._load_active_car(force=True)
+    tab.pinion.setValue(30)
+    tab._save_to_car()
+    log = garage.load_car(car["id"])["log"]
+    assert [e["kind"] for e in log] == ["Gearing"]
+    assert log[0]["note"] == "Pinion: 22 → 30"
+
+    tab._save_to_car()  # identical save: no new entry
+    assert len(garage.load_car(car["id"])["log"]) == 1
+
+
+def test_garage_tab_manual_log_entries_coexist_with_history(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Mixed")
+    tab._setup_fields["rear_diff"].setText("Spool")
+    tab._on_save()  # first save creates the file: no history entry
+    tab._on_save()  # second save has no edits: still none
+    before = tab.log_table.rowCount()
+
+    tab.log_note.setText("first practice run")
+    tab._on_add_log()  # adds exactly one manual row
+    assert tab.log_table.rowCount() == before + 1
+
+    tab.log_table.setCurrentCell(tab.log_table.rowCount() - 1, 0)
+    tab._on_remove_log()  # and removes exactly that one
+    assert tab.log_table.rowCount() == before
+
+
+def test_garage_tab_save_keeps_log_entries_written_by_other_tabs(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    tab = GarageTab()
+
+    tab.name.setText("Shared")
+    tab._on_save()
+    car_id = tab.current_id
+
+    # another tab (Gearing save, Tuning note) writes to the same car's log while
+    # the Garage form still holds its pre-write snapshot
+    car = garage.load_car(car_id)
+    car.setdefault("log", []).append(garage.new_log_entry("Tuning", "less rebound"))
+    garage.save_car(car)
+
+    tab._on_save()  # a Garage save must not clobber the entry it never saw
+    kinds = [e["kind"] for e in garage.load_car(car_id)["log"]]
+    assert kinds == ["Tuning"]
+    assert tab.log_table.rowCount() == 1  # and the table caught up with it
+
+    # deleting by row removes exactly the selected entry, id-based on disk
+    tab.log_table.setCurrentCell(0, 0)
+    tab._on_remove_log()
+    assert garage.load_car(car_id)["log"] == []
