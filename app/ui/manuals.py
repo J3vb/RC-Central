@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
 )
 
 from app import catalog, installer
+from app.ui import pdf_viewer
 from app.ui.common import (
     _CATEGORY_LABELS,
     _DownloadTab,
@@ -43,6 +44,9 @@ class ManualsTab(_DownloadTab):
         super().__init__()
         tools = catalog.load_catalog() if tools is None else tools
         self._active: dict[int, "threading.Event"] = {}  # row -> cancel event; in == downloading
+        # Open in-app viewer windows, keyed by cache-path string (NOT by row: a
+        # background set_catalog renumbers rows while a viewer stays open).
+        self._viewers: dict[str, pdf_viewer.PdfViewerWindow] = {}
         installer.clear_partial_manuals()  # drop orphaned .part temps from a prior killed run
 
         self.table = QTableWidget(0, len(self.COLS))
@@ -126,13 +130,16 @@ class ManualsTab(_DownloadTab):
             if _is_pdf(manual["url"]):  # cacheable rows get a Tools-style dropdown menu
                 button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
                 menu = QMenu(button)
+                external_action = menu.addAction(
+                    "Open in system viewer", lambda _=False, r=row: self._open_externally(r)
+                )
                 open_action = menu.addAction(
                     "Open containing folder", lambda _=False, r=row: self._open_folder(r)
                 )
                 delete_action = menu.addAction(
                     "Delete downloaded PDF", lambda _=False, r=row: self._delete_pdf(r)
                 )
-                self._pdf_actions[row] = (open_action, delete_action)
+                self._pdf_actions[row] = (external_action, open_action, delete_action)
                 button.setMenu(menu)
             self.table.setCellWidget(row, 4, button)
             self.table.setCellWidget(row, 5, _link_button("Website", manual["homepage"]))
@@ -176,7 +183,7 @@ class ManualsTab(_DownloadTab):
         if not _is_pdf(url):
             QDesktopServices.openUrl(QUrl(url))
         elif installer.manual_is_cached(url):
-            QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.manual_cache_path(url))))
+            self._open_pdf(row)
         elif row in self._active:  # the button is showing "Cancel"
             self._cancel_download(row)
         elif any(self._manuals[r]["url"] == url for r in self._active):
@@ -193,6 +200,36 @@ class ManualsTab(_DownloadTab):
             if r not in self._active:
                 self._refresh_row(r)
 
+    def _open_pdf(self, row: int) -> None:
+        """Open a cached PDF in the in-app viewer, falling back to the system viewer
+        when QtPdf is unavailable or the file won't render."""
+        manual = self._manuals[row]
+        path = installer.manual_cache_path(manual["url"])
+        key = str(path)
+        if (win := self._viewers.get(key)) is not None:  # already open: bring to front
+            win.raise_()
+            win.activateWindow()
+            return
+        if not pdf_viewer.is_available():
+            self._open_externally(row)
+            return
+        try:
+            win = pdf_viewer.PdfViewerWindow(path, manual["name"], parent=self.window())
+        except Exception as e:  # a corrupt/unloadable file must still open somehow
+            log.warning("in-app PDF viewer failed for %s: %s", manual["name"], e)
+            self._status("Couldn't render the PDF in-app; opening externally.", 5000)
+            self._open_externally(row)
+            return
+        self._viewers[key] = win
+        # WA_DeleteOnClose destroys on close, so destroyed is the one reliable hook.
+        win.destroyed.connect(lambda _=None, k=key: self._viewers.pop(k, None))
+        win.show()
+
+    def _open_externally(self, row: int) -> None:
+        url = self._manuals[row]["url"]
+        if installer.manual_is_cached(url):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.manual_cache_path(url))))
+
     def _open_folder(self, row: int) -> None:
         if installer.manual_is_cached(self._manuals[row]["url"]):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(installer.MANUALS_DIR)))
@@ -206,6 +243,10 @@ class ManualsTab(_DownloadTab):
             self, "Delete", f"Delete the downloaded '{manual['name']}'?"
         ) != QMessageBox.StandardButton.Yes:
             return
+        # Close any viewer holding the file first: QPdfDocument keeps a handle open,
+        # which would make the unlink fail on Windows.
+        if (viewer := self._viewers.get(str(path))) is not None:
+            viewer.close()
         try:
             path.unlink()
         except OSError as e:  # a locked file etc. must reach the user, not a traceback

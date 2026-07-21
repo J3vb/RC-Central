@@ -1225,6 +1225,7 @@ def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
     from PySide6.QtWidgets import QApplication
 
     from app import catalog
+    from app.ui import pdf_viewer
     from app.ui.manuals import ManualsTab
     from PySide6.QtGui import QDesktopServices
 
@@ -1234,6 +1235,8 @@ def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
     installer.manual_cache_path(url).write_bytes(b"%PDF-1.4 fake")  # pre-seed the cache
 
     monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(links=[{"name": "M", "url": url}])])
+    # without QtPdf the in-app viewer degrades to the pre-existing external open
+    monkeypatch.setattr(pdf_viewer, "is_available", lambda: False)
     _ = QApplication.instance() or QApplication([])
     tab = ManualsTab()
 
@@ -1247,6 +1250,122 @@ def test_manuals_tab_cached_pdf_opens_local_file(monkeypatch, tmp_path):
     )
     button.click()
     # opens the local cached file (a file:// URL), never the remote http URL
+    assert opened["u"].startswith("file:") and opened["u"].endswith(".pdf")
+
+
+def _minimal_pdf() -> bytes:
+    """A one-page PDF small enough to inline, with a correct xref so QPdfDocument
+    accepts it (the b"%PDF-1.4 fake" seed used elsewhere is deliberately invalid)."""
+    objs = [
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]>>",
+    ]
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, body in enumerate(objs, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj" % i + body + b"endobj\n"
+    xref = len(out)
+    out += b"xref\n0 4\n0000000000 65535 f \n"
+    for off in offsets:
+        out += b"%010d 00000 n \n" % off
+    out += b"trailer<</Root 1 0 R/Size 4>>\nstartxref\n%d\n%%%%EOF" % xref
+    return bytes(out)
+
+
+def test_manuals_tab_cached_pdf_opens_in_app(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    pytest.importorskip("PySide6.QtPdfWidgets", reason="QtPdf needs native libs")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtGui import QDesktopServices
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    url = "https://example.invalid/manual.pdf"
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(_minimal_pdf())
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(links=[{"name": "M", "url": url}])])
+    _ = QApplication.instance() or QApplication([])
+    tab = ManualsTab()
+
+    opened = {}
+    monkeypatch.setattr(
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    tab.table.cellWidget(0, 4).click()
+    key = str(installer.manual_cache_path(url))
+    assert key in tab._viewers  # rendered in-app...
+    assert opened == {}  # ...never handed to the OS viewer
+    win = tab._viewers[key]
+
+    tab.table.cellWidget(0, 4).click()  # second click re-raises the same window
+    assert tab._viewers[key] is win
+
+    win.close()
+
+
+def test_manuals_tab_unrenderable_pdf_falls_back_to_external(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app.ui import pdf_viewer
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtGui import QDesktopServices
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    url = "https://example.invalid/manual.pdf"
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(b"%PDF-1.4 fake")  # QPdfDocument rejects this
+
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(links=[{"name": "M", "url": url}])])
+    # claim availability even without QtPdf: the constructor then raises either way
+    # (load error, or NameError on the missing class), and both must degrade
+    monkeypatch.setattr(pdf_viewer, "is_available", lambda: True)
+    _ = QApplication.instance() or QApplication([])
+    tab = ManualsTab()
+
+    opened = {}
+    monkeypatch.setattr(
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    tab.table.cellWidget(0, 4).click()
+    assert tab._viewers == {}  # no half-built window kept around
+    assert opened["u"].startswith("file:") and opened["u"].endswith(".pdf")
+
+
+def test_manuals_tab_open_in_system_viewer_menu(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app import catalog
+    from app.ui.manuals import ManualsTab
+    from PySide6.QtGui import QDesktopServices
+
+    monkeypatch.setattr(installer, "MANUALS_DIR", tmp_path / "manuals")
+    url = "https://example.invalid/manual.pdf"
+    monkeypatch.setattr(catalog, "load_catalog", lambda: [_tool(links=[{"name": "M", "url": url}])])
+    _ = QApplication.instance() or QApplication([])
+    tab = ManualsTab()
+
+    external = tab._pdf_actions[0][0]
+    assert external.text() == "Open in system viewer"
+    assert not external.isEnabled()  # nothing downloaded yet
+
+    installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
+    installer.manual_cache_path(url).write_bytes(b"%PDF-1.4 fake")
+    tab._refresh_row(0)
+    assert external.isEnabled()
+
+    opened = {}
+    monkeypatch.setattr(
+        QDesktopServices, "openUrl", lambda u: opened.update(u=u.toString())
+    )
+    external.trigger()  # always the OS viewer, even where the in-app viewer works
     assert opened["u"].startswith("file:") and opened["u"].endswith(".pdf")
 
 
@@ -1404,10 +1523,14 @@ def test_manuals_tab_pdf_row_menu_open_and_delete(monkeypatch):
     tab = ManualsTab()
     rows = {tab.table.item(r, 0).text(): r for r in range(tab.table.rowCount())}
 
-    # a web-page row has no dropdown; PDF rows carry the two actions
+    # a web-page row has no dropdown; PDF rows carry the three actions
     assert tab.table.cellWidget(rows["Support"], 4).menu() is None
     menu = tab.table.cellWidget(rows["A (PDF)"], 4).menu()
-    assert [a.text() for a in menu.actions()] == ["Open containing folder", "Delete downloaded PDF"]
+    assert [a.text() for a in menu.actions()] == [
+        "Open in system viewer",
+        "Open containing folder",
+        "Delete downloaded PDF",
+    ]
     assert all(not a.isEnabled() for a in menu.actions())  # disabled until downloaded
 
     installer.MANUALS_DIR.mkdir(parents=True, exist_ok=True)
