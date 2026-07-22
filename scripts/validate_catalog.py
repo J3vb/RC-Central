@@ -60,12 +60,12 @@ def main() -> int:
         failures.append("no catalog entries found")
     for f in entries:
         tool = json.loads(f.read_text(encoding="utf-8"))
-        tools.append(tool)
         try:
             jsonschema.validate(tool, schema)
         except jsonschema.ValidationError as e:
             failures.append(f"{f.name}: {e.message}")
             continue
+        tools.append(tool)
         if tool["id"] != f.stem:
             failures.append(f"{f.name}: id {tool['id']!r} must match filename")
         if check_urls:
@@ -87,6 +87,10 @@ def main() -> int:
                 problem = _check_url(link["url"], expect_file=False)
                 if problem:
                     failures.append(f"{f.name}: {link['url']} -> {problem}")
+            for d in tool.get("drivers", []):
+                problem = _check_url(d["url"], expect_file=False)
+                if problem:
+                    failures.append(f"{f.name}: {d['url']} -> {problem}")
         print(f"ok: {f.name}")
     bundle = json.dumps(tools, ensure_ascii=False, indent=2) + "\n"
     if "--write" in sys.argv[1:]:

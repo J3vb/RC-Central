@@ -15,8 +15,8 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
       - run: uv run --no-project --with jsonschema --with requests python scripts/validate_catalog.py --check-urls
       # a dead vendor link on the nightly run should page the maintainer via
       # an issue, not just fail red in a tab nobody watches

@@ -1,0 +1,8 @@
+version: 2
+updates:
+  # Keep the SHA-pinned Action versions current — Dependabot bumps both the pin and
+  # its `# vX` comment, so pinning to a commit doesn't mean missing security patches.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

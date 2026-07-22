@@ -31,10 +31,16 @@ CATALOG = Path(__file__).resolve().parents[1] / "catalog"
 
 def _latest_upstream(check: dict) -> str | None:
     """The version the vendor page currently advertises, or None if we can't tell."""
-    resp = requests.get(check["url"], timeout=60)
-    resp.raise_for_status()
-    m = re.search(check["pattern"], resp.text)
-    return m.group(1) if m else None
+    last_exc = None
+    for _ in range(3):  # mirror _check_url's retry: one transient blip must not flap the nightly
+        try:
+            resp = requests.get(check["url"], timeout=60)
+            resp.raise_for_status()
+            m = re.search(check["pattern"], resp.text)
+            return m.group(1) if m else None
+        except requests.RequestException as e:
+            last_exc = e  # transient -> retry; persistent -> raised after the loop
+    raise last_exc
 
 
 def check_tools(tools: list[dict]) -> list[dict]:
