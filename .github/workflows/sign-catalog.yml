@@ -1,0 +1,39 @@
+name: Sign catalog
+
+# The app verifies catalog.json's detached Ed25519 signature before trusting a
+# fetched catalog (see app/catalog.py). Regenerate and commit that signature
+# whenever catalog.json changes on main, so raw.githubusercontent always serves a
+# .sig that matches the catalog it sits beside. The path filter is catalog.json (not
+# the .sig), so the bot's signature commit can't retrigger this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths: ["catalog/catalog.json"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # commit the regenerated signature back to main
+
+jobs:
+  sign:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+      - name: Sign catalog.json
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: uv run --no-project --with pynacl python scripts/sign_catalog.py
+      - name: Commit the regenerated signature
+        run: |
+          set -euo pipefail
+          if [ -z "$(git status --porcelain -- catalog/catalog.json.sig)" ]; then
+            echo "signature unchanged; nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add catalog/catalog.json.sig
+          git commit -m "Sign catalog.json [skip ci]"
+          git push

@@ -81,6 +81,8 @@ def gearing_is_untouched(car: dict) -> bool:
     and saved on this car, which counts as touched even if the inputs happen to match.
     """
     gearing = car.get("gearing") or {}
+    if not gearing:
+        return True  # no gearing block yet (old/imported car): seeding can't overwrite anything
     if gearing.get("fdr") is not None:
         return False
     defaults = new_car()["gearing"]
@@ -145,8 +147,10 @@ def apply_base_setup(car: dict) -> bool:
 
 
 def list_presets(car: dict) -> list[dict]:
-    """Named gearing snapshots on a car (empty for cars saved before presets existed)."""
-    return car.get("presets", [])
+    """Named gearing snapshots on a car (empty for cars saved before presets existed, or
+    for a corrupt/hand-edited file whose 'presets' isn't a list)."""
+    presets = car.get("presets", [])
+    return presets if isinstance(presets, list) else []
 
 
 def add_preset(car: dict, name: str) -> dict:
@@ -161,7 +165,9 @@ def apply_preset(car: dict, name: str) -> dict:
     """Copy a named preset's gearing onto car['gearing']. No-op if name is unknown."""
     for p in car.get("presets", []):
         if p.get("name") == name:
-            car.setdefault("gearing", {}).update(copy.deepcopy(p["gearing"]))
+            g = p.get("gearing")
+            if isinstance(g, dict):  # a preset element may lack/mistype its gearing block
+                car.setdefault("gearing", {}).update(copy.deepcopy(g))
             break
     return car
 
@@ -179,8 +185,10 @@ def delete_preset(car: dict, name: str) -> dict:
 
 
 def list_setup_presets(car: dict) -> list[dict]:
-    """Named setup snapshots on a car (empty for cars saved before they existed)."""
-    return car.get("setup_presets", [])
+    """Named setup snapshots on a car (empty for cars saved before they existed, or for a
+    corrupt/hand-edited file whose 'setup_presets' isn't a list)."""
+    presets = car.get("setup_presets", [])
+    return presets if isinstance(presets, list) else []
 
 
 def add_setup_preset(car: dict, name: str) -> dict:
@@ -195,7 +203,9 @@ def apply_setup_preset(car: dict, name: str) -> dict:
     """Copy a named preset's setup onto car['setup']. No-op if name is unknown."""
     for p in car.get("setup_presets", []):
         if p.get("name") == name:
-            car.setdefault("setup", {}).update(copy.deepcopy(p["setup"]))
+            s = p.get("setup")
+            if isinstance(s, dict):  # a preset element may lack/mistype its setup block
+                car.setdefault("setup", {}).update(copy.deepcopy(s))
             break
     return car
 
@@ -218,6 +228,25 @@ def clone_car(car: dict) -> dict:
     return dup
 
 
+def _sanitize_car(car: dict) -> dict:
+    """Coerce a car's structured blocks to their expected container types so every
+    downstream consumer (forms, gearing snapshots, add/apply_preset) can trust them. A
+    hand-edited or hostile file with a non-dict gearing/setup, a non-list presets, or a
+    non-dict preset element would otherwise pass through and crash on first use."""
+    for key in ("gearing", "setup"):
+        if key in car and not isinstance(car[key], dict):
+            del car[key]
+    for key in ("presets", "setup_presets"):
+        if key not in car:
+            continue
+        val = car[key]
+        if isinstance(val, list):
+            car[key] = [p for p in val if isinstance(p, dict)]  # drop malformed elements
+        else:
+            del car[key]  # a non-list crashes the preset dropdown/add_preset later
+    return car
+
+
 def load_car_file(path) -> dict:
     """Import a spec sheet from an external JSON file, with a fresh id so it never clobbers an existing car."""
     car = json.loads(Path(path).read_text(encoding="utf-8"))
@@ -226,7 +255,7 @@ def load_car_file(path) -> dict:
     car["id"] = uuid.uuid4().hex
     if not isinstance(car.get("name"), str) or not car["name"].strip():
         car["name"] = "Imported car"  # hand-made files may lack one; save/status need it
-    return car
+    return _sanitize_car(car)
 
 
 def new_log_entry(kind: str, note: str) -> dict:
@@ -401,11 +430,22 @@ def save_car(car: dict) -> dict:
 
 
 def load_car(car_id: str) -> dict | None:
-    """Read a spec sheet, or None if there's no file for that id."""
+    """Read a spec sheet, or None if there's no file for that id (or it's corrupt).
+
+    A corrupt/truncated/unreadable file returns None rather than raising, mirroring
+    list_cars: one bad car file must not crash whatever tab opens it. Every caller
+    already handles the None (missing-file) case.
+    """
     f = _car_file(car_id)
     if not f.exists():
         return None
-    return json.loads(f.read_text(encoding="utf-8"))
+    try:
+        car = json.loads(f.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        return None
+    # A hand-edited on-disk file is an untrusted boundary too: sanitize it exactly like an
+    # imported one so add_preset/apply_preset/the forms can't crash on a bad-typed block.
+    return _sanitize_car(car) if isinstance(car, dict) else None
 
 
 def list_cars() -> list[dict]:
@@ -425,7 +465,7 @@ def list_cars() -> list[dict]:
             continue
         if isinstance(car, dict):
             cars.append(car)
-    return sorted(cars, key=lambda c: c.get("name", "").lower())
+    return sorted(cars, key=lambda c: str(c.get("name") or "").lower())
 
 
 def delete_car(car_id: str) -> None:

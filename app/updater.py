@@ -16,6 +16,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import requests
@@ -120,13 +121,34 @@ def _sidelined(exe: Path) -> Path:
     return exe.with_name(exe.name + ".old")
 
 
+_fetch_lock = threading.Lock()
+
+
 def fetch_update(force: bool = False) -> bool:
     """Download a newer release build to PENDING if one exists. Never raises.
 
     Startup passes ``force=False`` so source runs stay a no-op; the Log tab
     passes ``force=True`` to exercise the real path from source. Every step logs,
     so a failed update is visible in rc-central.log instead of vanishing.
+
+    Serialized: the startup check and the Log tab's manual check can fire together, and
+    two downloads racing on the same PENDING/.part file could corrupt a stage — a second
+    concurrent call is skipped (returns False) rather than allowed to race.
     """
+    # A forced (user-initiated) check waits for any in-progress check so it returns a real
+    # result instead of a misleading "failed"; a background startup check skips if busy.
+    if force:
+        _fetch_lock.acquire()
+    elif not _fetch_lock.acquire(blocking=False):
+        log.info("update check already in progress; skipping this invocation")
+        return False
+    try:
+        return _do_fetch_update(force)
+    finally:
+        _fetch_lock.release()
+
+
+def _do_fetch_update(force: bool = False) -> bool:
     global _last_check_current
     _last_check_current = False
     frozen = bool(getattr(sys, "frozen", False))

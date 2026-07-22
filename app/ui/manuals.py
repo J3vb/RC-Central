@@ -272,9 +272,14 @@ class ManualsTab(_DownloadTab):
         self._status(f"Downloading {self._manuals[row]['name']}...")
 
         signals = _InstallSignals(self)  # parented so it outlives this scope
+
+        def finish(row_num: int, error: str | None) -> None:
+            self._download_finished(row_num, error)
+            signals.deleteLater()  # release the one-shot bridge; a fresh one is made per download
+
         signals.progress.connect(lambda done, total, b=bar: self._update_bar(b, done, total))
-        signals.done.connect(lambda r=row: self._download_finished(r, None))
-        signals.error.connect(lambda msg, r=row: self._download_finished(r, msg))
+        signals.done.connect(lambda r=row: finish(r, None))
+        signals.error.connect(lambda msg, r=row: finish(r, msg))
 
         def work():
             try:

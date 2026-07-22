@@ -64,7 +64,11 @@ class ToolsTab(_DownloadTab):
 
         # ponytail: one shared progress bar; per-row bars if parallel installs matter
         self.progress = QProgressBar()
-        self.progress.hide()  # hidden before set_catalog so its in-flight guard reads idle
+        self.progress.hide()
+        # One install at a time. Guards set_catalog from rebuilding self.tools mid-install
+        # and blocks a 2nd install from sharing the single progress bar. Set before the
+        # set_catalog call below, which reads it.
+        self._installing = False
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(_MARGIN, _MARGIN, _MARGIN, _MARGIN)
@@ -83,8 +87,8 @@ class ToolsTab(_DownloadTab):
     def set_catalog(self, tools: list[dict]) -> None:
         """(Re)populate the table from a catalog; safe to call again for a background
         refresh. Declines while an install is mid-flight (see the guard below)."""
-        if not self.progress.isHidden():
-            # ponytail: stale-for-a-session beats repopulating under a live download
+        if self._installing:
+            # ponytail: stale-for-a-session beats repopulating under a live install
             return
         # Only installable tools belong here; info-only devices (no download) are
         # reference-only and live on the Manuals tab via their manual links.
@@ -260,26 +264,33 @@ class ToolsTab(_DownloadTab):
         self._status(f"Uninstalled {tool['name']}", 5000)
 
     def _install(self, row: int, tool: dict) -> None:
+        if self._installing:
+            return  # one shared progress bar: block a 2nd install until this one finishes
+        self._installing = True
         self.table.cellWidget(row, 4).setEnabled(False)
         self._status(f"Downloading {tool['name']}...")
         self._run_download(
             lambda cb: installer.install(tool, progress=cb),
-            lambda err, r=row: self._install_finished(r, err),
+            lambda err, t=tool: self._install_finished(t, err),
         )
 
-    def _install_finished(self, row: int, error: str | None) -> None:
-        self.table.cellWidget(row, 4).setEnabled(True)
-        self._refresh_row(row)
+    def _install_finished(self, tool: dict, error: str | None) -> None:
+        self._installing = False
+        # Re-resolve the row by id (like _uninstall/_locate_existing): a catalog refresh
+        # is blocked while installing, but this keeps a stale index from ever being used.
+        row = next((i for i, t in enumerate(self.tools) if t["id"] == tool["id"]), None)
+        if row is not None:
+            self.table.cellWidget(row, 4).setEnabled(True)
+            self._refresh_row(row)
         self._refresh_summary()
         if error:
-            name = self.tools[row]["name"]
-            log.warning("install of %s failed: %s", name, error)
+            log.warning("install of %s failed: %s", tool["name"], error)
             self._clear_status()
             QMessageBox.warning(
                 self,
                 "Install failed",
-                f"Couldn't download and install {name}.\n"
+                f"Couldn't download and install {tool['name']}.\n"
                 "Check your internet connection and try again — details are in Settings ▸ Log.",
             )
         else:
-            self._status(f"Installed {self.tools[row]['name']}", 5000)
+            self._status(f"Installed {tool['name']}", 5000)

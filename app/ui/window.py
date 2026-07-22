@@ -3,7 +3,7 @@
 import sys
 import threading
 
-from PySide6.QtCore import Qt, Signal
+from PySide6.QtCore import QByteArray, Qt, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QLabel,
@@ -113,9 +113,12 @@ class MainWindow(QMainWindow):
         # clamp it into range rather than trust it.
         settings = _settings()
         geometry = settings.value("geometry")
-        if geometry is not None:
+        if isinstance(geometry, (QByteArray, bytes, bytearray)):
             self.restoreGeometry(geometry)
-        tab = int(settings.value("tab", 0))
+        try:
+            tab = int(settings.value("tab", 0))
+        except (TypeError, ValueError):
+            tab = 0  # corrupted/hand-edited 'tab' value: fall back like geometry above
         self.tabs.setCurrentIndex(max(0, min(tab, self.tabs.count() - 1)))
 
     def _refresh_catalog(self, fresh: list) -> None:

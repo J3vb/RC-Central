@@ -29,6 +29,34 @@ def _tool(**overrides):
     return tool
 
 
+def _signed_catalog_get(monkeypatch, payload: bytes):
+    """Point catalog._CATALOG_PUBLIC_KEY at an ephemeral test key and install a fake
+    requests.get that serves `payload` for the catalog URL and a matching Ed25519
+    signature for the .sig URL — driving load_catalog's verified-remote path."""
+    import base64
+
+    from nacl.signing import SigningKey
+
+    from app import catalog
+
+    key = SigningKey.generate()
+    monkeypatch.setattr(
+        catalog, "_CATALOG_PUBLIC_KEY", base64.b64encode(bytes(key.verify_key)).decode()
+    )
+    sig = key.sign(payload).signature
+
+    class _Resp:
+        def __init__(self, content):
+            self.content = content
+
+        def raise_for_status(self):
+            pass
+
+    monkeypatch.setattr(
+        catalog.requests, "get", lambda url, *a, **k: _Resp(sig if url.endswith(".sig") else payload)
+    )
+
+
 @pytest.fixture
 def sandbox(tmp_path, monkeypatch):
     """Redirect installs to tmp and replace the network download with a local fixture zip."""
@@ -262,6 +290,38 @@ def test_hash_mismatch_raises(sandbox):
     assert installer.get_state("fake-tool") is None
 
 
+def test_install_verifies_matching_sha256(sandbox):
+    # The success side of the hash gate: a pinned hash that MATCHES must install cleanly.
+    # test_hash_mismatch_raises pins rejection; this pins acceptance, so a regression that
+    # wrongly rejected valid downloads (an inverted compare, a hex-case bug) is caught here.
+    tool = _tool()
+    tool["download"]["sha256"] = installer._sha256(sandbox / "fake.zip")
+    exe = installer.install(tool)
+    assert exe.name == "FakeTool.exe" and exe.exists()  # extracted normally
+    assert installer.get_state("fake-tool") is not None  # recorded as installed
+
+
+def test_install_rolls_back_on_failure(sandbox, monkeypatch):
+    # data-loss guard: a failed RE-install must leave the previous working install intact,
+    # never wipe it with no replacement (install sidelines the old copy and restores it on error).
+    tool = _tool()
+    exe = installer.install(tool)  # first install succeeds
+    assert exe.exists()
+    first_state = installer.get_state("fake-tool")
+    assert first_state is not None
+
+    def boom(archive, dest):  # a second install whose extract blows up (corrupt archive, disk-full)
+        raise RuntimeError("extract failed")
+
+    monkeypatch.setattr(installer, "_extract", boom)
+    with pytest.raises(RuntimeError):
+        installer.install(tool)
+
+    assert exe.exists()  # the previous install survived
+    assert installer.get_state("fake-tool") == first_state  # its state is unchanged
+    assert not (installer.TOOLS_DIR / "fake-tool.old").exists()  # no sideline dir left behind
+
+
 def test_install_runs_setup_when_configured(sandbox, monkeypatch):
     dest = installer.TOOLS_DIR / "fake-tool"
     ran = {}
@@ -383,36 +443,36 @@ def test_launch_needs_admin_uses_shellexecute(monkeypatch):
     assert called["cwd"].endswith("fake")
 
 
-def test_launch_non_admin_tracks_process_and_is_idempotent(monkeypatch):
-    # the common (non-admin) path starts a QProcess, records it, and is a no-op when
-    # the tool is already running. QProcess methods are stubbed so no real exe spawns.
+def test_launch_non_admin_starts_detached(monkeypatch):
+    # the common (non-admin) path launches fire-and-forget via startDetached, so the tool
+    # is NOT bound to the hub's lifetime — an attached QProcess would be killed on app exit.
     from app import launcher
     from PySide6.QtCore import QProcess
 
-    launcher._procs.clear()
     monkeypatch.setattr(launcher.sys, "platform", "win32")
-    starts = []
-    monkeypatch.setattr(QProcess, "start", lambda self: starts.append(True))
-    monkeypatch.setattr(QProcess, "waitForStarted", lambda self, ms: True)
-    monkeypatch.setattr(QProcess, "state", lambda self: QProcess.ProcessState.Running)
+    calls = []
 
-    assert not launcher.is_running("t1")  # unknown id -> not running
+    def fake_detached(program, args, cwd):
+        calls.append((program, args, cwd))
+        return True, 4321  # (ok, pid)
+
+    monkeypatch.setattr(QProcess, "startDetached", staticmethod(fake_detached))
     launcher.launch("t1", "C:/x/Tool.exe")
-    assert launcher.is_running("t1")  # recorded in _procs, state Running
-    launcher.launch("t1", "C:/x/Tool.exe")  # already running -> must not start twice
-    assert len(starts) == 1
+    assert len(calls) == 1
+    program, _args, cwd = calls[0]
+    assert program.endswith("Tool.exe") and cwd.endswith("x")  # detached, with working dir
 
 
-def test_launch_falls_back_to_shellexecute_when_start_fails(monkeypatch):
+def test_launch_falls_back_to_shellexecute_when_detach_fails(monkeypatch):
     # an exe whose manifest demands elevation fails CreateProcess even with
-    # needs_admin=false; launch must retry via ShellExecute and NOT track it.
+    # needs_admin=false; launch must retry via ShellExecute.
     from app import launcher
     from PySide6.QtCore import QProcess
 
-    launcher._procs.clear()
     monkeypatch.setattr(launcher.sys, "platform", "win32")
-    monkeypatch.setattr(QProcess, "start", lambda self: None)
-    monkeypatch.setattr(QProcess, "waitForStarted", lambda self, ms: False)  # CreateProcess fails
+    monkeypatch.setattr(
+        QProcess, "startDetached", staticmethod(lambda program, args, cwd: (False, 0))
+    )
     called = {}
     monkeypatch.setattr(
         launcher.os,
@@ -423,7 +483,6 @@ def test_launch_falls_back_to_shellexecute_when_start_fails(monkeypatch):
 
     launcher.launch("t2", "C:/x/Tool.exe")
     assert called["p"].endswith("Tool.exe")  # elevated fallback taken
-    assert "t2" not in launcher._procs and not launcher.is_running("t2")  # untracked
 
 
 def test_launch_rejects_non_windows(monkeypatch):
@@ -448,18 +507,90 @@ def test_load_catalog_uses_remote_and_caches(monkeypatch, tmp_path):
     monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
     monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
     tools = [_tool()]
+    _signed_catalog_get(monkeypatch, json.dumps(tools).encode())
+
+    assert catalog.load_catalog() == tools  # signed 200 returned as-is
+    cached = json.loads((tmp_path / "catalog.json").read_text(encoding="utf-8"))
+    assert cached == tools  # and written to the cache for offline use
+
+
+def test_load_catalog_ignores_remote_signed_by_wrong_key(monkeypatch, tmp_path):
+    # The catalog is the app's control plane (download URLs, the exe to launch); a
+    # remote signed by anyone but the pinned key is ignored, even with a perfect shape.
+    from app import catalog
+
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+    payload = json.dumps(
+        [_tool(id="evil", download={"url": "https://evil.invalid/x.zip", "archive": "zip"})]
+    ).encode()
+
+    from nacl.signing import SigningKey
+
+    forged = SigningKey.generate().sign(payload).signature  # not the pinned key
 
     class _Resp:
+        def __init__(self, content):
+            self.content = content
+
         def raise_for_status(self):
             pass
 
-        def json(self):
-            return tools
+    monkeypatch.setattr(
+        catalog.requests,
+        "get",
+        lambda url, *a, **k: _Resp(forged if url.endswith(".sig") else payload),
+    )
 
-    monkeypatch.setattr(catalog.requests, "get", lambda *a, **k: _Resp())
-    assert catalog.load_catalog() == tools  # normal 200 returned as-is
-    cached = json.loads((tmp_path / "catalog.json").read_text(encoding="utf-8"))
-    assert cached == tools  # and written to the cache for offline use
+    tools = catalog.load_catalog()
+    assert all(t.get("id") != "evil" for t in tools)  # hostile remote rejected
+    assert not (tmp_path / "catalog.json").exists()  # and never cached
+
+
+def test_load_catalog_ignores_signed_but_unparseable_json(monkeypatch, tmp_path):
+    # A correctly-signed payload that isn't valid JSON must fall back, not crash: load_catalog
+    # only catches RequestException, so _verified_remote must absorb the decode error itself.
+    from app import catalog
+
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+    _signed_catalog_get(monkeypatch, b"this is not json at all {")
+
+    tools = catalog.load_catalog()
+    assert isinstance(tools, list) and tools  # fell back to bundled
+    assert all("id" in t for t in tools)
+    assert not (tmp_path / "catalog.json").exists()  # never cached the garbage
+
+
+def test_load_catalog_ignores_remote_with_no_signature(monkeypatch, tmp_path):
+    # A missing .sig (404) is treated like any fetch failure: fall back, never trust.
+    from app import catalog
+
+    monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
+    monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+    payload = json.dumps(
+        [_tool(id="evil", download={"url": "https://evil.invalid/x.zip", "archive": "zip"})]
+    ).encode()
+
+    class _Resp:
+        def __init__(self, content, ok=True):
+            self.content = content
+            self._ok = ok
+
+        def raise_for_status(self):
+            if not self._ok:
+                raise catalog.requests.HTTPError("404 Not Found")
+
+    def get(url, *a, **k):
+        if url.endswith(".sig"):
+            return _Resp(b"", ok=False)  # no signature published
+        return _Resp(payload)
+
+    monkeypatch.setattr(catalog.requests, "get", get)
+
+    tools = catalog.load_catalog()
+    assert all(t.get("id") != "evil" for t in tools)
+    assert not (tmp_path / "catalog.json").exists()
 
 
 def test_load_catalog_falls_back_to_valid_cache_when_offline(monkeypatch, tmp_path):
@@ -507,6 +638,38 @@ def test_catalog_valid_rejects_hostile_download_shape():
     assert not catalog._valid([_tool(download={"url": "http://x/y", "archive": "zip"})])  # not https
     assert not catalog._valid([_tool(download="not-a-dict")])
     assert catalog._valid([_tool()])  # the well-formed fixture still passes
+
+
+def test_catalog_valid_requires_vendor_and_version():
+    # the Tools/Manuals tabs index tool["vendor"]/["version"]; a signed-but-malformed
+    # catalog missing them must be rejected, not KeyError-crash the refresh
+    from app import catalog
+
+    no_vendor = _tool()
+    del no_vendor["vendor"]
+    assert not catalog._valid([no_vendor])
+    no_version = _tool()
+    del no_version["version"]
+    assert not catalog._valid([no_version])
+
+
+def test_load_car_sanitizes_corrupt_blocks(tmp_path, monkeypatch):
+    # a hand-edited on-disk car with mistyped blocks must load into safe containers, so the
+    # shared reader (not just the import path) protects add_preset and the gearing forms
+    from app import garage
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path)
+    cid = "abc123"
+    (tmp_path / f"{cid}.json").write_text(
+        json.dumps({"id": cid, "name": "Bad", "gearing": "nope", "presets": "not-a-list"}),
+        encoding="utf-8",
+    )
+    car = garage.load_car(cid)
+    assert "gearing" not in car and "presets" not in car  # mistyped blocks dropped
+    assert garage.add_preset(car, "p1")["presets"][0]["name"] == "p1"  # no crash
+
+    car["presets"] = [{"name": "bare"}]  # a preset element missing its gearing block
+    garage.apply_preset(car, "bare")  # must be a no-op, not a KeyError
 
 
 def test_install_exe_download_defaults_to_resolvable_name(monkeypatch, sandbox):
@@ -1041,7 +1204,7 @@ def test_tools_tab_search_and_category_filter(monkeypatch):
 
 def test_tools_tab_set_catalog_repopulates(monkeypatch):
     # set_catalog swaps the whole table to a new catalog; while an install is in
-    # flight (progress bar shown) it declines so live row closures stay valid.
+    # flight (self._installing) it declines so live row closures stay valid.
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     from PySide6.QtWidgets import QApplication
 
@@ -1073,8 +1236,8 @@ def test_tools_tab_set_catalog_repopulates(monkeypatch):
     assert cats == [None, "esc", "radio"]
     assert tab.category_filter.currentIndex() == 0
 
-    # an install mid-flight (progress shown) makes the next set_catalog decline
-    tab.progress.show()
+    # an install in flight makes the next set_catalog decline, so live row closures stay valid
+    tab._installing = True
     tab.set_catalog(first)
     assert tab.table.rowCount() == 2  # unchanged: the swap was refused
     assert [t["id"] for t in tab.tools] == ["b", "c"]
@@ -2352,18 +2515,22 @@ def test_settings_tab_toggles_persist_and_apply(monkeypatch):
     app = QApplication.instance() or QApplication([])
     tab = SettingsTab()
 
-    tab.dark_toggle.setChecked(True)  # fires _on_dark_toggled -> apply_theme + persist
-    assert _settings().value(_DARK_MODE_KEY, type=bool) is True
-    assert app.palette().color(QPalette.ColorRole.Window).lightness() < 128  # dark applied
+    try:
+        tab.dark_toggle.setChecked(True)  # fires _on_dark_toggled -> apply_theme + persist
+        assert _settings().value(_DARK_MODE_KEY, type=bool) is True
+        assert app.palette().color(QPalette.ColorRole.Window).lightness() < 128  # dark applied
 
-    tab.dark_toggle.setChecked(False)  # back to light (leaves other tests in light too)
-    assert _settings().value(_DARK_MODE_KEY, type=bool) is False
-    assert app.palette().color(QPalette.ColorRole.Window).lightness() > 128
+        tab.dark_toggle.setChecked(False)  # back to light
+        assert _settings().value(_DARK_MODE_KEY, type=bool) is False
+        assert app.palette().color(QPalette.ColorRole.Window).lightness() > 128
 
-    tab.update_toggle.setChecked(False)  # fires _on_update_toggled -> persist
-    assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is False
-    tab.update_toggle.setChecked(True)
-    assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is True
+        tab.update_toggle.setChecked(False)  # fires _on_update_toggled -> persist
+        assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is False
+        tab.update_toggle.setChecked(True)
+        assert _settings().value(_STARTUP_CHECK_KEY, type=bool) is True
+    finally:
+        # never leak the dark palette onto the shared QApplication if an assert above fails
+        tab.dark_toggle.setChecked(False)
 
 
 def test_settings_about_button(monkeypatch):
@@ -2610,7 +2777,7 @@ def test_tools_tab_install_finished_error_warns(monkeypatch, sandbox, caplog):
     )
     tab.table.cellWidget(0, 4).setEnabled(False)  # _install disabled it before the thread
     with caplog.at_level(logging.WARNING):
-        tab._install_finished(0, "network boom")
+        tab._install_finished(tab.tools[0], "network boom")  # now takes the tool dict, not a row
     assert warned["n"] == 1  # the failure reaches the user, not a silent swallow
     assert tab.table.cellWidget(0, 4).isEnabled()  # button restored so they can retry
     dialog_text = warned["args"][2]
@@ -2741,7 +2908,8 @@ def test_gear_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     )
     _ = QApplication.instance() or QApplication([])
 
-    # a car whose computed gearing was filled by the calculator, set active
+    # a car set active in the Gear tab whose stored derived gearing (fdr/rollout/top-speed)
+    # is stale — inconsistent with its pinion/spur, as a hand-edit or an older save would be
     car = garage.new_car("Computed")
     car["gearing"].update({"fdr": 7.5, "rollout_mm": 28.5, "top_speed_kmh": 42.1})
     garage.save_car(car)
@@ -2750,16 +2918,27 @@ def test_gear_preset_action_preserves_computed_gearing(monkeypatch, tmp_path):
     settings.sync()
     tab = GearTab()
 
-    # saving a preset must not null the computed gearing on disk...
+    # saving a preset snapshots the inputs AND their freshly-computed derived values, so the
+    # stored/preset gearing is internally consistent — never a stale fdr contradicting pinion/spur
     monkeypatch.setattr(QInputDialog, "getText", lambda *a, **k: ("carpet", True))
     tab._on_save_preset()
 
+    from app import gearing
+    expected = gearing.compute(
+        pinion=tab.pinion.value(),
+        spur=tab.spur.value(),
+        internal_ratio=tab.internal_ratio.value(),
+        tire_diameter_mm=tab.tire.value(),
+        kv=tab.kv.value(),
+        voltage=gearing.pack_voltage(tab.cells.value()),
+    )
     reloaded = garage.load_car(car["id"])
-    assert reloaded["gearing"]["fdr"] == 7.5
-    assert reloaded["gearing"]["rollout_mm"] == 28.5
-    assert reloaded["gearing"]["top_speed_kmh"] == 42.1
-    # ...and the snapshot captures the computed values, not None
-    assert reloaded["presets"][0]["gearing"]["fdr"] == 7.5
+    # derived values are captured (not nulled) and now match the inputs, not the stale 7.5
+    assert reloaded["gearing"]["fdr"] == round(expected["fdr"], 3) != 7.5
+    assert reloaded["gearing"]["rollout_mm"] == round(expected["rollout_mm"], 2)
+    assert reloaded["gearing"]["top_speed_kmh"] == round(expected["top_speed_kmh"], 1)
+    # the preset snapshot captures the same consistent values
+    assert reloaded["presets"][0]["gearing"]["fdr"] == reloaded["gearing"]["fdr"]
     # the dropdown now lists the preset after its placeholder row
     assert tab.preset_combo.count() == 2 and tab.preset_combo.itemText(1) == "carpet"
 
@@ -2911,16 +3090,10 @@ def test_install_exe_download_rejects_traversal(sandbox, monkeypatch):
 def test_load_catalog_rejects_malformed_remote(monkeypatch, tmp_path):
     from app import catalog
 
-    class _Resp:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            return {"not": "a tool list"}  # valid JSON, wrong shape
-
-    monkeypatch.setattr(catalog.requests, "get", lambda *a, **k: _Resp())
     monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
     monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+    # correctly signed, but valid JSON of the wrong shape
+    _signed_catalog_get(monkeypatch, json.dumps({"not": "a tool list"}).encode())
 
     tools = catalog.load_catalog()
 
@@ -2948,18 +3121,11 @@ def test_load_catalog_skips_corrupt_cache(monkeypatch, tmp_path):
 def test_load_catalog_rejects_path_traversal_id(monkeypatch, tmp_path):
     from app import catalog
 
-    class _Resp:
-        def raise_for_status(self):
-            pass
-
-        def json(self):
-            # id is well-formed JSON but not a slug: it becomes a filesystem path
-            # component in installer.py, so "../.." would point outside TOOLS_DIR
-            return [{"id": "../..", "name": "x"}]
-
-    monkeypatch.setattr(catalog.requests, "get", lambda *a, **k: _Resp())
     monkeypatch.setattr(catalog, "DATA_DIR", tmp_path)
     monkeypatch.setattr(catalog, "CACHE_FILE", tmp_path / "catalog.json")
+    # id is well-formed JSON but not a slug: it becomes a filesystem path component in
+    # installer.py, so "../.." would point outside TOOLS_DIR. Signed, so it reaches _valid.
+    _signed_catalog_get(monkeypatch, json.dumps([{"id": "../..", "name": "x"}]).encode())
 
     tools = catalog.load_catalog()
 
@@ -2972,11 +3138,12 @@ def test_load_catalog_rejects_path_traversal_id(monkeypatch, tmp_path):
 def test_valid_rejects_path_traversal_id():
     from app import catalog
 
-    assert catalog._valid([{"id": "../..", "name": "x"}]) is False
-    assert catalog._valid([{"id": "agfrc-servo-programmer", "name": "x"}]) is True
+    ok = {"id": "agfrc-servo-programmer", "name": "x", "vendor": "V", "version": "1"}
+    assert catalog._valid([{**ok, "id": "../.."}]) is False
+    assert catalog._valid([ok]) is True
     # non-string id/name (corrupt or hostile catalog) must not crash the shape check
-    assert catalog._valid([{"id": 5, "name": "x"}]) is False
-    assert catalog._valid([{"id": "ok-id", "name": None}]) is False
+    assert catalog._valid([{**ok, "id": 5}]) is False
+    assert catalog._valid([{**ok, "name": None}]) is False
 
 
 def test_garage_tab_setup_fields_save_base_and_apply_base(monkeypatch, tmp_path):

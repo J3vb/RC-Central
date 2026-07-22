@@ -38,6 +38,7 @@ def install(tool: dict, progress=None) -> Path:
     """Download + unpack a catalog tool (extract archive, or run/keep a bare exe). Returns the resolved exe path."""
     dest = TOOLS_DIR / tool["id"]
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
+    inst = tool.get("install", {})
     with tempfile.TemporaryDirectory() as tmp:
         archive = Path(tmp) / ("download." + tool["download"]["archive"])
         _download(tool["download"]["url"], archive, progress)
@@ -47,35 +48,55 @@ def install(tool: dict, progress=None) -> Path:
                 f"{tool['name']}: the downloaded file no longer matches the catalog hash. "
                 "The vendor likely updated it - the catalog entry needs a refresh."
             )
+        # Archive verified. Preserve any working install until the new one is proven: a
+        # failed extract/setup (corrupt archive, declined UAC, non-zero installer exit,
+        # disk-full) must roll back, not leave the tool wiped with no replacement. Same
+        # sideline-then-swap pattern updater.apply_pending uses for the running binary.
+        backup = None
         if dest.exists():
-            shutil.rmtree(dest)
-        inst = tool.get("install", {})
-        if tool["download"]["archive"] == "exe":
-            # the download IS the installer / portable exe - nothing to extract.
-            # keep it in the tool dir under its declared name so setup_args and
-            # exe_relative_path resolve exactly as they do for archive tools.
-            target = dest / (
-                inst.get("setup_relative_path")
-                or inst.get("exe_relative_path")
-                # NOT "installer.exe": _find_exe's skip-list drops names containing
-                # "install", so a default-named bare exe would fail to auto-resolve
-                or "tool.exe"
-            )
-            # the hint comes from the remote catalog: never let it write outside the tool dir
-            if not target.resolve().is_relative_to(dest.resolve()):
-                target = dest / "tool.exe"
-            target.parent.mkdir(parents=True, exist_ok=True)  # covers a nested relative path
-            shutil.copy2(archive, target)
-        else:
-            _extract(archive, dest)
-    if inst.get("setup_args"):
-        # archive ships a silent-capable installer (e.g. Inno Setup) instead of a
-        # portable exe: run it into the tool dir, then resolve the installed app
-        setup = _find_exe(dest, inst.get("setup_relative_path"))
-        args = [a.replace("{dest}", str(dest)) for a in inst["setup_args"]]
-        _run_setup(setup, args)
-    exe = _find_exe(dest, inst.get("exe_relative_path"))
-    _state_file(tool["id"]).write_text(
+            backup = dest.with_name(dest.name + ".old")
+            if backup.exists():
+                shutil.rmtree(backup)
+            dest.rename(backup)  # same-volume rename: atomic and reversible
+        try:
+            if tool["download"]["archive"] == "exe":
+                # the download IS the installer / portable exe - nothing to extract.
+                # keep it in the tool dir under its declared name so setup_args and
+                # exe_relative_path resolve exactly as they do for archive tools.
+                target = dest / (
+                    inst.get("setup_relative_path")
+                    or inst.get("exe_relative_path")
+                    # NOT "installer.exe": _find_exe's skip-list drops names containing
+                    # "install", so a default-named bare exe would fail to auto-resolve
+                    or "tool.exe"
+                )
+                # the hint comes from the remote catalog: never let it write outside the tool dir
+                if not target.resolve().is_relative_to(dest.resolve()):
+                    target = dest / "tool.exe"
+                target.parent.mkdir(parents=True, exist_ok=True)  # covers a nested relative path
+                shutil.copy2(archive, target)
+            else:
+                _extract(archive, dest)
+            if inst.get("setup_args"):
+                # archive ships a silent-capable installer (e.g. Inno Setup) instead of a
+                # portable exe: run it into the tool dir, then resolve the installed app
+                setup = _find_exe(dest, inst.get("setup_relative_path"))
+                args = [a.replace("{dest}", str(dest)) for a in inst["setup_args"]]
+                _run_setup(setup, args)
+            exe = _find_exe(dest, inst.get("exe_relative_path"))
+        except BaseException:
+            # roll back to the preserved install so a failure never uninstalls the tool
+            shutil.rmtree(dest, ignore_errors=True)
+            if backup is not None:
+                backup.rename(dest)
+            raise
+        if backup is not None:
+            shutil.rmtree(backup, ignore_errors=True)  # new install proven; drop the old copy
+    # tmp + atomic replace, like garage.save_car: a crash mid-write can't leave a
+    # truncated state file (which get_state would then misread as not-installed).
+    state_file = _state_file(tool["id"])
+    tmp = state_file.with_name(state_file.name + ".tmp")
+    tmp.write_text(
         json.dumps(
             {
                 "version": tool["version"],
@@ -85,6 +106,7 @@ def install(tool: dict, progress=None) -> Path:
         ),
         encoding="utf-8",
     )
+    tmp.replace(state_file)
     return exe
 
 
@@ -98,7 +120,11 @@ def register_existing(tool: dict, exe_path: str, version: str) -> Path:
     if not exe.is_file():
         raise ExeNotFound(f"{exe_path} is not a file")
     TOOLS_DIR.mkdir(parents=True, exist_ok=True)
-    _state_file(tool["id"]).write_text(
+    # tmp + atomic replace like install() above, so a crash mid-write can't leave a
+    # truncated state file that get_state() would misread as not-installed.
+    state_file = _state_file(tool["id"])
+    tmp = state_file.with_name(state_file.name + ".tmp")
+    tmp.write_text(
         json.dumps(
             {
                 "version": version,
@@ -109,6 +135,7 @@ def register_existing(tool: dict, exe_path: str, version: str) -> Path:
         ),
         encoding="utf-8",
     )
+    tmp.replace(state_file)
     return exe
 
 
@@ -118,7 +145,12 @@ def uninstall(tool_id: str) -> None:
     state_file = _state_file(tool_id)
     if not state_file.exists():
         return
-    state = json.loads(state_file.read_text(encoding="utf-8"))
+    try:
+        state = json.loads(state_file.read_text(encoding="utf-8"))
+    except (ValueError, OSError, KeyError):
+        state = {}  # corrupt/partial state: fall through and clean up like a download
+    if not isinstance(state, dict):
+        state = {}  # valid JSON but not a state object: treat as a download to clean up
     if state.get("source") != "existing":
         tool_dir = TOOLS_DIR / tool_id
         if tool_dir.exists():
@@ -131,8 +163,13 @@ def get_state(tool_id: str) -> dict | None:
     f = _state_file(tool_id)
     if not f.exists():
         return None
-    state = json.loads(f.read_text(encoding="utf-8"))
-    return state if Path(state["exe_path"]).exists() else None
+    try:
+        state = json.loads(f.read_text(encoding="utf-8"))
+        if not isinstance(state, dict):
+            return None  # valid JSON but not a state object (null, list, number): not installed
+        return state if Path(state["exe_path"]).exists() else None
+    except (ValueError, OSError, KeyError, TypeError):
+        return None  # corrupt/partial state file reads as not-installed, never crashes
 
 
 def _state_file(tool_id: str) -> Path:
@@ -349,7 +386,9 @@ def _extract_rar(archive: Path, dest: Path) -> None:
             capture_output=True,
         )
     except subprocess.CalledProcessError as e:
-        detail = (e.stderr or b"").decode(errors="replace").strip()
+        # bsdtar is a console tool: on Windows its stderr is the OEM codepage, not UTF-8.
+        enc = "oem" if os.name == "nt" else "utf-8"
+        detail = (e.stderr or b"").decode(enc, errors="replace").strip()
         raise RuntimeError(f"could not unpack the vendor's .rar archive: {detail}") from e
 
 

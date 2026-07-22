@@ -1,0 +1,4 @@
+# Detached Ed25519 signatures are raw 64-byte binaries verified byte-for-byte by the
+# app (app/catalog.py, app/updater.py). Git must never apply end-of-line conversion to
+# them — a 0x0A turning into 0x0D0A would corrupt the signature.
+*.sig binary

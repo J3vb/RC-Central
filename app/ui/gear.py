@@ -1,6 +1,6 @@
 """The Gear tab: live gearing calculator, inline gear ratio chart, pinion sweep dialog."""
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QComboBox,
@@ -205,7 +205,10 @@ class GearTab(QWidget):
             (self.cells, "cells", 2),
         ):
             widget.blockSignals(True)
-            widget.setValue(g.get(key, default))
+            try:
+                widget.setValue(type(default)(g.get(key, default)))
+            except (TypeError, ValueError, OverflowError):
+                widget.setValue(default)  # OverflowError: int(inf) from a hand-edited/NaN value
             widget.blockSignals(False)
         self._recompute()
 
@@ -308,18 +311,10 @@ class GearTab(QWidget):
             self._load_active_car()
             return
         try:
-            r = self._current()
+            snapshot = self._gearing_snapshot()
         except ValueError:
             return
-        g = car.setdefault("gearing", {})
-        g.update(
-            {
-                **self._spinbox_gearing(),
-                "fdr": round(r["fdr"], 3),
-                "rollout_mm": round(r["rollout_mm"], 2),
-                "top_speed_kmh": round(r["top_speed_kmh"], 1),
-            }
-        )
+        car.setdefault("gearing", {}).update(snapshot)
         garage.save_car(car)
         _show_status(self, f"Saved gearing to {car['name']}", 5000)
 
@@ -343,6 +338,17 @@ class GearTab(QWidget):
             "cells": self.cells.value(),
         }
 
+    def _gearing_snapshot(self) -> dict:
+        """The current inputs plus their derived fdr/rollout/top-speed as one consistent
+        gearing block. Raises ValueError (from _current) when the inputs don't compute."""
+        r = self._current()
+        return {
+            **self._spinbox_gearing(),
+            "fdr": round(r["fdr"], 3),
+            "rollout_mm": round(r["rollout_mm"], 2),
+            "top_speed_kmh": round(r["top_speed_kmh"], 1),
+        }
+
     def _active_car(self) -> dict | None:
         """The active car, fresh from disk; resync (and warn never) when it's gone."""
         car = garage.load_car(self._active_id) if self._active_id else None
@@ -357,9 +363,11 @@ class GearTab(QWidget):
         name, ok = QInputDialog.getText(self, "Save preset", "Preset name:")
         if not ok or not name.strip():
             return
-        # update (not replace) the gearing block so computed fdr/rollout/top-speed
-        # saved earlier ride into the snapshot instead of being dropped
-        car.setdefault("gearing", {}).update(self._spinbox_gearing())
+        try:
+            snapshot = self._gearing_snapshot()  # inputs + their derived fdr/rollout/top-speed
+        except ValueError:
+            return  # invalid inputs don't compute; save nothing rather than a stale fdr
+        car.setdefault("gearing", {}).update(snapshot)
         car = garage.save_car(garage.add_preset(car, name.strip()))
         self._refresh_presets(car)
 
@@ -515,3 +523,8 @@ class _GearChartPanel(QWidget):
                     item.setBackground(QColor(_accent()))
                     item.setForeground(QColor(_on_accent()))  # readable on any accent
                 self.table.setItem(row, col, item)
+
+    def changeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if event.type() == QEvent.Type.PaletteChange:
+            self._rebuild()  # re-apply the accent highlight to the current combo in the new accent
+        super().changeEvent(event)

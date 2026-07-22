@@ -222,6 +222,7 @@ class _AccordionTable(QWidget):
         # header resize modes: with word wrap on, row heights depend on column
         # widths, and the pre-stretch defaults produce tall mostly-empty rows
         self.table.cellClicked.connect(self._toggle_row)
+        self.table.cellActivated.connect(self._toggle_row)  # keyboard (Enter/Return) activation
 
     def _row_name(self, row: int) -> str:
         return self.table.item(row, 0).text()[2:]  # strip the "▸ "/"▾ " prefix
@@ -458,6 +459,7 @@ class _TuningLog(QWidget):
             self.table.setItem(row, 0, QTableWidgetItem(date))
             self.table.setItem(row, 1, QTableWidgetItem(entry.get("note", "")))
         self.table.resizeColumnsToContents()
+        self.table.resizeRowsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)
 
     def _add(self) -> None:

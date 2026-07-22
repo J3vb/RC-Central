@@ -8,7 +8,7 @@ fall back to the OS default viewer via is_available().
 import logging
 from pathlib import Path
 
-from PySide6.QtCore import QPointF, Qt, QUrl
+from PySide6.QtCore import QByteArray, QPointF, Qt, QUrl
 from PySide6.QtGui import QDesktopServices, QKeySequence
 from PySide6.QtWidgets import QLabel, QMainWindow, QSizePolicy, QToolBar, QWidget
 
@@ -51,9 +51,17 @@ class PdfViewerWindow(QMainWindow):
 
         # The document must outlive the view (parented to the window, never shared).
         self._doc = QPdfDocument(self)
-        err = self._doc.load(str(path))
-        if err != QPdfDocument.Error.None_:
-            raise ValueError(f"QPdfDocument.load: {err.name}")
+        try:
+            err = self._doc.load(str(path))
+            if err != QPdfDocument.Error.None_:
+                raise ValueError(f"QPdfDocument.load: {err.name}")
+        except Exception:
+            # Don't leave a hidden, parented QMainWindow behind: __init__ already ran
+            # super().__init__(parent), so without this the failed window would sit in
+            # the parent's children forever, never shown or deleted.
+            self._doc.close()
+            self.deleteLater()
+            raise
 
         self.view = QPdfView(self)
         self.view.setDocument(self._doc)
@@ -64,10 +72,10 @@ class PdfViewerWindow(QMainWindow):
         self._build_toolbar()
 
         geometry = _settings().value(_GEOMETRY_KEY)
-        if geometry is not None:
-            self.restoreGeometry(geometry)
+        if isinstance(geometry, (QByteArray, bytes, bytearray)):
+            self.restoreGeometry(geometry)  # guard: a corrupted value must not raise here,
         else:
-            self.resize(700, 850)
+            self.resize(700, 850)  # which would leave this window (and its open PDF handle) leaked
         self.setMinimumSize(420, 480)
 
     def _build_toolbar(self) -> None:
@@ -133,4 +141,8 @@ class PdfViewerWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
         _settings().setValue(_GEOMETRY_KEY, self.saveGeometry())
+        # Release the file handle now: WA_DeleteOnClose only schedules deleteLater(),
+        # which runs too late for a caller (e.g. delete-the-downloaded-PDF) that wants
+        # the file unlocked right after close() returns.
+        self._doc.close()
         super().closeEvent(event)

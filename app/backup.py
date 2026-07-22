@@ -59,13 +59,19 @@ def restore_backup(src_zip) -> int:
             try:
                 data = z.read(name)
                 car = json.loads(data)
+                if not (isinstance(car, dict) and isinstance(car.get("id"), str) and car["id"]):
+                    continue  # not a car spec sheet (no usable id)
+                if "\x00" in car["id"]:
+                    continue  # NUL byte: Windows resolve() won't flag it, but write_bytes raises
+                target = garage_dir / f"{car['id']}.json"
+                if target.resolve().parent != base:
+                    continue  # a crafted id ("../x", "C:x") that would escape the garage
             except _MEMBER_READ_ERRORS:
-                continue  # unreadable/encrypted/corrupt/not-JSON: skip this member
-            if not (isinstance(car, dict) and isinstance(car.get("id"), str) and car["id"]):
-                continue  # not a car spec sheet (no usable id)
-            target = garage_dir / f"{car['id']}.json"
-            if target.resolve().parent != base:
-                continue  # a crafted id ("../x", "C:x") that would escape the garage
+                continue  # unreadable/encrypted/corrupt/not-JSON, or a bad id (NUL byte): skip this member
+            # The write stays OUTSIDE the read guard: a destination I/O error (disk full,
+            # permission denied, a locked target) is a real failure the caller must surface
+            # via its error dialog, not a silently-skipped "corrupt member" that just lowers
+            # the restored count.
             target.write_bytes(data)
             restored += 1
     return restored

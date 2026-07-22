@@ -63,10 +63,13 @@ def build_card(car: dict) -> dict:
             value = gearing_in.get(key)
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 continue
+            # Range check before float(): a 309+-digit JSON int compares fine
+            # but overflows float(), and OverflowError must not escape decode.
+            if not (lo <= value <= hi):
+                continue
             if is_int and not float(value).is_integer():
                 continue
-            if lo <= value <= hi:
-                gearing[key] = int(value) if is_int else value
+            gearing[key] = int(value) if is_int else value
     card["gearing"] = gearing
     setup_in = car.get("setup")
     setup: dict = {}
@@ -80,13 +83,19 @@ def build_card(car: dict) -> dict:
 
 
 def encode(card: dict) -> str:
-    """Card dict -> setup code string."""
-    # ensure_ascii=False: emoji/CJK notes stay <=4 bytes/char in UTF-8, so a
-    # legal card always fits decode's _MAX_DECODED cap (\uXXXX escaping would
-    # inflate 2000 emoji past it, making our own cards unimportable).
+    """Card dict -> setup code string. Raises ValueError if the card is too
+    large to round-trip through decode's _MAX_DECODED cap."""
+    # ensure_ascii=False keeps emoji/CJK at <=4 bytes/char (\uXXXX escaping
+    # would inflate them ~6x). Per-field caps don't bound the total, though, so
+    # a very full card can overshoot _MAX_DECODED — reject it here rather than
+    # emit a code decode() would refuse to import.
     payload = json.dumps(
         {"rccard": _VERSION, "card": card}, ensure_ascii=False, separators=(",", ":")
     ).encode("utf-8")
+    if len(payload) > _MAX_DECODED:
+        raise ValueError(
+            "This setup is too detailed to share — shorten the notes or setup fields."
+        )
     return PREFIX + base64.urlsafe_b64encode(zlib.compress(payload)).decode("ascii")
 
 

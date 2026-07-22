@@ -465,11 +465,23 @@ class GarageTab(QWidget):
                 self.list.blockSignals(False)
                 break
 
+    def _save_car(self, car: dict) -> dict | None:
+        """garage.save_car, but a transient OSError becomes a warning instead of a
+        crashed slot — callers abort their follow-up UI updates when this returns
+        None. Mirrors the OSError handling in _on_backup/_on_restore/_on_export."""
+        try:
+            return garage.save_car(car)
+        except OSError as e:
+            QMessageBox.warning(self, "Save failed", str(e))
+            return None
+
     def _on_save(self) -> None:
         car = self._form_to_car()
         seeded = garage.apply_chassis_defaults(car)
         setup_seeded = garage.apply_chassis_setup(car)
-        saved = garage.save_car(car)
+        saved = self._save_car(car)
+        if saved is None:
+            return
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
@@ -496,7 +508,9 @@ class GarageTab(QWidget):
             self.gearing_seeded.emit()
 
     def _on_save_base(self) -> None:
-        saved = garage.save_car(garage.save_base_setup(self._form_to_car()))
+        saved = self._save_car(garage.save_base_setup(self._form_to_car()))
+        if saved is None:
+            return
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
@@ -513,7 +527,9 @@ class GarageTab(QWidget):
         car = self._form_to_car()
         if not garage.apply_base_setup(car):  # no base saved yet
             return
-        saved = garage.save_car(car)
+        saved = self._save_car(car)
+        if saved is None:
+            return
         self.current_id = saved["id"]
         self._fill_form(saved)
         self._reload_list()
@@ -525,7 +541,9 @@ class GarageTab(QWidget):
         name, ok = QInputDialog.getText(self, "Save setup preset", "Preset name:")
         if not ok or not name.strip():
             return
-        saved = garage.save_car(garage.add_setup_preset(self._form_to_car(), name.strip()))
+        saved = self._save_car(garage.add_setup_preset(self._form_to_car(), name.strip()))
+        if saved is None:
+            return
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
@@ -537,9 +555,15 @@ class GarageTab(QWidget):
         name = self.setup_preset_combo.currentData()
         if not name:  # the "— preset —" placeholder
             return
-        saved = garage.save_car(garage.apply_setup_preset(self._form_to_car(), name))
+        saved = self._save_car(garage.apply_setup_preset(self._form_to_car(), name))
+        if saved is None:
+            return
         self.current_id = saved["id"]
         self._fill_form(saved)
+        # keep the applied preset selected so "Del" can target it — _fill_form's
+        # set_presets() otherwise snaps the combo back to the "— preset —" placeholder,
+        # leaving _on_delete_setup_preset reading None (a permanent no-op)
+        self.setup_preset_combo.setCurrentIndex(self.setup_preset_combo.findData(name))
         self._reload_list()
         self._select_id(saved["id"])
         _show_status(self, f"Applied setup preset {name}", 5000)
@@ -549,7 +573,9 @@ class GarageTab(QWidget):
         name = self.setup_preset_combo.currentData()
         if not name:
             return
-        saved = garage.save_car(garage.delete_setup_preset(self._form_to_car(), name))
+        saved = self._save_car(garage.delete_setup_preset(self._form_to_car(), name))
+        if saved is None:
+            return
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
@@ -612,7 +638,9 @@ class GarageTab(QWidget):
     def _on_duplicate(self) -> None:
         if not self.current_id:  # nothing open to clone
             return
-        dup = garage.save_car(garage.clone_car(self._form_to_car()))
+        dup = self._save_car(garage.clone_car(self._form_to_car()))
+        if dup is None:
+            return
         self.current_id = dup["id"]
         self._fill_form(dup)
         self._reload_list()
@@ -704,7 +732,14 @@ class GarageTab(QWidget):
         QTimer.singleShot(0, import_all)
 
     def _on_share(self) -> None:
-        ShareCardDialog(self._form_to_car(), self).exec()
+        # render_card()->sharecard.encode() raises ValueError when a setup is too large
+        # to fit in a shareable code; surface it as a warning instead of crashing the slot.
+        try:
+            dialog = ShareCardDialog(self._form_to_car(), self)
+        except ValueError as e:
+            QMessageBox.warning(self, "Can't share setup", str(e))
+            return
+        dialog.exec()
 
     def _on_delete(self) -> None:
         if not self.current_id:
@@ -822,7 +857,9 @@ class GarageTab(QWidget):
             # Tuning log): entries other tabs added meanwhile survive, and the
             # deleted one is gone from disk so _form_to_car can't merge it back.
             car["log"] = [e for e in car.get("log", []) if e.get("id") != entry_id]
-            saved = garage.save_car(car)
+            saved = self._save_car(car)
+            if saved is None:
+                return
             self._current_log = list(saved.get("log", []))
         else:  # unsaved new car: the log only exists in the form
             del self._current_log[row]

@@ -60,7 +60,11 @@ def _accent() -> str:
     value (hand-edited registry) falls back to the default rather than breaking
     every highlight in the app."""
     stored = _settings().value(_ACCENT_KEY, "")
-    return stored if stored and QColor(stored).isValid() else _ACCENT
+    return (
+        stored
+        if isinstance(stored, str) and stored and QColor(stored).isValid()
+        else _ACCENT
+    )
 
 
 def _on_accent() -> str:
@@ -147,6 +151,7 @@ class _DownloadTab(QWidget):
         def finish(error: str | None) -> None:
             self.progress.hide()
             on_finished(error)
+            signals.deleteLater()  # release the one-shot bridge; a fresh one is made per download
 
         signals.done.connect(lambda: finish(None))
         signals.error.connect(lambda msg: finish(msg))

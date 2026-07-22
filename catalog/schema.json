@@ -10,7 +10,7 @@
         "name": {"type": "string", "minLength": 1},
         "vendor": {"type": "string", "minLength": 1},
         "category": {"type": "string"},
-        "homepage": {"type": "string", "format": "uri"},
+        "homepage": {"type": "string", "format": "uri", "pattern": "^https://"},
         "description": {"type": "string"},
         "os": {"type": "array", "items": {"enum": ["windows"]}},
         "version": {"type": "string", "minLength": 1},
