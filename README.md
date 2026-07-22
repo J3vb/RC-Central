@@ -15,16 +15,17 @@ tuning guide, and a car garage for tracking your setups.
 
 ![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](screenshots/tools-tab.png)
 
-![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](screenshots/workshop-garage-tab.png)
+![RC Central's Workshop tab: the Garage with car specs, run log, and chassis setup diagram](screenshots/workshop-garage-tab.png)
 
-**Status: beta.** The catalog covers 32 entries: 17 installable tools — servo
-programmers (Rêve D, AGFRC, KO Propo, Yokomo), ESC suites (Hobbywing, SkyRC,
-Acuvance, G-Force, KO Propo), gyro (Futaba GYD560) and radio tools (FlySky,
-EdgeTX Companion, Sanwa, KO Propo EX-NEXT / EX-RR) — plus 15 reference cards
-for drift gear that has no PC software at all, covering servos and gyros
+**Status: beta.** The catalog covers 34 entries: 19 installable tools — servo
+programmers (Rêve D, AGFRC, KO Propo, Yokomo, Power HD), ESC suites (Hobbywing,
+SkyRC, Acuvance, G-Force, KO Propo, LRP), gyro (Futaba GYD560) and radio tools
+(FlySky, EdgeTX Companion, Sanwa, KO Propo EX-NEXT / EX-RR) — plus 15 reference
+cards for drift gear that has no PC software at all, covering servos and gyros
 (Sanwa PGS and SGS-02, Futaba GYD550, Yokomo DP-302, SRT D1S, Rêve D REVOX,
-Onisiki) and chassis build manuals (Yokomo YD-2/SD/RD, MST RMX/FXX, Overdose
-GALM/Divall, Rêve D RDX, Onisiki Kodama).
+Onisiki, KO Propo RSX4S), ESCs programmed from a phone or program card (Rêve D
+ELITE, Yokomo RPX) and chassis build manuals (Yokomo YD-2/SD/RD, MST RMX/FXX,
+Overdose GALM/Divall, Rêve D RDX, Onisiki Kodama).
 
 ## Download
 
@@ -78,18 +79,24 @@ Central tracks and launches your copy without re-downloading it.
 
 - **Manuals** — official manual and support links for every catalog entry,
   cross-platform, including chassis build guides for the common drift kits.
+  PDF manuals open in a built-in viewer.
 - **Workshop** — Garage, Gearing, and Tuning in one tab, all sharing the active
   car picked in its header:
-  - **Garage** — car profiles with specs, gearing, and a setup log; compare two
-    cars side by side, named gearing presets, JSON import/export, one-click
-    backup/restore.
+  - **Garage** — car profiles with specs, gearing, and a run/maintenance log;
+    compare two cars side by side, named gearing presets, JSON import/export,
+    one-click backup/restore. Spec fields suggest real drift parts, and picking
+    a chassis pre-fills its vendor-documented drive ratio. The chassis setup
+    panel is a top-down car diagram with each value anchored to its spot on the
+    car — saved base setups, named presets, factory settings for known chassis
+    (taken from the vendor manuals), and every change logged with a timestamp.
   - **Gearing** — rollout/ratio math, reverse solve (target rollout or target
     FDR → pinion), an inline gear-ratio chart, and a pinion what-if table.
   - **Tuning** — drift chassis tuning chart with per-setting explainers, a
     shock-oil conversion table, a gyro guide, and a per-car tuning log.
 - **Self-update** — checks GitHub Releases on startup (toggle in Settings)
   and swaps in the new build on exit.
-- **Dark & light themes** and a built-in log viewer, under the **Settings** tab.
+- **Dark & light themes** with a customizable accent colour, and a built-in log
+  viewer, under the **Settings** tab.
 
 ## Supported platforms
 
