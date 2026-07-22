@@ -15,6 +15,8 @@ tuning guide, and a car garage for tracking your setups.
 
 ![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](screenshots/tools-tab.png)
 
+![RC Central's Tools tab: the catalog with per-tool Install/Launch buttons](screenshots/workshop-garage-tab.png)
+
 **Status: beta.** The catalog covers 32 entries: 17 installable tools — servo
 programmers (Rêve D, AGFRC, KO Propo, Yokomo), ESC suites (Hobbywing, SkyRC,
 Acuvance, G-Force, KO Propo), gyro (Futaba GYD560) and radio tools (FlySky,
