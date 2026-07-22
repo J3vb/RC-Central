@@ -9,15 +9,15 @@ import logging
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QPointF, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QKeySequence
-from PySide6.QtWidgets import QLabel, QMainWindow, QSizePolicy, QToolBar, QWidget
+from PySide6.QtGui import QAction, QDesktopServices, QKeySequence
+from PySide6.QtWidgets import QLabel, QLineEdit, QMainWindow, QSizePolicy, QToolBar, QWidget
 
 from app.ui.common import _settings, app_icon
 
 log = logging.getLogger(__name__)
 
 try:
-    from PySide6.QtPdf import QPdfDocument
+    from PySide6.QtPdf import QPdfDocument, QPdfSearchModel
     from PySide6.QtPdfWidgets import QPdfView
 
     _QTPDF_ERROR: str | None = None
@@ -63,6 +63,7 @@ class PdfViewerWindow(QMainWindow):
             self.deleteLater()
             raise
 
+        self._text_pages: tuple[int, int] | None = None  # computed lazily on first search
         self.view = QPdfView(self)
         self.view.setDocument(self._doc)
         self.view.setPageMode(QPdfView.PageMode.MultiPage)  # continuous scrolling
@@ -103,6 +104,34 @@ class PdfViewerWindow(QMainWindow):
         self._doc.pageCountChanged.connect(self._update_page_label)
         self._update_page_label()
 
+        bar.addSeparator()
+        # QPdfSearchModel scans pages in the background; count() grows as it goes
+        # and the view draws the match highlights itself once the model is attached.
+        self._search_model = QPdfSearchModel(self)
+        self._search_model.setDocument(self._doc)
+        self.view.setSearchModel(self._search_model)
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("Search…")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.setMaximumWidth(180)
+        bar.addWidget(self._search_edit)
+        self._find_prev = bar.addAction("▲", lambda: self._find(-1))
+        self._find_prev.setShortcut(QKeySequence.StandardKey.FindPrevious)
+        self._find_prev.setToolTip("Previous match (Shift+F3)")
+        self._find_next = bar.addAction("▼", lambda: self._find(+1))
+        self._find_next.setShortcut(QKeySequence.StandardKey.FindNext)
+        self._find_next.setToolTip("Next match (F3)")
+        self._search_label = QLabel()
+        bar.addWidget(self._search_label)
+        self._search_edit.textChanged.connect(self._search_changed)
+        self._search_edit.returnPressed.connect(lambda: self._find(+1))
+        self._search_model.countChanged.connect(self._update_search_label)
+        focus_find = QAction(self)  # window-level Ctrl+F
+        focus_find.setShortcut(QKeySequence.StandardKey.Find)
+        focus_find.triggered.connect(self._focus_search)
+        self.addAction(focus_find)
+        self._update_search_label()
+
         spacer = QWidget()
         spacer.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
         bar.addWidget(spacer)
@@ -131,6 +160,58 @@ class PdfViewerWindow(QMainWindow):
         if 0 <= page < self._doc.pageCount():
             # jump() requires an explicit location; top of the page reads naturally.
             nav.jump(page, QPointF(0, 0), nav.currentZoom())
+
+    def _search_changed(self, text: str) -> None:
+        self._search_model.setSearchString(text)
+        self.view.setCurrentSearchResultIndex(-1)  # index into the old results is stale
+        self._update_search_label()
+
+    def _find(self, delta: int) -> None:
+        count = self._search_model.count()
+        if count == 0:
+            return
+        cur = self.view.currentSearchResultIndex()
+        # From "no selection" (-1), forward starts at the first match, backward at the last.
+        i = (cur + delta) % count if cur >= 0 else (0 if delta > 0 else count - 1)
+        self.view.setCurrentSearchResultIndex(i)
+        link = self._search_model.resultAtIndex(i)
+        nav = self.view.pageNavigator()
+        nav.jump(link.page(), link.location(), nav.currentZoom())
+        self._update_search_label()
+
+    def _focus_search(self) -> None:
+        self._search_edit.setFocus()
+        self._search_edit.selectAll()
+
+    def _searchable_pages(self) -> tuple[int, int]:
+        """(pages with a text layer, total pages). Many vendor manuals are image-only
+        scans — sometimes with a lone text page — where search silently sees nothing;
+        this lets the UI say so instead of showing a bare '0 / 0'."""
+        if self._text_pages is None:
+            total = self._doc.pageCount()
+            with_text = sum(bool(self._doc.getAllText(p).text().strip()) for p in range(total))
+            self._text_pages = (with_text, total)
+        return self._text_pages
+
+    def _update_search_label(self, *_args) -> None:
+        count = self._search_model.count()
+        if not self._search_edit.text():
+            self._search_label.setText("")
+        elif count == 0:
+            # May flash briefly while the background scan is still running; the
+            # countChanged signal rewrites it as soon as the first match lands.
+            with_text, total = self._searchable_pages()
+            if with_text == 0:
+                hint = "No text in this PDF"
+            elif with_text * 2 < total:  # ponytail: crude cut; refine if manuals land near 50%
+                hint = "No matches (most pages are scans)"
+            else:
+                hint = "No matches"
+            self._search_label.setText(f" {hint} ")
+        else:
+            self._search_label.setText(f" {self.view.currentSearchResultIndex() + 1} / {count} ")
+        self._find_prev.setEnabled(count > 0)
+        self._find_next.setEnabled(count > 0)
 
     def _update_page_label(self, *_args) -> None:
         nav = self.view.pageNavigator()

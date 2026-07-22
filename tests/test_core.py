@@ -1532,6 +1532,136 @@ def test_manuals_tab_open_in_system_viewer_menu(monkeypatch, tmp_path):
     assert opened["u"].startswith("file:") and opened["u"].endswith(".pdf")
 
 
+def _write_text_pdf(path: Path, *lines: str, blank_pages: int = 0) -> None:
+    """Minimal PDF using the built-in Helvetica base font: one page holding `lines`,
+    plus `blank_pages` pages with no text (like scanned manual pages). QPdfWriter
+    can't be used here: it embeds subset fonts without a usable ToUnicode map, so
+    QtPdf (PDFium) extracts no text from its output and search finds nothing."""
+    pages_lines = [lines] + [()] * blank_pages
+    kids = " ".join(f"{4 + 2 * k} 0 R" for k in range(len(pages_lines)))
+    objects = [
+        b"<< /Type /Catalog /Pages 2 0 R >>",
+        f"<< /Type /Pages /Kids [{kids}] /Count {len(pages_lines)} >>".encode(),
+        b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    ]
+    for k, page in enumerate(pages_lines):
+        content = (
+            b"BT /F1 12 Tf 72 720 Td "
+            + b" ".join(b"(" + ln.encode("ascii") + b") Tj 0 -24 Td" for ln in page)
+            + b" ET"
+        )
+        objects.append(
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 3 0 R >> >> /Contents %d 0 R >>" % (5 + 2 * k)
+        )
+        objects.append(
+            b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n" + content + b"\nendstream"
+        )
+    out = bytearray(b"%PDF-1.4\n")
+    offsets = []
+    for i, obj in enumerate(objects, start=1):
+        offsets.append(len(out))
+        out += b"%d 0 obj\n" % i + obj + b"\nendobj\n"
+    xref = len(out)
+    out += b"xref\n0 %d\n0000000000 65535 f \n" % (len(objects) + 1)
+    for off in offsets:
+        out += b"%010d 00000 n \n" % off
+    out += b"trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n" % (
+        len(objects) + 1,
+        xref,
+    )
+    path.write_bytes(bytes(out))
+
+
+def test_pdf_viewer_search_finds_and_cycles_matches(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui import pdf_viewer
+
+    if not pdf_viewer.is_available():
+        pytest.skip("QtPdf unavailable on this machine")
+
+    _ = QApplication.instance() or QApplication([])
+    path = tmp_path / "doc.pdf"
+    _write_text_pdf(path, "gear ratio chart", "spur gear teeth")
+
+    win = pdf_viewer.PdfViewerWindow(path, "Manual")
+    win._search_edit.setText("gear")
+    deadline = time.monotonic() + 10  # the search model populates from a background scan
+    while win._search_model.count() < 2 and time.monotonic() < deadline:
+        QApplication.processEvents()
+    assert win._search_model.count() == 2
+
+    win._find(+1)
+    assert win.view.currentSearchResultIndex() == 0
+    win._find(+1)
+    assert win.view.currentSearchResultIndex() == 1
+    win._find(+1)  # wraps around
+    assert win.view.currentSearchResultIndex() == 0
+    win._find(-1)
+    assert win.view.currentSearchResultIndex() == 1
+    assert win._search_label.text().strip() == "2 / 2"
+
+    win._search_edit.setText("zzznotinthedoc")
+    assert win._search_label.text().strip() == "No matches"
+
+    win._search_edit.clear()  # clearing the box resets the search state
+    assert win._search_label.text() == ""
+    win.close()
+
+
+def test_pdf_viewer_search_reports_pdf_without_text_layer(monkeypatch, tmp_path):
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui import pdf_viewer
+
+    if not pdf_viewer.is_available():
+        pytest.skip("QtPdf unavailable on this machine")
+
+    _ = QApplication.instance() or QApplication([])
+    path = tmp_path / "scan.pdf"
+    _write_text_pdf(path)  # zero text lines: extracts nothing, like a scanned manual
+
+    win = pdf_viewer.PdfViewerWindow(path, "Scan")
+    win._search_edit.setText("gear")
+    assert win._search_label.text().strip() == "No text in this PDF"
+    win.close()
+
+
+def test_pdf_viewer_search_reports_mostly_scanned_pdf(monkeypatch, tmp_path):
+    """A manual with one text page among many scanned ones (e.g. the RDX build
+    manual: 1 of 36 pages searchable) must say why a miss is likely, and still
+    find matches on the page that does have text."""
+    monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
+    import time
+
+    from PySide6.QtWidgets import QApplication
+
+    from app.ui import pdf_viewer
+
+    if not pdf_viewer.is_available():
+        pytest.skip("QtPdf unavailable on this machine")
+
+    _ = QApplication.instance() or QApplication([])
+    path = tmp_path / "mixed.pdf"
+    _write_text_pdf(path, "wheel series index", blank_pages=3)
+
+    win = pdf_viewer.PdfViewerWindow(path, "Mixed")
+    win._search_edit.setText("gear")
+    assert win._search_label.text().strip() == "No matches (most pages are scans)"
+
+    win._search_edit.setText("wheel")  # the one text page is still searchable
+    deadline = time.monotonic() + 10
+    while win._search_model.count() == 0 and time.monotonic() < deadline:
+        QApplication.processEvents()
+    assert win._search_model.count() == 1
+    win.close()
+
+
 def test_manuals_tab_parallel_downloads_and_dup_guard(monkeypatch):
     monkeypatch.setenv("QT_QPA_PLATFORM", "offscreen")
     import threading

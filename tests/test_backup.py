@@ -69,6 +69,27 @@ def test_restore_rejects_id_that_would_escape_dir(backup_sandbox, tmp_path):
     assert not (tmp_path / "pwned.json").exists()
 
 
+def test_restore_skips_zip_bomb_member(backup_sandbox, tmp_path):
+    # A member deflating past _MAX_MEMBER is skipped before decompression;
+    # legit members beside it still restore.
+    bomb = tmp_path / "bomb.zip"
+    with zipfile.ZipFile(bomb, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("garage/bomb.json", b"0" * (backup._MAX_MEMBER + 1))
+        z.writestr("garage/good.json", '{"id":"ok","name":"Good"}')
+    assert backup.restore_backup(bomb) == 1
+    assert {c["name"] for c in garage.list_cars()} == {"Good"}
+
+
+def test_restore_total_decompression_budget(backup_sandbox, tmp_path, monkeypatch):
+    # Many small members can't exceed the whole-restore budget in aggregate.
+    monkeypatch.setattr(backup, "_MAX_TOTAL", 50)
+    bad = tmp_path / "many.zip"
+    with zipfile.ZipFile(bad, "w") as z:
+        for i in range(5):
+            z.writestr(f"garage/c{i}.json", f'{{"id":"c{i}","name":"AAAA"}}')  # 25 bytes each
+    assert backup.restore_backup(bad) == 2  # 25 + 25 == 50; the third would bust it
+
+
 def test_restore_uppercase_extension_member(backup_sandbox, tmp_path):
     # make_backup's glob is case-insensitive on Windows; restore must match .JSON too.
     bad = tmp_path / "upper.zip"
