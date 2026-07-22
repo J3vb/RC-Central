@@ -26,6 +26,42 @@ for drift gear that has no PC software at all, covering servos and gyros
 Onisiki) and chassis build manuals (Yokomo YD-2/SD/RD, MST RMX/FXX, Overdose
 GALM/Divall, Rêve D RDX, Onisiki Kodama).
 
+## Download
+
+Grab the latest binary from the
+[releases page](https://github.com/J3vb/RC-Central/releases/latest) — pick
+`RCCentral-windows-x64.exe` unless you know you have an ARM64 machine. There's
+no installer; it's a single exe you can put wherever you like and delete when
+you're done.
+
+**Windows will warn you the first time.** You'll see *"Windows protected your
+PC"* — click **More info** → **Run anyway**. That warning means the app isn't
+signed with a paid code-signing certificate, not that anything is wrong with it.
+Certificates cost a few hundred dollars a year, which is hard to justify for a
+free hobby project until it has more users. Every release is built in public by
+[GitHub Actions](.github/workflows/build.yml) from the source in this repo, so
+you can read exactly what went into the binary you're running.
+
+If you'd rather verify than trust, every release ships a `.sha256` next to each
+binary:
+
+```powershell
+certutil -hashfile RCCentral-windows-x64.exe SHA256
+```
+
+Compare that against the matching `.sha256` file. Releases also carry an Ed25519
+`.sig`, which the app checks automatically before it ever applies an update to
+itself.
+
+## Run from source
+
+```sh
+uv sync
+uv run python -m app.main
+```
+
+Tests: `uv run pytest`
+
 ## How it works
 
 RC Central never re-hosts vendor software. The catalog is a set of JSON
@@ -64,41 +100,6 @@ software) is Windows-only, since that software ships as Windows executables — 
 Windows on ARM they run under the OS's x86/x64 emulation. On Linux the Tools tab
 is hidden and RC Central is the Workshop and Manuals.
 
-## Download
-
-Grab the latest binary from the
-[releases page](https://github.com/J3vb/RC-Central/releases/latest) — pick
-`RCCentral-windows-x64.exe` unless you know you have an ARM64 machine. There's
-no installer; it's a single exe you can put wherever you like and delete when
-you're done.
-
-**Windows will warn you the first time.** You'll see *"Windows protected your
-PC"* — click **More info** → **Run anyway**. That warning means the app isn't
-signed with a paid code-signing certificate, not that anything is wrong with it.
-Certificates cost a few hundred dollars a year, which is hard to justify for a
-free hobby project until it has more users. Every release is built in public by
-[GitHub Actions](.github/workflows/build.yml) from the source in this repo, so
-you can read exactly what went into the binary you're running.
-
-If you'd rather verify than trust, every release ships a `.sha256` next to each
-binary:
-
-```powershell
-certutil -hashfile RCCentral-windows-x64.exe SHA256
-```
-
-Compare that against the matching `.sha256` file. Releases also carry an Ed25519
-`.sig`, which the app checks automatically before it ever applies an update to
-itself.
-
-## Run from source
-
-```sh
-uv sync
-uv run python -m app.main
-```
-
-Tests: `uv run pytest`
 
 ## Adding a tool to the catalog
 
