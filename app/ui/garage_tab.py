@@ -4,8 +4,8 @@ import json
 import zipfile
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QColor, QImageReader
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -27,9 +27,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from app import backup, garage, parts
+from app import backup, garage, parts, sharecard
 from app.ui.common import _accent, _GAP, _MARGIN, _on_accent, _section_label, _show_status
 from app.ui.setup_diagram import SetupDiagramPanel
+from app.ui.share_card import ShareCardDialog
 
 
 def _part_combo() -> QComboBox:
@@ -108,6 +109,22 @@ class _CompareDialog(QDialog):
         self.table.horizontalHeader().setStretchLastSection(True)
 
 
+def _car_from_png(path: str) -> dict:
+    """A fresh car from a setup-card PNG's embedded payload."""
+    # QImageReader reads the text chunk without decoding pixels (a dropped 4K
+    # screenshot stays instant) and even recovers it from a truncated card.
+    reader = QImageReader(path)
+    payload = reader.text(sharecard.PNG_TEXT_KEY)
+    if not payload:
+        if not reader.canRead():
+            raise ValueError("Could not read this file as an image.")
+        raise ValueError(
+            "No RC Central setup data found in this image — it may have been "
+            "re-saved by an app that strips it. Ask for the setup code instead."
+        )
+    return sharecard.card_to_car(sharecard.decode(payload))
+
+
 class GarageTab(QWidget):
     """Create/edit/delete RC car spec sheets."""
 
@@ -126,6 +143,11 @@ class GarageTab(QWidget):
     def __init__(self):
         super().__init__()
         self.current_id: str | None = None
+        # Accept dropped setup cards / car JSONs anywhere on the tab.
+        # ponytail: children (QLineEdit etc.) still natively handle drops that
+        # land exactly on them (they insert the path as text); a tab-wide event
+        # filter is the upgrade path if that ever confuses anyone.
+        self.setAcceptDrops(True)
 
         self._cars: list[dict] = []  # cache behind the list, for live filtering
         self.search = QLineEdit()
@@ -138,8 +160,12 @@ class GarageTab(QWidget):
         self.empty_hint.setObjectName("mutedLabel")  # secondary text (see theme._QSS)
         new_btn = QPushButton("&New")
         new_btn.clicked.connect(self._on_new)
-        import_btn = QPushButton("&Import…")
-        import_btn.clicked.connect(self._on_import)
+        # Plain siblings, not a QToolButton split button: QToolButton loses
+        # click-to-focus and picks up the table-row QSS padding.
+        self.import_btn = QPushButton("&Import…")
+        self.import_btn.clicked.connect(self._on_import)
+        self.paste_btn = QPushButton("Paste code…")
+        self.paste_btn.clicked.connect(self._on_paste_code)
         dup_btn = QPushButton("Duplicate")
         dup_btn.clicked.connect(self._on_duplicate)
         del_btn = QPushButton("&Delete")
@@ -153,7 +179,8 @@ class GarageTab(QWidget):
         create_row = QHBoxLayout()
         create_row.setSpacing(4)
         create_row.addWidget(new_btn)
-        create_row.addWidget(import_btn)
+        create_row.addWidget(self.import_btn)
+        create_row.addWidget(self.paste_btn)
         create_row.addWidget(dup_btn)
         act_row = QHBoxLayout()
         act_row.setSpacing(4)
@@ -238,11 +265,14 @@ class GarageTab(QWidget):
         export_btn.clicked.connect(self._on_export)
         copy_btn = QPushButton("Copy")
         copy_btn.clicked.connect(self._on_copy)
+        self.share_btn = QPushButton("Share card…")
+        self.share_btn.clicked.connect(self._on_share)
         form_buttons = QHBoxLayout()
         form_buttons.setSpacing(_GAP)
         form_buttons.addWidget(save_btn)
         form_buttons.addWidget(export_btn)
         form_buttons.addWidget(copy_btn)
+        form_buttons.addWidget(self.share_btn)
 
         # Run / maintenance log for the selected car.
         self._current_log: list[dict] = []
@@ -592,23 +622,89 @@ class GarageTab(QWidget):
 
     def _on_import(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
-            self, "Import car", "", "Car spec (*.json)"
+            self, "Import car", "", "Car spec or setup card (*.json *.png)"
         )
-        if not path:
-            return
+        if path:
+            self._import_path(path)
+
+    def _import_path(self, path: str) -> None:
+        """File import — a raw car JSON or a setup-card PNG."""
         try:
-            car = garage.load_car_file(path)
-            self._fill_form(car)  # render first: surfaces bad field types before we save
+            if path.lower().endswith(".png"):
+                car = _car_from_png(path)
+            else:
+                car = garage.load_car_file(path)
         except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
-            # unreadable / invalid JSON / not an object / a valid object with junk field types
+            # unreadable / invalid JSON / not an object / no embedded payload
             QMessageBox.warning(self, "Import failed", str(e))
             return
-        saved = garage.save_car(car)
+        self._import_car(car)
+
+    def _import_car(self, car: dict) -> None:
+        """Persist an imported car; shared by file import, drag-drop and paste."""
+        try:
+            self._fill_form(car)  # render first: surfaces bad field types before we save
+            saved = garage.save_car(car)
+        except (OSError, ValueError, TypeError, KeyError, AttributeError) as e:
+            # junk field types, or the garage dir refused the write — either
+            # way, undo the half-filled form so the next Save can't clobber
+            # the previously open car with the rejected import's fields.
+            QMessageBox.warning(self, "Import failed", str(e))
+            current = garage.load_car(self.current_id) if self.current_id else None
+            self._fill_form(current or garage.new_car(""))
+            return
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
         _show_status(self, f"Imported {saved['name']}", 5000)
         self.car_selected.emit(saved["id"])
+
+    def _on_paste_code(self) -> None:
+        code, ok = QInputDialog.getMultiLineText(
+            self, "Paste setup code", "Setup code (starts with RCSETUP1):"
+        )
+        if not ok or not code.strip():
+            return
+        try:
+            car = sharecard.card_to_car(sharecard.decode(code))
+        except ValueError as e:
+            QMessageBox.warning(self, "Import failed", str(e))
+            return
+        self._import_car(car)
+
+    @staticmethod
+    def _droppable_paths(mime) -> list[str]:
+        return [
+            url.toLocalFile()
+            for url in mime.urls()
+            if url.isLocalFile()
+            and url.toLocalFile().lower().endswith((".json", ".png"))
+        ]
+
+    def dragEnterEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if self._droppable_paths(event.mimeData()):
+            # Never accept a Move: Explorer would delete the source file after
+            # a Shift-drag. We only ever read what's dropped.
+            event.setDropAction(Qt.DropAction.CopyAction)
+            event.accept()
+
+    def dropEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        paths = self._droppable_paths(event.mimeData())
+        if not paths:
+            return
+        event.setDropAction(Qt.DropAction.CopyAction)
+        event.accept()
+
+        def import_all() -> None:
+            for path in paths:
+                self._import_path(path)
+
+        # After the OS drop handshake returns: a modal error box in here would
+        # freeze the drag source (Explorer sits inside DoDragDrop until then).
+        QTimer.singleShot(0, import_all)
+
+    def _on_share(self) -> None:
+        ShareCardDialog(self._form_to_car(), self).exec()
 
     def _on_delete(self) -> None:
         if not self.current_id:

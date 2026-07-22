@@ -1918,10 +1918,10 @@ def test_garage_tab_import_malformed_car_warns(monkeypatch, tmp_path):
 
     # a JSON object (passes the "is a dict" check) but with a junk field type that only
     # blows up when rendered into the form - must warn, never crash the GUI, never save.
-    # (name, not gearing: the form no longer renders gearing, so a junk name is the
-    # field that trips setText during _fill_form)
+    # (notes, not name or gearing: load_car_file normalizes a junk name and the form
+    # no longer renders gearing, so junk notes is the field that trips _fill_form)
     bad = tmp_path / "bad-types.json"
-    bad.write_text('{"name": 123}', encoding="utf-8")
+    bad.write_text('{"notes": 123}', encoding="utf-8")
     monkeypatch.setattr(
         QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad), "")
     )

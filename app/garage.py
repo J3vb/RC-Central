@@ -224,6 +224,8 @@ def load_car_file(path) -> dict:
     if not isinstance(car, dict):
         raise ValueError("not a car spec sheet: expected a JSON object")
     car["id"] = uuid.uuid4().hex
+    if not isinstance(car.get("name"), str) or not car["name"].strip():
+        car["name"] = "Imported car"  # hand-made files may lack one; save/status need it
     return car
 
 

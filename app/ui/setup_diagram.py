@@ -10,7 +10,7 @@ plus a dot on its caption (you see what you've drifted from your baseline).
 """
 
 from PySide6.QtCore import QEvent, QPointF, QRectF, Qt
-from PySide6.QtGui import QColor, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QPainter, QPainterPath, QPalette, QPen
 from PySide6.QtWidgets import (
     QComboBox,
     QGridLayout,
@@ -127,6 +127,87 @@ def _tooltip(key: str, label: str) -> str:
     if tip:
         parts.append(tip)
     return "\n\n".join(parts)
+
+
+def draw_car_schematic(painter: QPainter, car: QRectF, palette: QPalette) -> None:
+    """The top-down drift car, drawn into `car` (width:length 1:2).
+
+    Colors come from `palette` plus the user accent: the setup panel passes its
+    live widget palette, the share card always passes the dark palette.
+    """
+
+    def pt(x: float, y: float) -> QPointF:
+        return QPointF(car.left() + x * car.width(), car.top() + y * car.height())
+
+    outline = QPen(palette.windowText().color(), 1.2)
+    subtle = QPen(palette.mid().color(), 1)
+    arm_pen = QPen(palette.mid().color(), 1.4)
+    accent = QColor(_accent())
+    w = car.width()
+    # Axles, under the wheels.
+    painter.setPen(subtle)
+    for y in (0.145, 0.855):
+        painter.drawLine(pt(0.13, y), pt(0.87, y))
+    # Body: flat nose/tail, fender cutouts at the wheels, side-pod bulge.
+    # Base (not Button) fill — Button equals Window in the dark palette, which
+    # would leave the body invisible there.
+    body = QPainterPath(pt(0.42, 0.02))
+    body.lineTo(pt(0.58, 0.02))
+    ends = [(0.58, 0.02)] + [(x, y) for _cx, _cy, x, y in _BODY_RIGHT]
+    for cx, cy, x, y in _BODY_RIGHT:
+        body.quadTo(pt(cx, cy), pt(x, y))
+    body.lineTo(pt(0.40, 0.98))
+    for i in range(len(_BODY_RIGHT) - 1, -1, -1):  # mirrored left flank, tail up
+        cx, cy = _BODY_RIGHT[i][0], _BODY_RIGHT[i][1]
+        sx, sy = ends[i]
+        body.quadTo(pt(1 - cx, cy), pt(1 - sx, sy))
+    body.closeSubpath()
+    painter.setPen(outline)
+    painter.setBrush(palette.base().color())
+    painter.drawPath(body)
+    # Racing stripe down the middle, translucent so it works on both themes.
+    stripe = QColor(accent)
+    stripe.setAlpha(90)
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.setBrush(stripe)
+    painter.drawRoundedRect(
+        QRectF(pt(0.475, 0.055), pt(0.525, 0.945)), 0.02 * w, 0.02 * w
+    )
+    # Canopy over the stripe.
+    painter.setPen(QPen(palette.windowText().color(), 1.0))
+    painter.setBrush(palette.button().color())
+    painter.drawEllipse(QRectF(pt(0.40, 0.40), pt(0.60, 0.56)))
+    # Suspension arms, before the wheels so the hubs cover the outer ends.
+    painter.setPen(arm_pen)
+    for cy in (0.145, 0.855):
+        for inner, hub in ((0.70, 0.83), (0.30, 0.17)):
+            painter.drawLine(pt(inner, cy - 0.045), pt(hub, cy))
+            painter.drawLine(pt(inner, cy + 0.045), pt(hub, cy))
+    # Wheels; the front pair is turned a little, because drift.
+    painter.setPen(outline)
+    painter.setBrush(palette.mid().color())
+    for cx, cy, angle in (
+        (0.13, 0.145, -12),
+        (0.87, 0.145, -12),
+        (0.13, 0.855, 0),
+        (0.87, 0.855, 0),
+    ):
+        painter.save()
+        painter.translate(pt(cx, cy))
+        painter.rotate(angle)
+        wheel = QRectF(-0.065 * w, -0.17 * w, 0.13 * w, 0.34 * w)
+        painter.drawRoundedRect(wheel, 0.03 * w, 0.03 * w)
+        painter.restore()
+    # Shock towers with their mount points.
+    painter.setBrush(palette.button().color())
+    for y in (0.26, 0.74):
+        painter.drawLine(pt(0.36, y), pt(0.64, y))
+        for x in (0.40, 0.60):
+            painter.drawEllipse(pt(x, y), 0.018 * w, 0.018 * w)
+    # Motor, driving the rear diff.
+    painter.drawRect(QRectF(pt(0.54, 0.62), pt(0.70, 0.72)))
+    painter.drawLine(pt(0.62, 0.72), pt(0.50, 0.855))
+    painter.drawEllipse(pt(0.50, 0.855), 0.05 * w, 0.05 * w)
 
 
 class _FieldBox(QWidget):
@@ -353,13 +434,7 @@ class SetupDiagramPanel(QWidget):
         if car.width() <= 10:  # layout not realised yet (first show, tests)
             return
 
-        def pt(x: float, y: float) -> QPointF:
-            return QPointF(car.left() + x * car.width(), car.top() + y * car.height())
-
         palette = self.palette()
-        outline = QPen(palette.windowText().color(), 1.2)
-        subtle = QPen(palette.mid().color(), 1)
-        arm_pen = QPen(palette.mid().color(), 1.4)
         accent = QColor(_accent())
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
@@ -369,71 +444,10 @@ class SetupDiagramPanel(QWidget):
         painter.setPen(QPen(accent, 2))
         painter.drawLine(header.bottomLeft(), header.bottomRight())
 
-        w = car.width()
-        # Axles, under the wheels.
-        painter.setPen(subtle)
-        for y in (0.145, 0.855):
-            painter.drawLine(pt(0.13, y), pt(0.87, y))
-        # Body: flat nose/tail, fender cutouts at the wheels, side-pod bulge.
-        # Base (not Button) fill — Button equals Window in the dark palette, which
-        # would leave the body invisible there.
-        body = QPainterPath(pt(0.42, 0.02))
-        body.lineTo(pt(0.58, 0.02))
-        ends = [(0.58, 0.02)] + [(x, y) for _cx, _cy, x, y in _BODY_RIGHT]
-        for cx, cy, x, y in _BODY_RIGHT:
-            body.quadTo(pt(cx, cy), pt(x, y))
-        body.lineTo(pt(0.40, 0.98))
-        for i in range(len(_BODY_RIGHT) - 1, -1, -1):  # mirrored left flank, tail up
-            cx, cy = _BODY_RIGHT[i][0], _BODY_RIGHT[i][1]
-            sx, sy = ends[i]
-            body.quadTo(pt(1 - cx, cy), pt(1 - sx, sy))
-        body.closeSubpath()
-        painter.setPen(outline)
-        painter.setBrush(palette.base().color())
-        painter.drawPath(body)
-        # Racing stripe down the middle, translucent so it works on both themes.
-        stripe = QColor(accent)
-        stripe.setAlpha(90)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(stripe)
-        painter.drawRoundedRect(
-            QRectF(pt(0.475, 0.055), pt(0.525, 0.945)), 0.02 * w, 0.02 * w
-        )
-        # Canopy over the stripe.
-        painter.setPen(QPen(palette.windowText().color(), 1.0))
-        painter.setBrush(palette.button().color())
-        painter.drawEllipse(QRectF(pt(0.40, 0.40), pt(0.60, 0.56)))
-        # Suspension arms, before the wheels so the hubs cover the outer ends.
-        painter.setPen(arm_pen)
-        for cy in (0.145, 0.855):
-            for inner, hub in ((0.70, 0.83), (0.30, 0.17)):
-                painter.drawLine(pt(inner, cy - 0.045), pt(hub, cy))
-                painter.drawLine(pt(inner, cy + 0.045), pt(hub, cy))
-        # Wheels; the front pair is turned a little, because drift.
-        painter.setPen(outline)
-        painter.setBrush(palette.mid().color())
-        for cx, cy, angle in (
-            (0.13, 0.145, -12),
-            (0.87, 0.145, -12),
-            (0.13, 0.855, 0),
-            (0.87, 0.855, 0),
-        ):
-            painter.save()
-            painter.translate(pt(cx, cy))
-            painter.rotate(angle)
-            wheel = QRectF(-0.065 * w, -0.17 * w, 0.13 * w, 0.34 * w)
-            painter.drawRoundedRect(wheel, 0.03 * w, 0.03 * w)
-            painter.restore()
-        # Shock towers with their mount points.
-        painter.setBrush(palette.button().color())
-        for y in (0.26, 0.74):
-            painter.drawLine(pt(0.36, y), pt(0.64, y))
-            for x in (0.40, 0.60):
-                painter.drawEllipse(pt(x, y), 0.018 * w, 0.018 * w)
-        # Motor, driving the rear diff.
-        painter.drawRect(QRectF(pt(0.54, 0.62), pt(0.70, 0.72)))
-        painter.drawLine(pt(0.62, 0.72), pt(0.50, 0.855))
-        painter.drawEllipse(pt(0.50, 0.855), 0.05 * w, 0.05 * w)
+        draw_car_schematic(painter, car, palette)
+
+        def pt(x: float, y: float) -> QPointF:
+            return QPointF(car.left() + x * car.width(), car.top() + y * car.height())
 
         # Leader lines over the car (their anchor dots must not hide under the
         # wheel/tower fills) but still under the child widgets painted after us.
