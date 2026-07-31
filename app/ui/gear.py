@@ -302,6 +302,16 @@ class GearTab(QWidget):
         dlg.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)  # else it lingers per open
         dlg.exec()
 
+    def _save_car(self, car: dict) -> dict | None:
+        """garage.save_car, but a transient OSError becomes a warning instead of a
+        crashed slot — callers abort their follow-up UI updates when this returns
+        None. Mirrors GarageTab._save_car."""
+        try:
+            return garage.save_car(car)
+        except OSError as e:
+            QMessageBox.warning(self, "Save failed", str(e))
+            return None
+
     def _save_to_car(self) -> None:
         if self._active_id is None:
             return
@@ -315,7 +325,8 @@ class GearTab(QWidget):
         except ValueError:
             return
         car.setdefault("gearing", {}).update(snapshot)
-        garage.save_car(car)
+        if self._save_car(car) is None:
+            return
         _show_status(self, f"Saved gearing to {car['name']}", 5000)
 
     def _refresh_presets(self, car: dict | None) -> None:
@@ -368,8 +379,14 @@ class GearTab(QWidget):
         except ValueError:
             return  # invalid inputs don't compute; save nothing rather than a stale fdr
         car.setdefault("gearing", {}).update(snapshot)
-        car = garage.save_car(garage.add_preset(car, name.strip()))
+        car = self._save_car(garage.add_preset(car, name.strip()))
+        if car is None:
+            return
         self._refresh_presets(car)
+        # Select what was just saved: _refresh_presets leaves the combo on the
+        # "— preset —" placeholder, which would make Delete preset a silent no-op.
+        self.preset_combo.setCurrentIndex(self.preset_combo.findData(name.strip()))
+        _show_status(self, f"Saved preset {name.strip()}", 5000)
 
     def _on_apply_preset(self) -> None:
         name = self.preset_combo.currentData()  # None for the "— preset —" placeholder
@@ -378,8 +395,11 @@ class GearTab(QWidget):
         car = self._active_car()
         if car is None:
             return
-        car = garage.save_car(garage.apply_preset(car, name))
+        car = self._save_car(garage.apply_preset(car, name))
+        if car is None:
+            return
         self.load_from_car(car)  # reflect the applied gearing in the inputs
+        _show_status(self, f"Applied preset {name}", 5000)
 
     def _on_delete_preset(self) -> None:
         name = self.preset_combo.currentData()
@@ -388,7 +408,9 @@ class GearTab(QWidget):
         car = self._active_car()
         if car is None:
             return
-        car = garage.save_car(garage.delete_preset(car, name))
+        car = self._save_car(garage.delete_preset(car, name))
+        if car is None:
+            return
         self._refresh_presets(car)
         _show_status(self, f"Deleted preset {name}", 5000)
 

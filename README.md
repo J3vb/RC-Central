@@ -87,8 +87,13 @@ Central tracks and launches your copy without re-downloading it.
     one-click backup/restore. Spec fields suggest real drift parts, and picking
     a chassis pre-fills its vendor-documented drive ratio. The chassis setup
     panel is a top-down car diagram with each value anchored to its spot on the
-    car — saved base setups, named presets, factory settings for known chassis
-    (taken from the vendor manuals), and every change logged with a timestamp.
+    car — ride height, droop, camber, toe, caster, steering angle, springs,
+    shock oil, rear diff and gyro gain — with saved base setups, named presets,
+    factory settings for known chassis (taken from the vendor manuals), and
+    every change logged with a timestamp. The log reads newest-first and has a
+    filter box, so "Setup" pulls up just the chassis changes. Unsaved edits are
+    never dropped silently: switching cars or quitting asks first, and Ctrl+S
+    saves from anywhere in the Workshop.
   - **Gearing** — rollout/ratio math, reverse solve (target rollout or target
     FDR → pinion), an inline gear-ratio chart, and a pinion what-if table.
   - **Tuning** — drift chassis tuning chart with per-setting explainers, a

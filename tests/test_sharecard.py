@@ -225,10 +225,13 @@ def test_render_card_embeds_payload_and_is_dark(monkeypatch):
     assert decoded == sharecard.build_card(car)
 
     # Always-dark canvas (independent of app theme) with actual drawing on it.
+    # Sampled densely on purpose: a coarse grid can land entirely on flat canvas
+    # and body fill for a sparse card, so it measured the row pitch as much as it
+    # measured "did anything draw".
     probes = [
         reread.pixelColor(x, y)
-        for x in range(30, 1200, 120)
-        for y in range(30, 675, 90)
+        for x in range(30, 1200, 30)
+        for y in range(30, 675, 30)
     ]
     dark = sum(1 for c in probes if c.lightnessF() < 0.5)
     assert dark > len(probes) * 0.7

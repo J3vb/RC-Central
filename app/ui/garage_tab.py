@@ -260,7 +260,14 @@ class GarageTab(QWidget):
         form.addRow("Notes", self.notes)
 
         save_btn = QPushButton("&Save")
+        save_btn.setToolTip("Save this car (Ctrl+S)")
         save_btn.clicked.connect(self._on_save)
+        # Live "you have unsaved work" marker, on its own line directly under the
+        # buttons: a hidden widget contributes no height, so it costs nothing while
+        # the form is clean, and sharing the button row would squeeze "Share card…"
+        # off the end at the app's minimum window width.
+        self.dirty_label = QLabel()
+        self.dirty_label.setVisible(False)
         export_btn = QPushButton("&Export…")
         export_btn.clicked.connect(self._on_export)
         copy_btn = QPushButton("Copy")
@@ -274,8 +281,19 @@ class GarageTab(QWidget):
         form_buttons.addWidget(copy_btn)
         form_buttons.addWidget(self.share_btn)
 
-        # Run / maintenance log for the selected car.
+        # Run / maintenance log for the selected car. _current_log is the car's log
+        # in stored (append) order; _shown_log is what the table renders — newest
+        # first and filtered — so row indexes address the right entry.
         self._current_log: list[dict] = []
+        self._shown_log: list[dict] = []
+        self.log_search = QLineEdit()
+        self.log_search.setPlaceholderText("Filter log…")
+        self.log_search.setToolTip(
+            "Filter the log by date, type or note — e.g. 'Setup' for chassis "
+            "changes, 'Gearing' for gearing changes, or any word from a note."
+        )
+        self.log_search.setClearButtonEnabled(True)
+        self.log_search.textChanged.connect(self._fill_log_table)
         self.log_table = QTableWidget(0, 3)
         self.log_table.setHorizontalHeaderLabels(("Date", "Type", "Note"))
         self.log_table.verticalHeader().hide()
@@ -303,7 +321,12 @@ class GarageTab(QWidget):
         right.setSpacing(_GAP)
         right.addLayout(form)
         right.addLayout(form_buttons)
-        right.addWidget(_section_label("Run / maintenance log"))
+        right.addWidget(self.dirty_label)
+        log_header = QHBoxLayout()
+        log_header.setSpacing(_GAP)
+        log_header.addWidget(_section_label("Run / maintenance log"))
+        log_header.addWidget(self.log_search, 1)
+        right.addLayout(log_header)
         right.addWidget(self.log_table)
         right.addLayout(log_add_row)
 
@@ -316,8 +339,77 @@ class GarageTab(QWidget):
         layout.addLayout(right, 7)
         layout.addWidget(self.setup_panel, 5)
 
+        # Unsaved-change tracking: _clean is the form snapshot as last loaded or
+        # saved, so is_dirty() is a pure comparison with no per-widget bookkeeping.
+        # Connected after the whole form exists — the constructor's own setText
+        # calls would otherwise fire _refresh_dirty into half-built state.
+        self._clean: tuple = ()
+        for widget in (self.name, *self._setup_fields.values()):
+            widget.textChanged.connect(self._refresh_dirty)
+        for combo in self._part_fields.values():
+            combo.currentTextChanged.connect(self._refresh_dirty)
+        self.notes.textChanged.connect(self._refresh_dirty)
+
         self._blank_form()
         self._reload_list()
+
+    # -- unsaved-change tracking ---------------------------------------------------
+
+    def _form_snapshot(self) -> tuple:
+        """The editable form state, for unsaved-change detection.
+
+        Only what this form owns: gearing and presets live on other tabs and ride
+        through a Save untouched, so a change there is never "unsaved work" here.
+        The log is excluded too — its own handlers write through to disk.
+        """
+        return (
+            self.name.text().strip(),
+            tuple(c.currentText().strip() for c in self._part_fields.values()),
+            tuple(e.text().strip() for e in self._setup_fields.values()),
+            self.notes.toPlainText(),
+        )
+
+    def _mark_clean(self) -> None:
+        """Adopt the current form state as saved. Call after every fill and save."""
+        self._clean = self._form_snapshot()
+        self._refresh_dirty()
+
+    def is_dirty(self) -> bool:
+        """Whether the form holds edits that aren't on disk.
+
+        A blank never-saved form isn't dirty — there's nothing to lose — but the
+        moment anything is typed into it, it is (saving creates the car).
+        """
+        return self._form_snapshot() != self._clean
+
+    def _refresh_dirty(self) -> None:
+        dirty = self.is_dirty()
+        self.dirty_label.setText(
+            f'<span style="color:{_accent()}">●</span> Unsaved changes' if dirty else ""
+        )
+        self.dirty_label.setVisible(dirty)
+
+    def confirm_discard(self) -> bool:
+        """Ask before dropping unsaved edits; True when it's safe to move on.
+
+        Used by every path that would replace what's in the form — picking another
+        car in the list, the Workshop's car combo, and closing the window. Save
+        failures return False so the user stays put with their work intact.
+        """
+        if not self.is_dirty():
+            return True
+        name = self.name.text().strip() or "this car"
+        answer = QMessageBox.question(
+            self,
+            "Unsaved changes",
+            f"Save your changes to '{name}' first?",
+            QMessageBox.StandardButton.Save
+            | QMessageBox.StandardButton.Discard
+            | QMessageBox.StandardButton.Cancel,
+        )
+        if answer == QMessageBox.StandardButton.Save:
+            return self._on_save() is not None
+        return answer == QMessageBox.StandardButton.Discard
 
     def _reload_list(self) -> None:
         self.list.blockSignals(True)
@@ -364,6 +456,7 @@ class GarageTab(QWidget):
         self.current_id = None
         self._fill_form(car)
         self.name.clear()
+        self._mark_clean()  # after clear(): an empty new-car form has nothing to lose
 
     def _fill_form(self, car: dict) -> None:
         self.name.setText(car.get("name", ""))
@@ -380,17 +473,45 @@ class GarageTab(QWidget):
         self._current_log = list(car.get("log", []))
         self._fill_log_table()
         self.setup_panel.show_value_starts()  # long values show their head, not tail
+        self._mark_clean()  # what's on screen now matches what we just read
 
     def _fill_log_table(self) -> None:
-        self.log_table.setRowCount(len(self._current_log))
-        for row, entry in enumerate(self._current_log):
+        """Render the log newest first, honouring the filter box.
+
+        Newest first because every Save appends change-history entries: in stored
+        order the run you just logged sits at the bottom of a list that only grows,
+        which is the one row you actually wanted to see. Matches the Tuning log.
+        The filter searches date, kind and note together, so "Setup" isolates
+        chassis changes and "spring" finds them across both.
+        """
+        needle = self.log_search.text().strip().lower()
+
+        def matches(entry: dict) -> bool:
+            return not needle or any(
+                needle in str(entry.get(field, "")).lower()
+                for field in ("date", "kind", "note")
+            )
+
+        # sort by stored date, newest first; entries without one keep their
+        # relative position at the end rather than crashing the comparison
+        ordered = sorted(
+            self._current_log, key=lambda e: str(e.get("date", "")), reverse=True
+        )
+        self._shown_log = [e for e in ordered if matches(e)]
+        self.log_table.setRowCount(len(self._shown_log))
+        for row, entry in enumerate(self._shown_log):
             # YYYY-MM-DD HH:MM from the ISO stamp — the time matters now that
             # change-history entries can land several times a day
             date = str(entry.get("date", ""))[:16].replace("T", " ")
             self.log_table.setItem(row, 0, QTableWidgetItem(date))
             self.log_table.setItem(row, 1, QTableWidgetItem(entry.get("kind", "")))
             self.log_table.setItem(row, 2, QTableWidgetItem(entry.get("note", "")))
-        self.log_table.resizeColumnsToContents()
+        # Size Date/Type to their contents and let Note take the rest. Resizing
+        # Note to contents too would widen the table past its column on a long
+        # change-history line ("Camber front (°): -5 → -6") and add a horizontal
+        # scrollbar under every row.
+        self.log_table.resizeColumnToContents(0)
+        self.log_table.resizeColumnToContents(1)
         self.log_table.horizontalHeader().setStretchLastSection(True)
 
     def _form_to_car(self) -> dict:
@@ -426,16 +547,52 @@ class GarageTab(QWidget):
     def _on_select(self, item: QListWidgetItem | None, _prev=None) -> None:
         if item is None:
             return
-        car = garage.load_car(item.data(Qt.ItemDataRole.UserRole))
+        # Read the id up front: confirm_discard may Save, and that rebuilds the
+        # list — `item` is deleted by then and reading it would be a use-after-free.
+        car_id = item.data(Qt.ItemDataRole.UserRole)
+        if car_id == self.current_id:
+            return
+        if not self.confirm_discard():
+            self._restore_selection()  # put the highlight back on the car we kept
+            return
+        car = garage.load_car(car_id)
         if car is None:
             return
         self.current_id = car["id"]
         self._fill_form(car)
+        self._select_id(car["id"])  # a Save above moved the highlight; move it back
         self.car_selected.emit(car["id"])
 
-    def open_car(self, car_id: str | None) -> None:
+    def showEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        # The Gearing and Tuning sub-tabs write to the open car's file (gearing
+        # change history, tuning notes), so what's in this form can be stale by the
+        # time you switch back. Re-read — but never over unsaved edits, which are
+        # the user's and would be silently discarded.
+        if self.current_id and not self.is_dirty():
+            car = garage.load_car(self.current_id)
+            if car is not None:
+                self._fill_form(car)
+        super().showEvent(event)
+
+    def _restore_selection(self) -> None:
+        """Point the list back at the open car (or nothing, for an unsaved new one)."""
+        if self.current_id:
+            self._select_id(self.current_id)
+            return
+        self.list.blockSignals(True)
+        self.list.clearSelection()
+        self.list.setCurrentItem(None)
+        self.list.blockSignals(False)
+
+    def open_car(self, car_id: str | None) -> bool:
         """Programmatically open a car (or blank the form). Never emits car_selected —
-        this is the Workshop header's entry point, and emitting back would loop."""
+        this is the Workshop header's entry point, and emitting back would loop.
+
+        Returns False when the user cancelled over unsaved changes, so the caller
+        can put its own control (the Workshop's car combo) back where it was.
+        """
+        if not self.confirm_discard():
+            return False
         car = garage.load_car(car_id) if car_id else None
         if car:
             self.current_id = car["id"]
@@ -447,8 +604,11 @@ class GarageTab(QWidget):
             self.list.setCurrentItem(None)
             self.list.blockSignals(False)
             self._blank_form()
+        return True
 
     def _on_new(self) -> None:
+        if not self.confirm_discard():
+            return
         self.list.blockSignals(True)
         self.list.clearSelection()
         self.list.setCurrentItem(None)
@@ -475,13 +635,15 @@ class GarageTab(QWidget):
             QMessageBox.warning(self, "Save failed", str(e))
             return None
 
-    def _on_save(self) -> None:
+    def _on_save(self) -> dict | None:
+        """Persist the form. Returns the saved car, or None when the write failed —
+        confirm_discard needs to tell those apart before dropping the user's work."""
         car = self._form_to_car()
         seeded = garage.apply_chassis_defaults(car)
         setup_seeded = garage.apply_chassis_setup(car)
         saved = self._save_car(car)
         if saved is None:
-            return
+            return None
         self.current_id = saved["id"]
         self._reload_list()
         self._select_id(saved["id"])
@@ -501,11 +663,13 @@ class GarageTab(QWidget):
             )
         else:
             _show_status(self, f"Saved {saved['name']}", 5000)
+        self._mark_clean()  # the form now matches disk
         self.car_selected.emit(saved["id"])  # covers create and rename alike
         if seeded:
             # the car's gearing changed under an unchanged id, which GearTab's same-id
             # guard would otherwise ignore — same situation as a garage restore
             self.gearing_seeded.emit()
+        return saved
 
     def _on_save_base(self) -> None:
         saved = self._save_car(garage.save_base_setup(self._form_to_car()))
@@ -548,6 +712,11 @@ class GarageTab(QWidget):
         self._reload_list()
         self._select_id(saved["id"])
         self._fill_form(saved)  # repopulates the preset combo
+        # Select what was just saved: _fill_form's set_presets() leaves the combo on
+        # the "— preset —" placeholder, which would make Del read None and do nothing.
+        self.setup_preset_combo.setCurrentIndex(
+            self.setup_preset_combo.findData(name.strip())
+        )
         _show_status(self, f"Saved setup preset {name.strip()}", 5000)
         self.car_selected.emit(saved["id"])
 
@@ -649,6 +818,10 @@ class GarageTab(QWidget):
         self.car_selected.emit(dup["id"])
 
     def _on_import(self) -> None:
+        # An import opens the new car in this form, so ask before it displaces
+        # unsaved edits — same contract as picking another car in the list.
+        if not self.confirm_discard():
+            return
         path, _ = QFileDialog.getOpenFileName(
             self, "Import car", "", "Car spec or setup card (*.json *.png)"
         )
@@ -688,6 +861,8 @@ class GarageTab(QWidget):
         self.car_selected.emit(saved["id"])
 
     def _on_paste_code(self) -> None:
+        if not self.confirm_discard():
+            return
         code, ok = QInputDialog.getMultiLineText(
             self, "Paste setup code", "Setup code (starts with RCSETUP1):"
         )
@@ -724,6 +899,11 @@ class GarageTab(QWidget):
         event.accept()
 
         def import_all() -> None:
+            # Asked once for the whole drop, not per file — and in here rather
+            # than in the handler above for the same reason the imports are:
+            # a modal dialog would freeze the drag source.
+            if not self.confirm_discard():
+                return
             for path in paths:
                 self._import_path(path)
 
@@ -847,10 +1027,12 @@ class GarageTab(QWidget):
         self._fill_log_table()  # _on_save reselects with signals blocked, so refresh here
 
     def _on_remove_log(self) -> None:
+        # Indexes the DISPLAYED rows, not the stored order — the table is sorted
+        # newest-first and may be filtered, so the two no longer line up.
         row = self.log_table.currentRow()
-        if not 0 <= row < len(self._current_log):
+        if not 0 <= row < len(self._shown_log):
             return
-        entry_id = self._current_log[row].get("id")
+        entry_id = self._shown_log[row].get("id")
         car = self.current_id and garage.load_car(self.current_id)
         if car:
             # Write-through delete by id against fresh disk state (mirrors the
@@ -862,5 +1044,7 @@ class GarageTab(QWidget):
                 return
             self._current_log = list(saved.get("log", []))
         else:  # unsaved new car: the log only exists in the form
-            del self._current_log[row]
+            self._current_log = [
+                e for e in self._current_log if e.get("id") != entry_id
+            ]
         self._fill_log_table()

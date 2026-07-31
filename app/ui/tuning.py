@@ -7,6 +7,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QRadioButton,
     QTableWidget,
@@ -462,6 +463,15 @@ class _TuningLog(QWidget):
         self.table.resizeRowsToContents()
         self.table.horizontalHeader().setStretchLastSection(True)
 
+    def _save_car(self, car: dict) -> dict | None:
+        """garage.save_car, but a transient OSError becomes a warning instead of a
+        crashed slot. Mirrors GarageTab._save_car."""
+        try:
+            return garage.save_car(car)
+        except OSError as e:
+            QMessageBox.warning(self, "Save failed", str(e))
+            return None
+
     def _add(self) -> None:
         note = self.note.text().strip()
         if not note or not self._car_id:
@@ -471,7 +481,8 @@ class _TuningLog(QWidget):
             self._reload()
             return
         car.setdefault("log", []).append(garage.new_log_entry("Tuning", note))
-        garage.save_car(car)
+        if self._save_car(car) is None:
+            return
         _show_status(self, "Added tuning note", 5000)
         self.note.clear()
         self._render()
@@ -486,7 +497,8 @@ class _TuningLog(QWidget):
             self._reload()
             return
         car["log"] = [e for e in car.get("log", []) if e.get("id") != entry_id]
-        garage.save_car(car)
+        if self._save_car(car) is None:
+            return
         _show_status(self, "Deleted log entry", 5000)
         self._render()
 
