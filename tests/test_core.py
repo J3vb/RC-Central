@@ -3969,6 +3969,26 @@ def test_garage_log_shows_newest_first_and_filters(monkeypatch, tmp_path):
     assert tab.log_table.rowCount() == 3
 
 
+def test_garage_log_orders_same_timestamp_entries_by_insertion(monkeypatch, tmp_path):
+    """One Save writes a batch of change-history entries that all stamp the same
+    instant on a coarse clock (Windows ticks ~15ms). Sorting on the date alone is
+    stable, so those batches would read oldest-first — position breaks the tie."""
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_id = _select(tab, "Car A")
+
+    car = garage.load_car(car_id)
+    stamp = "2026-07-31T02:58:32.000000+00:00"  # identical, as a real batch is
+    for note in ("first change", "second change", "third change"):
+        entry = garage.new_log_entry("Setup", note)
+        entry["date"] = stamp
+        car["log"].append(entry)
+    garage.save_car(car)
+    tab.open_car(car_id)
+
+    shown = [tab.log_table.item(r, 2).text() for r in range(tab.log_table.rowCount())]
+    assert shown == ["third change", "second change", "first change"]
+
+
 def test_garage_log_delete_targets_the_displayed_row(monkeypatch, tmp_path):
     """Row 0 is the newest (and filtered) entry, not log[0] — delete must follow."""
     tab, garage = _garage_tab(monkeypatch, tmp_path)

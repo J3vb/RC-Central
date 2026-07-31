@@ -492,12 +492,20 @@ class GarageTab(QWidget):
                 for field in ("date", "kind", "note")
             )
 
-        # sort by stored date, newest first; entries without one keep their
-        # relative position at the end rather than crashing the comparison
+        # Sort by stored date, newest first, with stored position as the
+        # tiebreaker so a later-appended entry sorts above an earlier one that
+        # shares its timestamp. Ties are the normal case, not an edge case: one
+        # Save writes a whole batch of change-history entries, and on a platform
+        # with a coarse clock (Windows ticks ~15ms) they all stamp the same
+        # instant. Sorting on the date alone is stable, which would have left
+        # exactly those batches reading oldest-first.
+        # A missing date sorts to the bottom rather than crashing the comparison.
         ordered = sorted(
-            self._current_log, key=lambda e: str(e.get("date", "")), reverse=True
+            enumerate(self._current_log),
+            key=lambda pair: (str(pair[1].get("date", "")), pair[0]),
+            reverse=True,
         )
-        self._shown_log = [e for e in ordered if matches(e)]
+        self._shown_log = [entry for _pos, entry in ordered if matches(entry)]
         self.log_table.setRowCount(len(self._shown_log))
         for row, entry in enumerate(self._shown_log):
             # YYYY-MM-DD HH:MM from the ISO stamp — the time matters now that
