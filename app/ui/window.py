@@ -139,6 +139,11 @@ class MainWindow(QMainWindow):
         _show_status(self, "Catalog updated", 5000)
 
     def closeEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        # Quitting is the last chance to keep unsaved setup work; Cancel here means
+        # "don't close" rather than "close and lose it".
+        if not self.garage_tab.confirm_discard():
+            event.ignore()
+            return
         settings = _settings()
         settings.setValue("geometry", self.saveGeometry())
         settings.setValue("tab", self.tabs.currentIndex())

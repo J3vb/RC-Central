@@ -32,16 +32,20 @@ from app.ui.tuning import _TUNING_ROWS, _TUNING_TIPS
 _CAPTIONS = {
     "ride_height_front": "Ride ht F (mm)",
     "ride_height_rear": "Ride ht R (mm)",
+    "droop_front": "Droop F",
+    "droop_rear": "Droop R",
     "camber_front": "Camber F (°)",
     "camber_rear": "Camber R (°)",
     "toe_front": "Toe F (°)",
     "toe_rear": "Toe R (°)",
     "caster": "Caster (°)",
+    "steering_angle": "Steering (°)",
     "spring_front": "Spring F",
     "spring_rear": "Spring R",
     "shock_oil_front": "Shock oil F",
     "shock_oil_rear": "Shock oil R",
     "rear_diff": "Rear diff",
+    "gyro_gain": "Gyro gain",
 }
 
 # Which Tuning-chart row advises on each field, for the tooltip. camber_front/
@@ -60,6 +64,29 @@ _TUNING_MAP = {
     "rear_diff": "Rear Diff",
 }
 
+# What-it-does text for fields the Tuning chart has no row for, so every box on
+# the diagram explains itself. Kept separate from _TUNING_MAP because these carry
+# no understeer/oversteer pair — the chart is the only source for that advice.
+_FIELD_TIPS = {
+    "droop_front": (
+        "How far that end can droop before the arm tops out — the shock's "
+        "extended travel. Less droop transfers weight onto the other end faster; "
+        "more droop keeps the tires loaded over bumps and through transitions."
+    ),
+    "droop_rear": None,  # filled below with droop_front's text
+    "steering_angle": (
+        "Maximum steering throw at full lock. More angle lets the car hold a "
+        "deeper slide before it spins; too much makes the front wash out and "
+        "costs steering speed getting back to centre."
+    ),
+    "gyro_gain": (
+        "The gain you settled on for this car, in whatever units your gyro "
+        "shows. Record it here so a battery swap or a reset doesn't lose it — "
+        "Workshop ▸ Tuning ▸ Gyro maps symptoms to gain changes."
+    ),
+}
+_FIELD_TIPS["droop_rear"] = _FIELD_TIPS["droop_front"]
+
 # Where each field's leader line lands on the car, in the drawing's unit space
 # (x 0..1 across the width, y 0..1 nose-to-tail), plus which side of the car the
 # field's box sits on ("l"/"r") so the line always leaves the box's inner edge.
@@ -67,33 +94,42 @@ _TUNING_MAP = {
 _ANCHORS: dict[str, tuple[float, float, str]] = {
     "camber_front": (0.13, 0.145, "l"),  # FL wheel
     "ride_height_front": (0.30, 0.145, "l"),  # front axle
+    "droop_front": (0.235, 0.185, "l"),  # FL lower arm, mid-span
     "spring_front": (0.40, 0.26, "l"),  # front tower, left mount
     "spring_rear": (0.40, 0.74, "l"),  # rear tower, left mount
+    "droop_rear": (0.235, 0.815, "l"),  # RL lower arm, mid-span
     "camber_rear": (0.13, 0.855, "l"),  # RL wheel
     "ride_height_rear": (0.30, 0.855, "l"),  # rear axle
     "toe_front": (0.87, 0.145, "r"),  # FR wheel
     "caster": (0.79, 0.21, "r"),  # FR knuckle / lower arm
+    "steering_angle": (0.62, 0.175, "r"),  # steering rack, behind the front axle
     "shock_oil_front": (0.60, 0.26, "r"),  # front tower, right mount
     "shock_oil_rear": (0.60, 0.74, "r"),  # rear tower, right mount
+    "gyro_gain": (0.56, 0.48, "r"),  # electronics deck, beside the canopy
     "toe_rear": (0.87, 0.855, "r"),  # RR wheel
     "rear_diff": (0.50, 0.855, "r"),  # diff on the rear axle centre
 }
 
-# Grid rows 1..6 per column, top-to-bottom: front fields at the top (the drawn
+# Grid rows 1..8 per column, top-to-bottom: front fields at the top (the drawn
 # car's nose points up), rear at the bottom, each on the side of its anchor.
+# The two tuples must stay the same length — they are zipped into grid rows.
 _LEFT_KEYS = (
     "camber_front",
     "ride_height_front",
+    "droop_front",
     "spring_front",
     "spring_rear",
+    "droop_rear",
     "camber_rear",
     "ride_height_rear",
 )
 _RIGHT_KEYS = (
     "toe_front",
     "caster",
+    "steering_angle",
     "shock_oil_front",
     "shock_oil_rear",
+    "gyro_gain",
     "toe_rear",
     "rear_diff",
 )
@@ -114,10 +150,12 @@ _BODY_RIGHT = (
 
 def _tooltip(key: str, label: str) -> str:
     """The field's full label plus, where the Tuning chart has a row for it, its
-    understeer/oversteer advice and the what-it-does explanation."""
+    understeer/oversteer advice and the what-it-does explanation. Fields the
+    chart doesn't cover fall back to _FIELD_TIPS, then to the bare label."""
     row_label = _TUNING_MAP.get(key)
     if row_label is None:
-        return label
+        tip = _FIELD_TIPS.get(key)
+        return f"{label}\n\n{tip}" if tip else label
     parts = [label]
     for setting, under, over in _TUNING_ROWS:
         if setting == row_label:
@@ -297,12 +335,17 @@ class SetupDiagramPanel(QWidget):
             "Reset the setup values to this chassis' factory settings, or blank "
             "if none are known (doesn't save)."
         )
-        base_row = QHBoxLayout()
-        base_row.addWidget(self.save_base_btn)
-        base_row.addWidget(self.apply_base_btn)
-        base_row.addWidget(self.factory_btn)
-        base_row.addWidget(self.reset_btn)
-        base_row.addStretch(1)
+        # Two rows of two, not one row of four: at the app's minimum window width
+        # this column is ~287px and a single row clips "Save as base" (it needs 94px
+        # of the ~82px it gets). Pairing also groups them by what they do — snapshot
+        # vs. return to a known-good setup.
+        base_row = QGridLayout()
+        base_row.setHorizontalSpacing(4)
+        base_row.setVerticalSpacing(4)
+        base_row.addWidget(self.save_base_btn, 0, 0)
+        base_row.addWidget(self.apply_base_btn, 0, 1)
+        base_row.addWidget(self.factory_btn, 1, 0)
+        base_row.addWidget(self.reset_btn, 1, 1)
 
         # Named full-setup snapshots, mirroring the Gear tab's preset row: picking
         # from the combo applies (activated only fires on user picks), Save… asks
@@ -321,6 +364,10 @@ class SetupDiagramPanel(QWidget):
         preset_row.addWidget(self.save_preset_btn)
         preset_row.addWidget(self.del_preset_btn)
 
+        # Row 0 is the header, rows 1.._FIELD_ROWS the field pairs, then the two
+        # button rows. Derived from the key tuples so adding a setup field is a
+        # one-line change here instead of four hand-counted row indexes.
+        self._field_rows = len(_LEFT_KEYS)
         self._grid = QGridLayout(self)
         self._grid.setHorizontalSpacing(6)
         self._grid.setVerticalSpacing(4)
@@ -328,15 +375,15 @@ class SetupDiagramPanel(QWidget):
         for row, (left, right) in enumerate(zip(_LEFT_KEYS, _RIGHT_KEYS), start=1):
             self._grid.addWidget(self._boxes[left], row, 0)
             self._grid.addWidget(self._boxes[right], row, 2)
-        self._grid.addLayout(base_row, 7, 0, 1, 3)
-        self._grid.addLayout(preset_row, 8, 0, 1, 3)
+        self._grid.addLayout(base_row, self._field_rows + 1, 0, 1, 3)
+        self._grid.addLayout(preset_row, self._field_rows + 2, 0, 1, 3)
         # Field columns get a bigger share than the car column: factory values are
         # text ("Kit D1-SSF1"), not just numbers, and clip in narrower boxes.
         self._grid.setColumnStretch(0, 3)
         self._grid.setColumnStretch(1, 2)
         self._grid.setColumnStretch(2, 3)
         self._grid.setColumnMinimumWidth(1, 100)  # room for the car + leader lines
-        for row in range(1, 7):
+        for row in range(1, self._field_rows + 1):
             self._grid.setRowStretch(row, 1)
         self._restyle_captions()
 
@@ -420,7 +467,9 @@ class SetupDiagramPanel(QWidget):
     def _car_rect(self) -> QRectF:
         """The drawing area: centred in the middle column beside the field rows,
         at the car's fixed 1:2 width:length aspect."""
-        area = QRectF(self._grid.cellRect(1, 1) | self._grid.cellRect(6, 1))
+        area = QRectF(
+            self._grid.cellRect(1, 1) | self._grid.cellRect(self._field_rows, 1)
+        )
         w = max(10.0, min(area.width() - 16, (area.height() - 16) / 2))
         return QRectF(
             area.center().x() - w / 2, area.center().y() - w, w, 2 * w

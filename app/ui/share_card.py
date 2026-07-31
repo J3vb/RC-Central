@@ -37,7 +37,9 @@ from app.ui.theme import _dark_palette
 _W, _H = 1200, 675
 # The schematic and its two flanking value columns, in card pixels.
 _CAR = QRectF(755, 140, 190, 380)
-_ROW_TOP, _ROW_STEP = 148, 62
+# Row pitch is derived from the column length so the block always spans the car
+# and stays clear of the footer, however many setup fields the panel grows to.
+_ROW_TOP, _ROW_BOTTOM = 140, 560
 _LEFT_COL = QRectF(545, 0, 190, 0)  # right-aligned, leaders run to the car
 _RIGHT_COL = QRectF(965, 0, 190, 0)
 
@@ -142,6 +144,7 @@ def render_card(car: dict) -> QImage:
     draw_car_schematic(painter, _CAR, palette)
     caption_font = _font(base_font, 9)
     leader = QPen(palette.mid().color(), 1.0, Qt.PenStyle.DotLine)
+    row_step = (_ROW_BOTTOM - _ROW_TOP) / max(1, len(_LEFT_KEYS) - 1)
     for keys, col, edge_x, align in (
         (_LEFT_KEYS, _LEFT_COL, _LEFT_COL.right(), Qt.AlignmentFlag.AlignRight),
         (_RIGHT_KEYS, _RIGHT_COL, _RIGHT_COL.left(), Qt.AlignmentFlag.AlignLeft),
@@ -150,7 +153,7 @@ def render_card(car: dict) -> QImage:
             value = card["setup"].get(key)
             if not value:
                 continue  # empty fields keep their slot but draw nothing
-            row_y = _ROW_TOP + slot * _ROW_STEP
+            row_y = _ROW_TOP + slot * row_step
             # .get fallbacks match the setup panel's documented degradation:
             # a new field missing from these dicts must not crash the share.
             text(col.left(), row_y, col.width(), _CAPTIONS.get(key, key), caption_font, muted, align)

@@ -1,5 +1,6 @@
 """The Workshop tab: a shared active-car switcher over Garage | Gearing | Tuning."""
 
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
@@ -54,6 +55,12 @@ class WorkshopTab(QWidget):
         if active:
             self.garage.open_car(active)
 
+        # Ctrl+S saves the car from any Workshop sub-tab, not just with the Garage
+        # form in front of you — the Gearing tab has its own "Save results to car",
+        # but the muscle memory is one shortcut for "keep what I just changed".
+        save_shortcut = QShortcut(QKeySequence.StandardKey.Save, self)
+        save_shortcut.activated.connect(self._on_save_shortcut)
+
         # connect only after the initial populate (same trap as _CompareDialog:
         # the setCurrentIndex during _refresh_combo would otherwise fire handlers)
         self.car_combo.currentIndexChanged.connect(self._on_combo_changed)
@@ -61,13 +68,19 @@ class WorkshopTab(QWidget):
         self.garage.garage_restored.connect(self._on_garage_restored)
         self.garage.gearing_seeded.connect(self._on_gearing_seeded)
 
+    @staticmethod
+    def _active_id() -> str | None:
+        """The persisted active car id, or None. The settings key is the single
+        source of truth for which car the whole Workshop is scoped to."""
+        return _settings().value(_ACTIVE_CAR_KEY, "") or None
+
     def _refresh_combo(self) -> None:
         """Rebuild the switcher from the garage, re-selecting the persisted car.
 
         A persisted id that no longer resolves lands on "— no car —", which is
         exactly the deleted-active-car fallback.
         """
-        active = _settings().value(_ACTIVE_CAR_KEY, "") or None
+        active = self._active_id()
         self.car_combo.blockSignals(True)
         self.car_combo.clear()
         self.car_combo.addItem("— no car —", None)
@@ -78,12 +91,38 @@ class WorkshopTab(QWidget):
 
     def _on_combo_changed(self) -> None:
         car_id = self.car_combo.currentData()
+        # open_car declines when the Garage form holds unsaved edits and the user
+        # cancels; the combo has already moved by then, so put it back. blockSignals
+        # keeps that correction from re-entering this handler.
+        if not self.garage.open_car(car_id):
+            self.car_combo.blockSignals(True)
+            self.car_combo.setCurrentIndex(
+                max(0, self.car_combo.findData(self._active_id()))
+            )
+            self.car_combo.blockSignals(False)
+            return
         _settings().setValue(_ACTIVE_CAR_KEY, car_id or "")
-        self.garage.open_car(car_id)  # silent: never emits car_selected back
         # Gearing/Tuning normally resync on showEvent, but the combo can change
         # while one of them is the visible sub-tab — poke them directly.
         self.gear._load_active_car()
         self.tuning.mylog._reload()
+
+    def _on_save_shortcut(self) -> None:
+        """Ctrl+S: save whatever the visible sub-tab owns for the active car.
+
+        Gearing saves its computed block (its own button is disabled without a
+        car); Garage and Tuning both round-trip through the Garage form, which is
+        what holds the specs, setup and notes.
+
+        Does nothing when there's nothing to save — otherwise Ctrl+S from the
+        Tuning tab with no car open would quietly create an empty "Unnamed" one.
+        """
+        if self.subtabs.currentWidget() is self.gear:
+            if self.gear.save_btn.isEnabled():
+                self.gear._save_to_car()
+            return
+        if self.garage.current_id or self.garage.is_dirty():
+            self.garage._on_save()
 
     def _on_garage_selected(self, car_id) -> None:
         # Garage is the visible sub-tab when its signal fires; Gearing/Tuning

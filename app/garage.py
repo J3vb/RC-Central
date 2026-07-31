@@ -25,16 +25,20 @@ GARAGE_DIR = DATA_DIR / "garage"
 _SETUP_LABELS = (
     ("ride_height_front", "Ride height front (mm)"),
     ("ride_height_rear", "Ride height rear (mm)"),
+    ("droop_front", "Droop front"),
+    ("droop_rear", "Droop rear"),
     ("camber_front", "Camber front (°)"),
     ("camber_rear", "Camber rear (°)"),
     ("toe_front", "Toe front (°)"),
     ("toe_rear", "Toe rear (°)"),
     ("caster", "Caster (°)"),
+    ("steering_angle", "Steering angle (°)"),
     ("spring_front", "Spring front"),
     ("spring_rear", "Spring rear"),
     ("shock_oil_front", "Shock oil front"),
     ("shock_oil_rear", "Shock oil rear"),
     ("rear_diff", "Rear diff"),
+    ("gyro_gain", "Gyro gain"),
 )
 
 

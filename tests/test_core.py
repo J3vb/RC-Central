@@ -2140,6 +2140,15 @@ def test_garage_tab_export_import_json_roundtrip(monkeypatch, tmp_path):
     monkeypatch.setattr(
         QFileDialog, "getOpenFileName", lambda *a, **k: (str(out), "Car spec (*.json)")
     )
+    # The typed-but-never-saved form counts as unsaved work, so the import asks
+    # before replacing it; this flow deliberately lets it go (it's on disk now).
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(
+        QMessageBox,
+        "question",
+        staticmethod(lambda *a, **k: QMessageBox.StandardButton.Discard),
+    )
     tab._on_import()
     cars = garage.list_cars()
     assert len(cars) == 1  # the export was never saved; only the import persists
@@ -3732,3 +3741,474 @@ def test_accent_setting_overrides_palette_and_tracks_readability(monkeypatch, tm
     # junk (hand-edited registry) falls back to the default instead of breaking
     common._settings().setValue(common._ACCENT_KEY, "not-a-colour")
     assert common._accent() == common._ACCENT
+
+
+# --- Unsaved-change protection ------------------------------------------------
+#
+# The Garage form is where a setup lives before it reaches disk, so every path
+# that replaces its contents has to ask first. These cover the three answers plus
+# the two entry points (the car list and the Workshop's car combo).
+
+
+def _garage_tab(monkeypatch, tmp_path):
+    """A GarageTab wired to a temp garage, with two saved cars to switch between."""
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.garage_tab import GarageTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    for name in ("Car A", "Car B"):
+        garage.save_car(garage.new_car(name))
+    return GarageTab(), garage
+
+
+def _select(tab, name):
+    from PySide6.QtCore import Qt
+
+    for i in range(tab.list.count()):
+        if tab.list.item(i).text() == name:
+            tab.list.setCurrentRow(i)
+            return tab.list.item(i).data(Qt.ItemDataRole.UserRole)
+    raise AssertionError(f"no row named {name}")
+
+
+def _answer(monkeypatch, button):
+    from PySide6.QtWidgets import QMessageBox
+
+    monkeypatch.setattr(
+        QMessageBox, "question", staticmethod(lambda *a, **k: button), raising=False
+    )
+
+
+def test_garage_form_is_clean_after_load_and_dirty_after_editing(monkeypatch, tmp_path):
+    tab, _ = _garage_tab(monkeypatch, tmp_path)
+    _select(tab, "Car A")
+    assert not tab.is_dirty()  # a freshly loaded car matches disk
+    # isHidden, not isVisible: the tab itself is never shown in these tests, which
+    # would make isVisible() False for every child regardless of the marker's state
+    assert tab.dirty_label.isHidden()
+
+    tab._setup_fields["camber_front"].setText("-6.5")
+    assert tab.is_dirty()
+    assert not tab.dirty_label.isHidden()  # and the user can see it
+
+    tab._on_save()
+    assert not tab.is_dirty()  # saving clears it
+    assert tab.dirty_label.isHidden()
+
+
+def test_switching_cars_with_unsaved_edits_can_be_cancelled(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QMessageBox
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_a = _select(tab, "Car A")
+    tab._setup_fields["camber_front"].setText("-6.5")
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+    _select(tab, "Car B")
+
+    # still on Car A, edit intact, and the list highlight followed us back
+    assert tab.current_id == car_a
+    assert tab._setup_fields["camber_front"].text() == "-6.5"
+    assert tab.list.currentItem().text() == "Car A"
+
+
+def test_switching_cars_can_save_or_discard_unsaved_edits(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QMessageBox
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_a = _select(tab, "Car A")
+
+    # Discard: the edit never reaches disk and we move on
+    tab._setup_fields["camber_front"].setText("-6.5")
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+    _select(tab, "Car B")
+    assert tab.name.text() == "Car B"
+    assert garage.load_car(car_a)["setup"]["camber_front"] == ""
+
+    # Save: the edit is persisted before the switch
+    _answer(monkeypatch, QMessageBox.StandardButton.Save)
+    _select(tab, "Car A")
+    tab._setup_fields["camber_front"].setText("-7.0")
+    _select(tab, "Car B")
+    assert tab.name.text() == "Car B"
+    assert garage.load_car(car_a)["setup"]["camber_front"] == "-7.0"
+
+
+def test_open_car_reports_refusal_so_the_workshop_combo_can_revert(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QMessageBox
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_a = _select(tab, "Car A")
+    other = next(c["id"] for c in garage.list_cars() if c["id"] != car_a)
+    tab.notes.setPlainText("unsaved note")
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+    assert tab.open_car(other) is False  # the caller is told to put its control back
+    assert tab.current_id == car_a
+    assert tab.notes.toPlainText() == "unsaved note"
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+    assert tab.open_car(other) is True
+
+
+def test_workshop_combo_reverts_when_the_car_switch_is_cancelled(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage
+    from app.ui.workshop import WorkshopTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    a = garage.save_car(garage.new_car("Car A"))
+    b = garage.save_car(garage.new_car("Car B"))
+
+    ws = WorkshopTab()
+    ws.car_combo.setCurrentIndex(ws.car_combo.findData(a["id"]))
+    ws.garage.notes.setPlainText("unsaved note")
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+    ws.car_combo.setCurrentIndex(ws.car_combo.findData(b["id"]))
+
+    # the combo snapped back to the car we're still editing, and didn't re-enter
+    # its own handler doing so
+    assert ws.car_combo.currentData() == a["id"]
+    assert ws.garage.current_id == a["id"]
+    assert ws.garage.notes.toPlainText() == "unsaved note"
+
+
+def test_closing_the_window_with_unsaved_edits_can_be_cancelled(monkeypatch, tmp_path):
+    from PySide6.QtGui import QCloseEvent
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage
+    from app.ui.window import MainWindow
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    garage.save_car(garage.new_car("Car A"))
+
+    win = MainWindow()
+    win._catalog_thread.join(5)  # join before teardown so the worker's decref stays on-thread
+    win.garage_tab.open_car(garage.list_cars()[0]["id"])
+    win.garage_tab.notes.setPlainText("unsaved note")
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+    event = QCloseEvent()
+    win.closeEvent(event)
+    assert not event.isAccepted()  # quitting would have dropped the note
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+    event = QCloseEvent()
+    win.closeEvent(event)
+    assert event.isAccepted()
+
+
+def test_garage_form_refreshes_from_disk_when_shown(monkeypatch, tmp_path):
+    """Gearing/Tuning write to the open car's file; switching back must re-read."""
+    from PySide6.QtGui import QShowEvent
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_id = _select(tab, "Car A")
+    assert tab.log_table.rowCount() == 0
+
+    car = garage.load_car(car_id)  # stand in for a Gearing save / Tuning note
+    car["log"].append(garage.new_log_entry("Gearing", "Pinion: 20 → 28"))
+    garage.save_car(car)
+
+    tab.showEvent(QShowEvent())
+    assert tab.log_table.rowCount() == 1
+    assert tab.log_table.item(0, 2).text() == "Pinion: 20 → 28"
+
+
+def test_showing_the_garage_never_clobbers_unsaved_edits(monkeypatch, tmp_path):
+    from PySide6.QtGui import QShowEvent
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    _select(tab, "Car A")
+    tab._setup_fields["caster"].setText("8.5")
+
+    tab.showEvent(QShowEvent())
+    assert tab._setup_fields["caster"].text() == "8.5"  # the re-read stood down
+
+
+# --- Run/maintenance log: ordering, filtering, and delete-by-displayed-row -----
+
+
+def test_garage_log_shows_newest_first_and_filters(monkeypatch, tmp_path):
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_id = _select(tab, "Car A")
+
+    car = garage.load_car(car_id)
+    for kind, note in (
+        ("Run", "first practice run"),
+        ("Setup", "Camber front (°): — → -6"),
+        ("Maintenance", "new tyres"),
+    ):
+        car["log"].append(garage.new_log_entry(kind, note))
+    garage.save_car(car)
+    tab.open_car(car_id)
+
+    assert tab.log_table.rowCount() == 3
+    # newest first: every Save appends history, so stored order buries what you
+    # just did at the bottom of an ever-growing list
+    assert tab.log_table.item(0, 2).text() == "new tyres"
+    assert tab.log_table.item(2, 2).text() == "first practice run"
+
+    tab.log_search.setText("tyres")  # matches the note
+    assert tab.log_table.rowCount() == 1
+    assert tab.log_table.item(0, 2).text() == "new tyres"
+
+    tab.log_search.setText("setup")  # matches the kind, case-insensitively
+    assert tab.log_table.rowCount() == 1
+    assert "Camber front" in tab.log_table.item(0, 2).text()
+
+    tab.log_search.clear()
+    assert tab.log_table.rowCount() == 3
+
+
+def test_garage_log_orders_same_timestamp_entries_by_insertion(monkeypatch, tmp_path):
+    """One Save writes a batch of change-history entries that all stamp the same
+    instant on a coarse clock (Windows ticks ~15ms). Sorting on the date alone is
+    stable, so those batches would read oldest-first — position breaks the tie."""
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_id = _select(tab, "Car A")
+
+    car = garage.load_car(car_id)
+    stamp = "2026-07-31T02:58:32.000000+00:00"  # identical, as a real batch is
+    for note in ("first change", "second change", "third change"):
+        entry = garage.new_log_entry("Setup", note)
+        entry["date"] = stamp
+        car["log"].append(entry)
+    garage.save_car(car)
+    tab.open_car(car_id)
+
+    shown = [tab.log_table.item(r, 2).text() for r in range(tab.log_table.rowCount())]
+    assert shown == ["third change", "second change", "first change"]
+
+
+def test_garage_log_delete_targets_the_displayed_row(monkeypatch, tmp_path):
+    """Row 0 is the newest (and filtered) entry, not log[0] — delete must follow."""
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_id = _select(tab, "Car A")
+
+    car = garage.load_car(car_id)
+    for note in ("oldest", "middle", "newest"):
+        car["log"].append(garage.new_log_entry("Run", note))
+    garage.save_car(car)
+    tab.open_car(car_id)
+
+    tab.log_table.setCurrentCell(0, 0)  # the newest
+    tab._on_remove_log()
+    assert [e["note"] for e in garage.load_car(car_id)["log"]] == ["oldest", "middle"]
+
+    tab.log_search.setText("oldest")  # filtered down to one row
+    tab.log_table.setCurrentCell(0, 0)
+    tab._on_remove_log()
+    assert [e["note"] for e in garage.load_car(car_id)["log"]] == ["middle"]
+
+
+# --- Presets: the just-saved one is selected, so Delete can target it ----------
+
+
+def test_saving_a_setup_preset_selects_it(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QInputDialog
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    _select(tab, "Car A")
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("carpet", True))
+    )
+    tab._on_save_setup_preset()
+
+    # left on the placeholder, Del would read None and silently do nothing
+    assert tab.setup_preset_combo.currentData() == "carpet"
+    tab._on_delete_setup_preset()
+    assert garage.list_setup_presets(garage.load_car(tab.current_id)) == []
+
+
+def test_saving_a_gearing_preset_selects_it(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication, QInputDialog
+
+    from app import garage
+    from app.ui.common import _ACTIVE_CAR_KEY, _settings
+    from app.ui.gear import GearTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    car = garage.save_car(garage.new_car("Car A"))
+    _settings().setValue(_ACTIVE_CAR_KEY, car["id"])
+
+    tab = GearTab()
+    monkeypatch.setattr(
+        QInputDialog, "getText", staticmethod(lambda *a, **k: ("asphalt", True))
+    )
+    tab._on_save_preset()
+
+    assert tab.preset_combo.currentData() == "asphalt"
+    tab._on_delete_preset()
+    assert garage.list_presets(garage.load_car(car["id"])) == []
+
+
+# --- A failed write warns instead of crashing the slot, on every tab ----------
+
+
+def test_gear_and_tuning_saves_warn_on_oserror(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication, QMessageBox
+
+    from app import garage
+    from app.ui.common import _ACTIVE_CAR_KEY, _settings
+    from app.ui.gear import GearTab
+    from app.ui.tuning import _TuningLog
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    car = garage.save_car(garage.new_car("Car A"))
+    _settings().setValue(_ACTIVE_CAR_KEY, car["id"])
+
+    gear, mylog = GearTab(), _TuningLog()
+    warned = []
+    monkeypatch.setattr(
+        QMessageBox, "warning", staticmethod(lambda *a, **k: warned.append(a[1]))
+    )
+    monkeypatch.setattr(
+        garage, "save_car", lambda c: (_ for _ in ()).throw(OSError("disk full"))
+    )
+
+    gear._save_to_car()  # would otherwise raise straight out of the clicked slot
+    mylog.note.setText("less rebound")
+    mylog._add()
+    assert warned == ["Save failed", "Save failed"]
+
+
+# --- The setup sheet's newer fields -------------------------------------------
+
+
+def test_setup_sheet_carries_droop_steering_and_gyro_gain(monkeypatch, tmp_path):
+    """Fields every drift setup sheet has — gyro gain most of all, since the app
+    ships a gyro tuning guide but had nowhere to record the gain it talks you to."""
+    from app import garage
+    from app.ui.setup_diagram import _ANCHORS, _CAPTIONS, _LEFT_KEYS, _RIGHT_KEYS
+
+    keys = {key for key, _ in garage._SETUP_LABELS}
+    added = {"droop_front", "droop_rear", "steering_angle", "gyro_gain"}
+    assert added <= keys
+
+    # every field reaches the diagram: a caption, an anchor, and a column slot
+    assert added <= set(_CAPTIONS) and added <= set(_ANCHORS)
+    assert added <= set(_LEFT_KEYS) | set(_RIGHT_KEYS)
+    # the two columns are zipped into grid rows, so they must stay equal length
+    assert len(_LEFT_KEYS) == len(_RIGHT_KEYS)
+    # and every key is placed exactly once, on exactly one side
+    assert set(_LEFT_KEYS).isdisjoint(_RIGHT_KEYS)
+    assert set(_LEFT_KEYS) | set(_RIGHT_KEYS) == keys
+
+    tab, garage_mod = _garage_tab(monkeypatch, tmp_path)
+    _select(tab, "Car A")
+    tab._setup_fields["gyro_gain"].setText("48%")
+    tab._setup_fields["droop_front"].setText("3 mm")
+    saved = garage_mod.load_car(tab._on_save()["id"])
+    assert saved["setup"]["gyro_gain"] == "48%"
+    assert saved["setup"]["droop_front"] == "3 mm"
+    # and they reach the shareable spec sheet
+    sheet = garage_mod.format_spec_sheet(saved)
+    assert "Gyro gain: 48%" in sheet and "Droop front: 3 mm" in sheet
+
+
+def test_unmapped_setup_fields_still_explain_themselves(monkeypatch, tmp_path):
+    """The tuning chart has no row for droop/steering/gyro, so they carry their
+    own explainer rather than falling back to a bare label."""
+    from app.ui.setup_diagram import _tooltip
+
+    for key in ("droop_front", "droop_rear", "steering_angle", "gyro_gain"):
+        tip = _tooltip(key, "Label")
+        assert tip.startswith("Label\n\n") and len(tip) > 60
+
+
+# --- Ctrl+S ------------------------------------------------------------------
+
+
+def test_ctrl_s_saves_the_visible_workshop_subtab(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.workshop import WorkshopTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    car = garage.save_car(garage.new_car("Car A"))
+
+    ws = WorkshopTab()
+    ws.car_combo.setCurrentIndex(ws.car_combo.findData(car["id"]))
+
+    # on Garage, it saves the form (specs, setup, notes)
+    ws.subtabs.setCurrentWidget(ws.garage)
+    ws.garage._setup_fields["caster"].setText("8.5")
+    ws._on_save_shortcut()
+    assert garage.load_car(car["id"])["setup"]["caster"] == "8.5"
+
+    # on Gearing, it saves the computed gearing block
+    ws.subtabs.setCurrentWidget(ws.gear)
+    ws.gear._load_active_car(force=True)
+    ws.gear.pinion.setValue(31)
+    ws._on_save_shortcut()
+    assert garage.load_car(car["id"])["gearing"]["pinion"] == 31
+
+
+def test_ctrl_s_without_a_car_is_a_noop(monkeypatch, tmp_path):
+    from PySide6.QtWidgets import QApplication
+
+    from app import garage
+    from app.ui.common import _ACTIVE_CAR_KEY, _settings
+    from app.ui.workshop import WorkshopTab
+
+    monkeypatch.setattr(garage, "GARAGE_DIR", tmp_path / "garage")
+    _ = QApplication.instance() or QApplication([])
+    _settings().setValue(_ACTIVE_CAR_KEY, "")
+
+    ws = WorkshopTab()
+    ws.subtabs.setCurrentWidget(ws.gear)
+    ws._on_save_shortcut()  # the Gearing save button is disabled; must not raise
+    assert garage.list_cars() == []
+
+    # ...and from a sub-tab that routes through the Garage form, an empty form
+    # must not be conjured into an "Unnamed" car
+    ws.subtabs.setCurrentWidget(ws.tuning)
+    ws._on_save_shortcut()
+    assert garage.list_cars() == []
+
+    # but a form the user has actually typed into does save
+    ws.subtabs.setCurrentWidget(ws.garage)
+    ws.garage.name.setText("Fresh Build")
+    ws._on_save_shortcut()
+    assert [c["name"] for c in garage.list_cars()] == ["Fresh Build"]
+
+
+def test_importing_asks_before_displacing_unsaved_edits(monkeypatch, tmp_path):
+    """Import/paste/drop all open the new car in this form, so they ask too."""
+    import json
+
+    from PySide6.QtWidgets import QFileDialog, QMessageBox
+
+    tab, garage = _garage_tab(monkeypatch, tmp_path)
+    car_a = _select(tab, "Car A")
+    tab.notes.setPlainText("unsaved note")
+
+    incoming = garage.new_car("Imported")
+    path = tmp_path / "incoming.json"
+    path.write_text(json.dumps(incoming), encoding="utf-8")
+    monkeypatch.setattr(
+        QFileDialog, "getOpenFileName", staticmethod(lambda *a, **k: (str(path), ""))
+    )
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Cancel)
+    tab._on_import()
+    assert tab.current_id == car_a  # nothing imported, edit intact
+    assert tab.notes.toPlainText() == "unsaved note"
+    assert [c["name"] for c in garage.list_cars()] == ["Car A", "Car B"]
+
+    _answer(monkeypatch, QMessageBox.StandardButton.Discard)
+    tab._on_import()
+    assert tab.name.text() == "Imported"
